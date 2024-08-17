@@ -3,13 +3,13 @@ from typing import Any, NamedTuple
 from brax.training import types
 from optax import sigmoid_binary_cross_entropy
 
-from crl_new import networks as crl_networks
+from src import networks as crl_networks
 from brax.training.types import Params
 from brax.training.types import PRNGKey
 import jax
 import jax.numpy as jnp
 from envs.wrappers import extract_info_from_obs
-from crl_new import utils
+from src import utils
 
 
 Transition = types.Transition
@@ -44,10 +44,7 @@ def make_losses(
         key: PRNGKey,
     ) -> jnp.ndarray:
         """Eq 18 from https://arxiv.org/pdf/1812.05905.pdf."""
-        if config.use_old_trans_alpha:
-            obs = transitions.extras["old_trans"].observation
-        else:
-            obs = transitions.observation
+        obs = transitions.observation
 
         dist_params = policy_network.apply(normalizer_params, policy_params, obs)
         action = parametric_action_distribution.sample_no_postprocessing(dist_params, key)
@@ -225,6 +222,7 @@ def make_losses(
             logsumexp = jax.nn.logsumexp(logits_ + eps, axis=1)
             loss += logsumexp_penalty * jnp.mean(logsumexp**2)
 
+        l2_loss = 0
         if l2_penalty > 0:
             l2_loss = l2_penalty * (jnp.mean(sa_repr**2) + jnp.mean(g_repr**2))
             loss += l2_loss
@@ -244,6 +242,14 @@ def make_losses(
         sa_repr_l2 = jnp.sqrt(jnp.sum(sa_repr**2, axis=-1))
         g_repr_l2 = jnp.sqrt(jnp.sum(g_repr**2, axis=-1))
 
+        if contrastive_loss_fn == "sppo" or contrastive_loss_fn == "ipo" or contrastive_loss_fn == "dpo":
+            l_align_log = 0
+            l_unif_log = 0
+        else:
+            l_align_log = -jnp.mean(jnp.diag(l_align))
+            l_unif_log = -jnp.mean(l_unif)
+
+
         metrics = {
             "binary_accuracy": jnp.mean((logits > 0) == I),
             "categorical_accuracy": jnp.mean(correct),
@@ -256,8 +262,8 @@ def make_losses(
             "logsumexp": logsumexp.mean(),
             "l2_penalty": l2_loss,
             "c_target": c_target,
-            "l_align": -jnp.mean(jnp.diag(l_align)),
-            "l_unif": -jnp.mean(l_unif),
+            "l_align": l_align_log,
+            "l_unif": l_unif_log,
         }
         return loss, metrics
 
@@ -272,10 +278,7 @@ def make_losses(
 
         sample_key, entropy_key, goal_key = jax.random.split(key, 3)
 
-        if config.use_old_trans_actor:
-            obs = transitions.extras["old_trans"].observation
-        else:
-            obs = transitions.observation
+        obs = transitions.observation
 
         future_state = transitions.extras["future_state"]
 
@@ -311,8 +314,6 @@ def make_losses(
         )
         g_repr = g_encoder.apply(normalizer_params, g_encoder_params, goal)
 
-        # extra_key, key = jax.random.split(extra_key, 2)
-        # obs_shuf = jax.random.permutation(key, state)
         goal_pad = future_state
 
         if energy_fn == "l2":
@@ -344,7 +345,7 @@ def make_losses(
                 jnp.concatenate([goal_pad, future_action_shuf], axis=-1),
             )
             dist = utils.mrn_distance(sa_repr[:, None], ga_repr[None])
-            logits = -dist
+            min_q = -dist
         elif energy_fn == "mrn_pot_shuf":
             ga_repr = sa_encoder.apply(
                 normalizer_params,
