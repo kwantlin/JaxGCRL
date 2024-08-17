@@ -21,10 +21,10 @@ from brax.training.types import PRNGKey
 from brax.training.types import Params, Policy
 from brax.v1 import envs as envs_v1
 
-from crl_new import losses as crl_losses
-from crl_new import networks as crl_networks
-from crl_new.replay_buffer import QueueBase, Sample
-from crl_new.evaluator import CrlEvaluator
+from src import losses as crl_losses
+from src import networks as crl_networks
+from src.replay_buffer import QueueBase, Sample
+from src.evaluator import CrlEvaluator
 
 
 Metrics = types.Metrics
@@ -146,9 +146,6 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
             "future_state": future_state,
             "future_action": future_action,
         }
-
-        if config.use_old_trans_actor or config.use_old_trans_alpha:
-            extras["old_trans"] = transition
 
         return transition._replace(
             observation=jnp.squeeze(new_obs),
