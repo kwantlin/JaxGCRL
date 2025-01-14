@@ -118,6 +118,46 @@ class Ant(PipelineEnv):
         state.info.update(info)
         return state
 
+    def reset_with_target(self, rng: jax.Array, target) -> State:
+        """Resets the environment to an initial state."""
+
+        rng, rng1, rng2 = jax.random.split(rng, 3)
+
+        low, hi = -self._reset_noise_scale, self._reset_noise_scale
+        q = self.sys.init_q + jax.random.uniform(
+            rng1, (self.sys.q_size(),), minval=low, maxval=hi
+        )
+        qd = hi * jax.random.normal(rng2, (self.sys.qd_size(),))
+
+        # set the target q, qd
+        # _, target = self._random_target(rng)
+        q = q.at[-2:].set(target)
+        qd = qd.at[-2:].set(0)
+
+        pipeline_state = self.pipeline_init(q, qd)
+        obs = self._get_obs(pipeline_state)
+
+        reward, done, zero = jnp.zeros(3)
+        metrics = {
+            "reward_forward": zero,
+            "reward_survive": zero,
+            "reward_ctrl": zero,
+            "reward_contact": zero,
+            "x_position": zero,
+            "y_position": zero,
+            "distance_from_origin": zero,
+            "x_velocity": zero,
+            "y_velocity": zero,
+            "forward_reward": zero,
+            "dist": zero,
+            "success": zero,
+            "success_easy": zero
+        }
+        info = {"seed": 0}
+        state = State(pipeline_state, obs, reward, done, metrics)
+        state.info.update(info)
+        return state
+
     # Todo rename seed to traj_id
     def step(self, state: State, action: jax.Array) -> State:
         """Run one timestep of the environment's dynamics."""
