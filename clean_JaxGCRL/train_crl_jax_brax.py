@@ -31,9 +31,9 @@ class Args:
     torch_deterministic: bool = True
     cuda: bool = True
     track: bool = False
-    wandb_project_name: str = "exploration"
-    wandb_entity: str = 'raj19'
-    wandb_mode: str = 'online'
+    wandb_project_name: str = "jaxgcrl-clean"
+    wandb_entity: str = 'kwantlin'
+    wandb_mode: str = 'offline'
     wandb_dir: str = '.'
     wandb_group: str = '.'
     capture_video: bool = False
@@ -55,12 +55,12 @@ class Args:
     actor_lr: float = 3e-4
     critic_lr: float = 3e-4
     alpha_lr: float = 3e-4
-    batch_size: int = 256
+    batch_size: int = 32
     gamma: float = 0.99
     logsumexp_penalty_coeff: float = 0.1
 
-    max_replay_size: int = 10000
-    min_replay_size: int = 1000
+    max_replay_size: int = 100
+    min_replay_size: int = 10
     
     unroll_length: int  = 62
 
