@@ -13,9 +13,9 @@ env=ant
 for seed in 1; do
   XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training.py \
     --project_name test --group_name first_run --exp_name test --num_evals 10 \
-    --seed ${seed} --num_timesteps 100000 --batch_size 32 --num_envs 32 \
+    --seed ${seed} --num_timesteps 100000 --batch_size 16 --num_envs 32 \
     --discounting 0.99 --action_repeat 1 --env_name ${env} \
-    --episode_length 1000 --unroll_length 62  --min_replay_size 1000 --max_replay_size 10000 \
+    --episode_length 50 --unroll_length 8  --min_replay_size 1 --max_replay_size 10 \
     --contrastive_loss_fn infonce_backward --energy_fn l2 \
     --train_step_multiplier 1 --log_wandb
   done
