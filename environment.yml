@@ -1,4 +1,4 @@
-name: contrastive_rl
+name: jaxgcrl
 channels:
   - conda-forge
 dependencies:
