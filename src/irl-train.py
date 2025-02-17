@@ -52,6 +52,124 @@ class Net(nn.Module):
         # Last layer mapping to representation dimension
         x = nn.Dense(self.output_size, kernel_init=lecun_uniform)(x)
         return x
+    
+class GaussianMLPPolicy():
+    def __init__(
+            self,
+            name,
+            env_spec,
+            hidden_sizes=(32, 32),
+            learn_std=True,
+            init_std=1.0,
+            adaptive_std=False,
+            std_share_network=False,
+            std_hidden_sizes=(32, 32),
+            min_std=1e-6,
+            std_hidden_nonlinearity=jax.nn.tanh,
+            hidden_nonlinearity=jax.nn.tanh,
+            output_nonlinearity=None,
+            mean_network=None,
+            std_network=None,
+            std_parametrization='exp'
+    ):
+        obs_dim = env_spec.observation_space.flat_dim
+        action_dim = env_spec.action_space.flat_dim
+
+        if mean_network is None:
+            mean_network = Net(
+                hidden_sizes=hidden_sizes,
+                output_dim=action_dim,
+                hidden_nonlinearity=hidden_nonlinearity,
+                output_nonlinearity=output_nonlinearity,
+            )
+        self._mean_network = mean_network
+
+        if std_network is not None:
+            self._std_network = std_network
+        else:
+            if adaptive_std:
+                self._std_network = Net(
+                    hidden_sizes=std_hidden_sizes,
+                    output_dim=action_dim,
+                    hidden_nonlinearity=std_hidden_nonlinearity,
+                    output_nonlinearity=None,
+                )
+            else:
+                if std_parametrization == 'exp':
+                    init_std_param = np.log(init_std)
+                elif std_parametrization == 'softplus':
+                    init_std_param = np.log(np.exp(init_std) - 1)
+                else:
+                    raise NotImplementedError
+                self._init_std_param = init_std_param
+
+        self.std_parametrization = std_parametrization
+
+        if std_parametrization == 'exp':
+            self.min_std_param = np.log(min_std)
+        elif std_parametrization == 'softplus':
+            self.min_std_param = np.log(np.exp(min_std) - 1)
+        else:
+            raise NotImplementedError
+
+        self._dist = DiagonalGaussian(action_dim)
+
+        self.params = None
+        self.rng = random.PRNGKey(0)
+
+    def init_params(self, rng, input_shape):
+        rng, init_rng = random.split(rng)
+        dummy_input = jnp.ones(input_shape)
+        mean_params = self._mean_network.init(init_rng, dummy_input)
+        std_params = self._std_network.init(init_rng, dummy_input)
+        # if hasattr(self, '_std_network'):
+        #     std_params = self._std_network.init(init_rng, dummy_input)
+        # else:
+        #     std_params = {'params': {'output_std_param': self._init_std_param}}
+        self.params = {'mean': mean_params, 'std': std_params}
+        self.rng = rng
+        
+    def log_likelihood_sym(self, x_var, dist_info_vars):
+        means = dist_info_vars["mean"]
+        log_stds = dist_info_vars["log_std"]
+        zs = (x_var - means) / jnp.exp(log_stds)
+        return - jnp.sum(log_stds, axis=-1) - \
+               0.5 * jnp.sum(jnp.square(zs), axis=-1) - \
+               0.5 * means.shape[-1] * jnp.log(2 * jnp.pi)
+
+    def dist_info_sym(self, obs_var):
+        mean_var = self._mean_network.apply(self.params['mean'], obs_var)
+        std_param_var = self._std_network.apply(self.params['std'], obs_var)
+        # if hasattr(self, '_std_network'):
+        #     std_param_var = self._std_network.apply(self.params['std'], obs_var)
+        # else:
+        #     std_param_var = self.params['std']['params']['output_std_param']
+        # if self.min_std_param is not None:
+        #     std_param_var = jnp.maximum(std_param_var, self.min_std_param)
+        # if self.std_parametrization == 'exp':
+        #     log_std_var = std_param_var
+        # elif self.std_parametrization == 'softplus':
+        #     log_std_var = jnp.log(jnp.log(1. + jnp.exp(std_param_var)))
+        # else:
+        #     raise NotImplementedError
+        return dict(mean=mean_var, log_std=log_std_var)
+
+    @overrides
+    def get_action(self, observation):
+        flat_obs = self.observation_space.flatten(observation)
+        dist_info = self.dist_info_sym(flat_obs)
+        mean, log_std = dist_info['mean'], dist_info['log_std']
+        rnd = np.random.normal(size=mean.shape)
+        action = rnd * np.exp(log_std) + mean
+        return action, dict(mean=mean, log_std=log_std)
+
+    def get_actions(self, observations):
+        flat_obs = self.observation_space.flatten_n(observations)
+        dist_info = self.dist_info_sym(flat_obs)
+        means, log_stds = dist_info['mean'], dist_info['log_std']
+        rnd = np.random.normal(size=means.shape)
+        actions = rnd * np.exp(log_stds) + means
+        return actions, dict(mean=means, log_std=log_stds
 
 # The brax version of this does not take in the actor and action_distribution arguments; before we pass it to brax evaluator or return it from train(), we do a partial application.
 def make_policy(actor, parametric_action_distribution, params, deterministic=False):
@@ -74,7 +192,7 @@ class TrainingState:
     critic_state: TrainState
     alpha_state: TrainState
 
-def _init_training_state(key, actor, sa_encoder, g_encoder, state_dim, goal_dim, action_dim, actor_lr, critic_lr, alpha_lr, num_local_devices_to_use):
+def _init_training_state(key, actor, sa_encoder, g_encoder, context, state_dim, goal_dim, action_dim, actor_lr, critic_lr, alpha_lr, num_local_devices_to_use):
     """
     Initializes the training state for a contrastive reinforcement learning model. This function sets up the initial states for various components including the policy
     network, CRL networks, and optimizers. All parameters are initialized and replicated across the specified
@@ -98,7 +216,7 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, state_dim, goal_dim,
         policy network parameters, CRL critic parameters, their respective optimizer states, alpha parameter,
         and normalization parameters.
     """
-    actor_key, sa_key, g_key = jax.random.split(key, 3)
+    actor_key, sa_key, g_key, context_key = jax.random.split(key, 4)
     
     # Actor and entropy coefficient
     actor_params = actor.init(actor_key, jnp.ones([1, state_dim + goal_dim]))
@@ -111,6 +229,10 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, state_dim, goal_dim,
     g_encoder_params = g_encoder.init(g_key, jnp.ones([1, goal_dim]))
     critic_params = {"sa_encoder": sa_encoder_params, "g_encoder": g_encoder_params}
     critic_state = TrainState.create(apply_fn=None, params=critic_params, tx=optax.adam(learning_rate=critic_lr))
+    
+    # Approximate Posterior q(m | tau) for inferring context
+    context_params = context.init(context_key, jnp.ones([1, state_dim + goal_dim]))
+    context_state = TrainState.create(apply_fn=context.dist_info_sym, params=context_params, tx=optax.adam(learning_rate=context_lr))
 
     # Put everything together into TrainingState
     training_state = TrainingState(env_steps=jnp.zeros(()), gradient_steps=jnp.zeros(()), 
@@ -308,6 +430,46 @@ def actor_loss(actor_params, training_state, actor, sa_encoder, g_encoder, param
     # Compute metrics
     metrics = {"entropy": entropy.mean()}
     return jnp.mean(actor_loss), metrics
+    
+def context_loss(critic_params, sa_encoder, g_encoder, actor, parametric_action_distribution, context, context_params, training_state, transitions, state_dim, goal_dim, key):
+    # Build energy model
+    expert_traj_var = jnp.reshape(self.expert_traj_var, (-1, (self.dO + self.dU) * self.T))
+    context_dist_info_vars = self.context_encoder.dist_info_sym(expert_traj_var)
+    context_mean_var = context_dist_info_vars["mean"]
+    context_log_std_var = context_dist_info_vars["log_std"]
+    eps = random.normal(random.PRNGKey(0), shape=context_mean_var.shape)
+    reparam_latent = eps * jnp.exp(context_log_std_var) + context_mean_var
+
+    reparam_latent_tile = reparam_latent_tile = jnp.tile(jnp.expand_dims(reparam_latent, axis=1), (1, self.T, 1))
+
+    sa_encoder_params = critic_params["sa_encoder"]
+    g_encoder_params = critic_params["g_encoder"]
+
+    # Compute representations
+    sa = jnp.concatenate([transitions.observation[:, :state_dim], transitions.action], axis=-1)
+    sa_repr = sa_encoder.apply(sa_encoder_params, sa)
+    g = transitions.observation[:, state_dim:]
+    g_repr = g_encoder.apply(g_encoder_params, g)
+
+    # Compute energy and loss
+    log_p_tau = compute_energy(energy_fn_name, sa_repr, g_repr)
+    log_p_tau = jnp.reshape(log_p_tau, (meta_batch_size, -1, self.T, 1))
+
+    # Compute action with policy, given state and goal
+    action_mean_and_SD = actor.apply(actor_params, sg)
+    action = parametric_action_distribution.sample_no_postprocessing(action_mean_and_SD, sample_key)
+    log_q_tau = parametric_action_distribution.log_prob(action_mean_and_SD, action)
+
+    log_pq = jax.nn.logsumexp(jnp.stack([log_p_tau, log_q_tau]), axis=0)
+    self.discrim_output = jnp.exp(log_p_tau - log_pq)
+
+    log_q_m_tau = jnp.reshape(self.context_encoder.distribution.log_likelihood_sym(reparam_latent, context_dist_info_vars), (meta_batch_size, -1, 1))
+    loss = -jnp.mean(log_q_m_tau * (1 - jnp.squeeze(self.labels, axis=-1))) / jnp.mean(1 - self.labels)
+
+    # Compute metrics
+    metrics = {"kld": loss}
+    
+    return loss, metrics
 
 def actor_step(env, env_state, actor, parametric_action_distribution, actor_params, key, extra_fields=()):
     """
