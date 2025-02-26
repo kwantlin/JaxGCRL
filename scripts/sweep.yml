@@ -42,7 +42,7 @@ command:
   - "256"
   - "--unroll_length"
   - "62"
-  - "--train_step_multiplier"
+  - "--multiplier_num_sgd_steps"
   - "1"
   - --log_wandb
   - ${args_no_boolean_flags}
