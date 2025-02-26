@@ -443,6 +443,11 @@ def train(
         )
         permutation = jax.random.permutation(experience_key, len(transitions.observation))
         transitions = jax.tree_util.tree_map(lambda x: x[permutation], transitions)
+        test = jax.tree_util.tree_map(
+            lambda x: print(x.shape),
+            transitions,
+        )
+        print(batch_size)
         transitions = jax.tree_util.tree_map(
             lambda x: jnp.reshape(x, (-1, batch_size) + x.shape[1:]),
             transitions,
