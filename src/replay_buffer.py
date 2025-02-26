@@ -166,12 +166,12 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
     @staticmethod
     @functools.partial(jax.jit, static_argnames=["config", "env"])
     def flatten_crl_fn(config, env, transition: Transition, sample_key: PRNGKey) -> Transition:
-        print("FLATTENING CRL FN")
+        # print("FLATTENING CRL FN")
         goal_key, transition_key = jax.random.split(sample_key)
 
         # Because it's vmaped transition obs.shape is of shape (transitions,obs_dim)
         seq_len = transition.observation.shape[0]
-        print("SEQ LEN", transition.observation.shape)
+        # print("SEQ LEN", transition.observation.shape)
         arrangement = jnp.arange(seq_len)
         is_future_mask = jnp.array(arrangement[:, None] < arrangement[None], dtype=jnp.float32)
         discount = config.discounting ** jnp.array(arrangement[None] - arrangement[:, None], dtype=jnp.float32)
@@ -179,12 +179,12 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
         single_trajectories = jnp.concatenate(
             [transition.extras["state_extras"]["traj_id"][:, jnp.newaxis].T] * seq_len, axis=0
         )
-        print("traj_id", transition.extras["state_extras"]["traj_id"].shape)
-        print("SINGLE TRAJECTORIES", single_trajectories.shape)
+        # print("traj_id", transition.extras["state_extras"]["traj_id"].shape)
+        # print("SINGLE TRAJECTORIES", single_trajectories.shape)
         probs = probs * jnp.equal(single_trajectories, single_trajectories.T) + jnp.eye(seq_len) * 1e-5
-        print("probs shape", probs.shape)
+        # print("probs shape", probs.shape)
         goal_index = jax.random.categorical(goal_key, jnp.log(probs))
-        print("goal index shape", goal_index.shape)
+        # print("goal index shape", goal_index.shape)
         future_state = jnp.take(transition.observation, goal_index[:-1], axis=0)
         future_action = jnp.take(transition.action, goal_index[:-1], axis=0)
         goal = future_state[:, env.goal_indices]

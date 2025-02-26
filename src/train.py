@@ -99,7 +99,7 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, state_dim, goal_dim,
         and normalization parameters.
     """
     actor_key, sa_key, g_key = jax.random.split(key, 3)
-    print(state_dim, goal_dim, action_dim)
+    # print(state_dim, goal_dim, action_dim)
     # Actor and entropy coefficient
     actor_params = actor.init(actor_key, jnp.ones([1, state_dim + goal_dim]))
     actor_state = TrainState.create(apply_fn=actor.apply, params=actor_params, tx=optax.adam(learning_rate=actor_lr))
@@ -489,12 +489,12 @@ def train(
 
     # The number of environment steps executed for every `actor_step()` call.
     env_steps_per_actor_step = action_repeat * num_envs * unroll_length
-    print(f"Calculated env_steps_per_actor_step as action_repeat ({action_repeat}) * num_envs ({num_envs}) * unroll_length ({unroll_length}) = {env_steps_per_actor_step}")
+    # print(f"Calculated env_steps_per_actor_step as action_repeat ({action_repeat}) * num_envs ({num_envs}) * unroll_length ({unroll_length}) = {env_steps_per_actor_step}")
     num_prefill_actor_steps = min_replay_size // unroll_length + 1
-    print(f"Calculated num_prefill_actor_steps as min_replay_size ({min_replay_size}) // unroll_length ({unroll_length}) + 1 = {num_prefill_actor_steps}")
+    # print(f"Calculated num_prefill_actor_steps as min_replay_size ({min_replay_size}) // unroll_length ({unroll_length}) + 1 = {num_prefill_actor_steps}")
     # print("Num_prefill_actor_steps: ", num_prefill_actor_steps)
     num_prefill_env_steps = num_prefill_actor_steps * env_steps_per_actor_step
-    print(f"Calculated num_prefill_env_steps as num_prefill_actor_steps ({num_prefill_actor_steps}) * env_steps_per_actor_step ({env_steps_per_actor_step}) = {num_prefill_env_steps}")
+    # print(f"Calculated num_prefill_env_steps as num_prefill_actor_steps ({num_prefill_actor_steps}) * env_steps_per_actor_step ({env_steps_per_actor_step}) = {num_prefill_env_steps}")
     # print("Num prefill env steps:", num_prefill_env_steps)
     assert num_timesteps - min_replay_size >= 0
     num_evals_after_init = max(num_evals - 1, 1)
@@ -516,8 +516,8 @@ def train(
 
     obs_size = env.observation_size
     action_size = env.action_size
-    print("obs_size", obs_size)
-    print("action_size", action_size)
+    # print("obs_size", obs_size)
+    # print("action_size", action_size)
     
     dummy_obs = jnp.zeros((obs_size,))
     dummy_action = jnp.zeros((action_size,))
@@ -616,7 +616,7 @@ def train(
             env_state, buffer_state = get_experience(training_state.actor_state.params, env_state, buffer_state, key)
             new_training_state = training_state.replace(env_steps=training_state.env_steps + env_steps_per_actor_step)
             return (new_training_state, env_state, buffer_state, new_key), ()
-        print("current num_prefill_actor_steps", num_prefill_actor_steps)
+        # print("current num_prefill_actor_steps", num_prefill_actor_steps)
         return jax.lax.scan(f, (training_state, env_state, buffer_state, key), (), length=num_prefill_actor_steps)[0]
     
     prefill_replay_buffer = jax.pmap(prefill_replay_buffer, axis_name=_PMAP_AXIS_NAME)
@@ -697,14 +697,14 @@ def train(
     prefill_keys = jax.random.split(prefill_key, num_local_devices_to_use)
     training_state, env_state, buffer_state, _ = prefill_replay_buffer(training_state, env_state, buffer_state, prefill_keys)
     replay_size = jnp.sum(jax.vmap(replay_buffer.size)(buffer_state)) * jax.process_count()
-    print("replay size after prefill", replay_size)
-    print("replay buffer.size", replay_buffer.size)
-    print("jax process count", jax.process_count())
+    # print("replay size after prefill", replay_size)
+    # print("replay buffer.size", replay_buffer.size)
+    # print("jax process count", jax.process_count())
     assert replay_size >= min_replay_size
     training_walltime = time.time() - t
     # Print the contents of the replay buffer after it has been initially filled
     buffer_contents = jax.tree_util.tree_map(lambda x: x.block_until_ready().shape, buffer_state)
-    print("Replay buffer contents after initial fill:", buffer_state.data.shape, buffer_state.insert_position, buffer_state.sample_position)
+    # print("Replay buffer contents after initial fill:", buffer_state.data.shape, buffer_state.insert_position, buffer_state.sample_position)
     # print(buffer_contents)
 
     ## Eval init
