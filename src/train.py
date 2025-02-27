@@ -56,11 +56,14 @@ class Net(nn.Module):
 # The brax version of this does not take in the actor and action_distribution arguments; before we pass it to brax evaluator or return it from train(), we do a partial application.
 def make_policy(actor, parametric_action_distribution, params, deterministic=False):
     def policy(obs, key_sample):
+        print("obs shape", obs.shape)
         logits = actor.apply(params, obs)
+        print("LOGITS", logits.shape)
         if deterministic:
             action = parametric_action_distribution.mode(logits)
         else:
             action = parametric_action_distribution.sample(logits, key_sample)
+            print("ACTION SHAPE", action.shape)
         extras = {}
         return action, extras
     return policy
@@ -341,6 +344,8 @@ def actor_step(env, env_state, actor, parametric_action_distribution, actor_para
     action_mean_and_SD = actor.apply(actor_params, env_state.obs)
     action = parametric_action_distribution.sample(action_mean_and_SD, key)
     nstate = env.step(env_state, action)
+    print(f"state.pipeline_state shape: {jax.tree_map(lambda x: x.shape, env_state.pipeline_state)}")
+    print(f"action shape: {jax.tree_map(lambda x: x.shape, action)}")
     state_extras = {x: nstate.info[x] for x in extra_fields}
     return nstate, Transition(
         observation=env_state.obs,
@@ -688,6 +693,7 @@ def train(
     local_key, rb_key, env_key, eval_key = jax.random.split(local_key, 4)
     env_keys = jax.random.split(env_key, num_envs // jax.process_count())
     env_keys = jnp.reshape(env_keys, (num_local_devices_to_use, -1) + env_keys.shape[1:])
+    print("env keys", env_keys.shape)
     env_state = jax.pmap(env.reset)(env_keys)
 
     ## Replay buffer init and prefill
