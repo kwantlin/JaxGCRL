@@ -136,6 +136,7 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
 
         # Sampling envs idxs
         envs_idxs = jax.random.choice(sample_key, jnp.arange(self.num_envs), shape=(shape,), replace=False)
+        print("ENVS IDXS", envs_idxs.shape)
 
         @functools.partial(jax.jit, static_argnames=("rows", "cols"))
         def create_matrix(rows, cols, min_val, max_val, rng_key):
@@ -171,7 +172,7 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
 
         # Because it's vmaped transition obs.shape is of shape (transitions,obs_dim)
         seq_len = transition.observation.shape[0]
-        # print("SEQ LEN", transition.observation.shape)
+        print("SEQ LEN", transition.observation.shape)
         arrangement = jnp.arange(seq_len)
         is_future_mask = jnp.array(arrangement[:, None] < arrangement[None], dtype=jnp.float32)
         discount = config.discounting ** jnp.array(arrangement[None] - arrangement[:, None], dtype=jnp.float32)
@@ -179,18 +180,22 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
         single_trajectories = jnp.concatenate(
             [transition.extras["state_extras"]["traj_id"][:, jnp.newaxis].T] * seq_len, axis=0
         )
-        # print("traj_id", transition.extras["state_extras"]["traj_id"].shape)
-        # print("SINGLE TRAJECTORIES", single_trajectories.shape)
+        print("traj_id", transition.extras["state_extras"]["traj_id"].shape)
+        print("SINGLE TRAJECTORIES", single_trajectories.shape)
         probs = probs * jnp.equal(single_trajectories, single_trajectories.T) + jnp.eye(seq_len) * 1e-5
-        # print("probs shape", probs.shape)
+        print("probs shape", probs.shape)
         goal_index = jax.random.categorical(goal_key, jnp.log(probs))
-        # print("goal index shape", goal_index.shape)
+        print("goal index", goal_index)
+        print("goal index shape", goal_index.shape)
         future_state = jnp.take(transition.observation, goal_index[:-1], axis=0)
         future_action = jnp.take(transition.action, goal_index[:-1], axis=0)
+        # goal portion of the future state
         goal = future_state[:, env.goal_indices]
         future_state = future_state[:, :env.state_dim]
+        # current state
         state = transition.observation[:-1, :env.state_dim]
         new_obs = jnp.concatenate([state, goal], axis=1)
+        target = transition.observation[:-1, env.state_dim:]
 
         extras = {
             "policy_extras": {},
@@ -201,6 +206,7 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
             "state": state,
             "future_state": future_state,
             "future_action": future_action,
+            "target": target,
         }
 
         return transition._replace(

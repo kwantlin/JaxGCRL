@@ -101,6 +101,9 @@ def main(args):
         "training/g_repr_std",
         "training/l_align",
         "training/l_unif",
+        "training/context_info_loss",
+        "training/context_mean_norm",
+        "training/context_std_mean",
     ]
 
     metrics_recorder = MetricsRecorder(args.num_timesteps, metrics_to_collect, run_dir, args.exp_name)
