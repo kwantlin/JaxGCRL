@@ -8,7 +8,7 @@
 eval "$(conda shell.bash hook)"
 conda activate jaxgcrl
 
-env=ant
+env=reacher
 
 for seed in 1 ; do
   XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training.py \
