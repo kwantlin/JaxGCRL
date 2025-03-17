@@ -311,11 +311,15 @@ def actor_loss(actor_params, training_state, actor, sa_encoder, g_encoder, param
     # Compute energy and loss
     q = compute_actor_energy(energy_fn_name, sa_repr, g_repr)
     actor_loss = -jnp.mean(q)
-
+    print("actor_loss", actor_loss.shape)
+    
+    
     # Modify loss (actor entropy)
     if not config.disable_entropy_actor:
         actor_loss += alpha * log_prob
 
+    print("actor_loss", actor_loss.shape)
+    
     # Compute metrics
     metrics = {"entropy": entropy.mean()}
     return jnp.mean(actor_loss), metrics
