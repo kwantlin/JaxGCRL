@@ -190,20 +190,20 @@ def collect_trajectory_with_target(rng, target, true_goal):
         dist_to_goal = jnp.linalg.norm(current_pos - true_goal)
         reward = jnp.where(dist_to_goal < env.goal_reach_thresh, 1.0, 0.0)
         
-        return (next_state, next_rng), (state, act, reward)
+        return (next_state, next_rng), reward
     
     init_state = jit_env_reset_with_target(rng=rng, target=target)
-    (final_state, _), (states, actions, rewards) = jax.lax.scan(
+    (final_state, _), rewards = jax.lax.scan(
         step_fn, 
         (init_state, rng), 
         None, 
         length=1024
     )
-    return states.obs, actions, rewards
+    return rewards
 
 # Collect trajectories using last states as targets
 last_state_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS)
-last_state_obs, last_state_acts, last_state_rews = jax.vmap(collect_trajectory_with_target)(
+last_state_rews = jax.vmap(collect_trajectory_with_target)(
     last_state_rngs,
     last_states,
     goals
@@ -224,15 +224,15 @@ inferred_goal_rngs = inferred_goal_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
 # For each env, collect trajectories for all inferred goals
 inferred_goal_results = []
 for env_idx in range(NUM_ENVS):
-    env_obs, env_acts, env_rews = jax.vmap(collect_trajectory_with_target, in_axes=(0, 0, None))(
+    env_rews = jax.vmap(collect_trajectory_with_target, in_axes=(0, 0, None))(
         inferred_goal_rngs[env_idx], 
         inferred_goals[env_idx],
         goals[env_idx]
     )
-    inferred_goal_results.append((env_obs, env_acts, env_rews))
+    inferred_goal_results.append((env_rews))
 
 # Stack results back into arrays with same shape as before
-inferred_goal_obs, inferred_goal_acts, inferred_goal_rews = jax.tree_map(
+inferred_goal_rews = jax.tree_map(
     lambda *x: jnp.stack(x), 
     *inferred_goal_results
 )
