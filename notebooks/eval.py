@@ -112,12 +112,11 @@ g_encoder = lambda obs: g_net.apply(g_encoder_params, obs)
 context_encoder = lambda traj: context_net.apply(context_params, traj)
 
 
-NUM_EPISODES = 1
+NUM_ENVS = 200
 
 jit_env_reset = jax.jit(env.reset)
 jit_env_step = jax.jit(env.step)
 jit_inference_fn = jax.jit(inference_fn)
-
 
 
 def collect_trajectory(rng):
@@ -137,11 +136,127 @@ def collect_trajectory(rng):
     )
     return states.obs, actions, rewards
 
-episode_rngs = jax.random.split(jax.random.PRNGKey(0), NUM_EPISODES)
+episode_rngs = jax.random.split(jax.random.PRNGKey(0), NUM_ENVS)
 observations, actions, rewards = jax.vmap(collect_trajectory)(episode_rngs)
-goals = observations[:, 0, env.goal_indices]
-print(goals.shape)
+states = observations[:, :, :env.state_dim]
+goals = observations[:, 0, env.state_dim:]
+print(states.shape, actions.shape, goals.shape)
+last_states = observations[:, -1, env.goal_indices]
+print(last_states.shape)
 # Calculate total reward per rollout
 total_rewards = jnp.sum(rewards, axis=1)  # Sum rewards along trajectory dimension
-print("Total rewards per rollout:", total_rewards)
+# print("Total rewards per rollout:", total_rewards)
+
+sa_pairs = jnp.reshape(jnp.concatenate((states, actions), axis=-1), (NUM_ENVS, -1))
+print(sa_pairs.shape)
+
+context_output = context_encoder(sa_pairs)
+context_mean, context_log_std = jnp.split(context_output, 2, axis=-1)
+# print(context_mean, context_log_std)
+
+# Sample 10 times from each episode's context distribution
+NUM_SAMPLES = 200
+sample_rng = jax.random.PRNGKey(0)
+sample_rngs = jax.random.split(sample_rng, NUM_ENVS)
+
+def sample_from_gaussian(rng, mean, log_std):
+    noise = jax.random.normal(rng, shape=(NUM_SAMPLES, mean.shape[0]))
+    std = jnp.exp(log_std)
+    samples = mean + noise * std
+    return samples
+
+# Generate samples for each episode
+inferred_goals = jax.vmap(sample_from_gaussian)(
+    sample_rngs,
+    context_mean,
+    context_log_std
+)
+
+# print("Context samples shape:", inferred_goals.shape)  # (NUM_ENVS, num_samples, context_dim)
+# print("goals", goals)
+# print("context_samples", context_samples)
+
+jit_env_reset_with_target = jax.jit(env.reset_with_target)
+
+def collect_trajectory_with_target(rng, target, true_goal):
+    def step_fn(carry, _):
+        state, rng = carry
+        act_rng, next_rng = jax.random.split(rng)
+        act, _ = jit_inference_fn(state.obs, act_rng)
+        next_state = jit_env_step(state, act)
+        
+        # Compute distance-based reward
+        current_pos = next_state.obs[env.goal_indices]
+        dist_to_goal = jnp.linalg.norm(current_pos - true_goal)
+        reward = jnp.where(dist_to_goal < env.goal_reach_thresh, 1.0, 0.0)
+        
+        return (next_state, next_rng), (state, act, reward)
+    
+    init_state = jit_env_reset_with_target(rng=rng, target=target)
+    (final_state, _), (states, actions, rewards) = jax.lax.scan(
+        step_fn, 
+        (init_state, rng), 
+        None, 
+        length=1024
+    )
+    return states.obs, actions, rewards
+
+# Collect trajectories using last states as targets
+last_state_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS)
+last_state_obs, last_state_acts, last_state_rews = jax.vmap(collect_trajectory_with_target)(
+    last_state_rngs,
+    last_states,
+    goals
+)
+
+# Compute euclidean distances between goals and last states
+goal_distances = jnp.linalg.norm(last_states - goals, axis=1)
+# print("Goal distances with last states as goal:", goal_distances)
+
+total_rewards_last_state = jnp.sum(last_state_rews, axis=1)  # Sum rewards along trajectory dimension
+# print("Total rewards per rollout with last states as goal:", total_rewards_last_state)
+
+# Collect trajectories using inferred goals as targets
+# Split RNG for each env and each sample
+inferred_goal_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS * NUM_SAMPLES)
+inferred_goal_rngs = inferred_goal_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
+
+# For each env, collect trajectories for all inferred goals
+inferred_goal_results = []
+for env_idx in range(NUM_ENVS):
+    env_obs, env_acts, env_rews = jax.vmap(collect_trajectory_with_target, in_axes=(0, 0, None))(
+        inferred_goal_rngs[env_idx], 
+        inferred_goals[env_idx],
+        goals[env_idx]
+    )
+    inferred_goal_results.append((env_obs, env_acts, env_rews))
+
+# Stack results back into arrays with same shape as before
+inferred_goal_obs, inferred_goal_acts, inferred_goal_rews = jax.tree_map(
+    lambda *x: jnp.stack(x), 
+    *inferred_goal_results
+)
+
+print("inferred_goal_rews shape:", inferred_goal_rews.shape)
+total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(inferred_goal_rews, axis=2), axis=1)
+# print("(Mean) Total rewards per rollout with inferred goals:", total_rewards_inferred_goal_mean)
+total_rewards_inferred_goal_std = jnp.std(jnp.sum(inferred_goal_rews, axis=2), axis=1)
+# print("(Std) Total rewards per rollout with inferred goals:", total_rewards_inferred_goal_std)
+# Compute euclidean distances between goals and last states
+goal_distances = jnp.linalg.norm(inferred_goals - goals[:, None], axis=-1)
+# print("Goal distances with inferred goals:", goal_distances)
+
+# Compute differences and their statistics for total rewards vs last state rewards
+reward_diff_last_state = total_rewards_last_state - total_rewards
+reward_diff_last_state_mean = jnp.mean(reward_diff_last_state)
+reward_diff_last_state_std = jnp.std(reward_diff_last_state)
+print("Mean difference between total rewards and last state rewards:", reward_diff_last_state_mean)
+print("Std of difference between total rewards and last state rewards:", reward_diff_last_state_std)
+
+# Compute differences and their statistics for total rewards vs inferred goal rewards
+reward_diff_inferred = total_rewards_inferred_goal_mean - total_rewards
+reward_diff_inferred_mean = jnp.mean(reward_diff_inferred)
+reward_diff_inferred_std = jnp.std(reward_diff_inferred)
+print("Mean difference between total rewards and inferred goal rewards:", reward_diff_inferred_mean)
+print("Std of difference between total rewards and inferred goal rewards:", reward_diff_inferred_std)
 
