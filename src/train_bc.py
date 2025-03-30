@@ -75,8 +75,9 @@ class TrainingState:
     env_steps: jnp.ndarray
     actor_state: TrainState
     alpha_state: TrainState
+    context_state: TrainState
 
-def _init_training_state(key, actor, state_dim, goal_dim, actor_lr, alpha_lr, num_local_devices_to_use):
+def _init_training_state(key, actor, context_encoder, state_dim, goal_dim, action_dim, episode_length, actor_lr, alpha_lr, num_local_devices_to_use):
     """
     Initializes the training state for a contrastive reinforcement learning model. This function sets up the initial states for various components including the policy
     network, CRL networks, and optimizers. All parameters are initialized and replicated across the specified
@@ -100,7 +101,7 @@ def _init_training_state(key, actor, state_dim, goal_dim, actor_lr, alpha_lr, nu
         policy network parameters, CRL critic parameters, their respective optimizer states, alpha parameter,
         and normalization parameters.
     """
-    actor_key = jax.random.split(key, 1)[0]
+    actor_key, context_key = jax.random.split(key, 2)
     # print(state_dim, goal_dim, action_dim)
     # Actor and entropy coefficient
     actor_params = actor.init(actor_key, jnp.ones([1, state_dim + goal_dim]))
@@ -108,9 +109,11 @@ def _init_training_state(key, actor, state_dim, goal_dim, actor_lr, alpha_lr, nu
     log_alpha = {"log_alpha": jnp.array(0.0)}
     alpha_state = TrainState.create(apply_fn=None, params=log_alpha, tx=optax.adam(learning_rate=alpha_lr))
 
-    
+    context_encoder_params = context_encoder.init(context_key, jnp.ones([1, (episode_length - 1) * (state_dim + action_dim)]))
+    context_state = TrainState.create(apply_fn=None, params=context_encoder_params, tx=optax.adam(learning_rate=actor_lr))
     training_state = TrainingState(env_steps=jnp.zeros(()), gradient_steps=jnp.zeros(()), 
-                                   actor_state=actor_state, alpha_state=alpha_state)
+                                   actor_state=actor_state,  alpha_state=alpha_state,
+                                   context_state=context_state)
     training_state = jax.device_put_replicated(training_state, jax.local_devices()[:num_local_devices_to_use])
     return training_state
 
@@ -227,6 +230,75 @@ def alpha_loss(alpha_params, actor, parametric_action_distribution, training_sta
     return jnp.mean(alpha_loss)
 
     
+def context_loss(
+    context_encoder_params, context_encoder, transitions, state_dim, goal_indices, 
+    latent_dim=5, beta=0.01, key=None
+):
+    """
+    Computes mutual information loss to ensure the context encoder captures meaningful task information.
+    
+    Args:
+        context_encoder_params: Parameters for the context encoder
+        context_encoder: Context encoder network (similar structure to sa_encoder/g_encoder)
+        transitions: Transitions from the replay buffer
+        state_dim: Dimension of the state space
+        goal_indices: Indices that define the goal
+        latent_dim: Dimension of the latent space
+        beta: Coefficient for the information loss
+        key: JAX random key
+    
+    Returns:
+        loss: The mutual information loss
+        metrics: Dictionary of metrics related to the context encoding
+    """
+    # Split the random key
+    key, encoder_key, sampling_key = jax.random.split(key, 3)
+    
+    # Extract states, actions, and goals from transitions
+    states = transitions.observation[:, :, :state_dim]
+    goals = transitions.observation[:, :, state_dim:]
+    actions = transitions.action
+    
+    # Get the targets from the extras
+    targets = transitions.extras["target"][:, -1, :]
+    
+    # Concatenate state-action to form trajectory representation
+    trajectories = jnp.reshape(jnp.concatenate([states, actions], axis=-1), (-1, states.shape[-2] * (states.shape[-1] + actions.shape[-1])))
+    
+    # Context encoder outputs a vector of size 2*latent_dim (first half is mean, second half is log_std)
+    context_output = context_encoder.apply(context_encoder_params, trajectories)
+    print("context output shape", context_output.shape)
+    
+    # Split the output into mean and log_std
+    context_mean, context_log_std = jnp.split(context_output, 2, axis=-1)
+    
+    # Compute standard deviation from log_std, adding small epsilon for numerical stability
+    epsilon = 1e-8
+    std = jnp.exp(context_log_std) + epsilon
+    
+    # Compute log likelihood of targets under Gaussian distribution with predicted mean and std
+    # Log likelihood = -0.5 * (log(2π) + log(σ²) + (x-μ)²/σ²)
+    log_2pi = jnp.log(2 * jnp.pi)
+    log_var = 2 * context_log_std  # log(σ²) = 2*log(σ)
+    squared_mahalanobis = jnp.square(targets - context_mean) / jnp.square(std)
+    
+    log_likelihood = -0.5 * jnp.sum(
+        log_2pi + log_var + squared_mahalanobis,
+        axis=-1
+    )  # Sum over dimensions, shape: [batch_size]
+    
+    # Maximize likelihood by minimizing negative log likelihood
+    info_loss = -jnp.mean(log_likelihood)  # Average over batch
+    
+    # Collect metrics for monitoring
+    metrics = {
+        "context_info_loss": info_loss,
+        "context_mean_norm": jnp.mean(jnp.sqrt(jnp.sum(jnp.square(context_mean), axis=-1))),
+        "context_std_mean": jnp.mean(std),
+    }
+    
+    return info_loss, metrics
+
 def actor_loss(actor_params, training_state, actor, parametric_action_distribution, alpha, transitions, config, state_dim, goal_indices, energy_fn_name, key):
     sample_key, entropy_key, goal_key = jax.random.split(key, 3)
 
@@ -249,7 +321,7 @@ def actor_loss(actor_params, training_state, actor, parametric_action_distributi
         print("Using NLL loss")
         # Calculate log probability of true action under current policy
         q = parametric_action_distribution.log_prob(action_mean_and_SD, true_action)
-    else:
+    else: # "l2"
         print("Using L2 loss for continuous action spaces")
         print(action.shape, true_action.shape)
         q = -jnp.sum((action - true_action) ** 2, axis=-1)
@@ -505,18 +577,20 @@ def train(
     num_blocks = max(1, n_hidden // block_size)
     actor = Net(action_size * 2, h_dim, num_blocks, block_size, use_ln)
     expert = Net(action_size * 2, h_dim, num_blocks, block_size, use_ln)
+    context_encoder = Net(goal_size * 2, h_dim, num_blocks, block_size, use_ln)
     parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size) # Would like to replace this but it's annoying to.
 
     # Initialize training state (not sure if it makes sense to split and fold local_key here)
     global_key, local_key = jax.random.split(rng)
     local_key = jax.random.fold_in(local_key, process_id)    
-    training_state = _init_training_state(global_key, actor, env.state_dim, len(env.goal_indices), policy_lr, alpha_lr, num_local_devices_to_use)
+    training_state = _init_training_state(global_key, actor, context_encoder, env.state_dim, len(env.goal_indices), env.action_size, episode_length, policy_lr, alpha_lr, num_local_devices_to_use)
     del global_key
     
     # Update functions (may replace later: brax makes it opaque)
     alpha_update = gradients.gradient_update_fn(alpha_loss, training_state.alpha_state.tx, pmap_axis_name=_PMAP_AXIS_NAME)
     actor_update = gradients.gradient_update_fn(actor_loss, training_state.actor_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    
+    context_update = gradients.gradient_update_fn(context_loss, training_state.context_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+
     
     def update_step(carry, transitions):
         training_state, key = carry
@@ -543,6 +617,39 @@ def train(
             gradient_steps=training_state.gradient_steps + 1,
             actor_state=training_state.actor_state.replace(params=actor_params, opt_state=actor_optimizer_state),
             alpha_state=training_state.alpha_state.replace(params=alpha_params, opt_state=alpha_optimizer_state),
+            context_state=training_state.context_state,
+        )
+        return (new_training_state, key), metrics
+    
+        return (new_training_state, key), metrics
+    
+    def update_step_context(carry, trajectories):
+        training_state, key = carry
+        key, key_context = jax.random.split(key, 2)
+        # print("trajectories shape in update context", trajectories.observation.shape)
+        (context_loss_val, context_metrics), context_params, context_optimizer_state = context_update(
+            training_state.context_state.params, 
+            context_encoder, 
+            trajectories, 
+            env.state_dim, 
+            env.goal_indices,
+            repr_dim,  # Use same dimension as other representations
+            0.01,  # Hyperparameter for KL regularization
+            key_context, 
+            optimizer_state=training_state.context_state.opt_state
+        )
+
+        metrics = {
+            "context_loss": context_loss_val,
+        }
+        metrics.update(context_metrics)
+
+        new_training_state = TrainingState(
+            env_steps=training_state.env_steps,
+            gradient_steps=training_state.gradient_steps,
+            actor_state=training_state.actor_state,
+            alpha_state=training_state.alpha_state,
+            context_state=training_state.context_state.replace(params=context_params, opt_state=context_optimizer_state),
         )
         return (new_training_state, key), metrics
     
@@ -606,7 +713,9 @@ def train(
         # print("TRANSITIONS SHAPE AFTER SHUFFLING", transitions.observation.shape)
         
         ## Train
-        (training_state, _), metrics = jax.lax.scan(update_step, (training_state, training_key), transitions)
+        (training_state, _), metrics1 = jax.lax.scan(update_step, (training_state, training_key), transitions)
+        (training_state, _), metrics2 = jax.lax.scan(update_step_context, (training_state, training_key), trajectories)
+        metrics = {**metrics1, **metrics2}
         return training_state, buffer_state, metrics
 
     # def scan_train_steps(n, ts, bs, update_key):
@@ -708,7 +817,7 @@ def train(
         if process_id == 0:
             ## Save policy, critic, and context params
             if checkpoint_logdir:
-                params = _unpmap((training_state.actor_state.params))
+                params = _unpmap((training_state.actor_state.params, training_state.context_state.params))
                 path = f"{checkpoint_logdir}/step_{current_step}.pkl"
                 brax.io.model.save_params(path, params)
 
@@ -728,5 +837,5 @@ def train(
     pmap.assert_is_replicated(training_state)
     pmap.synchronize_hosts()
     
-    params = _unpmap((training_state.actor_state.params))
+    params = _unpmap((training_state.actor_state.params, training_state.context_state.params))
     return (make_policy, params, metrics)
