@@ -181,6 +181,14 @@ def compute_loss(contrastive_loss_fn, logits, resubs):
         loss = -jnp.mean(jax.nn.log_sigmoid(diffs))
         l_align = 0
         l_unif = 0
+    elif contrastive_loss_fn == "fb":
+        # This is a Monte Carlo version of the loss from "Does Zero-Shot Reinforcement Learning Exist?"
+        # https://arxiv.org/abs/2209.14935
+        batch_size = logits.shape[0]
+        I = jnp.eye(batch_size)
+        l_align = -jnp.diag(logits)  # shape = (batch_size,)
+        l_unif = 0.5 * jnp.sum(logits**2 * (1 - I) / (batch_size - 1), axis=-1)  # shape = (batch_size,)
+        loss = (l_align + l_unif).mean()  # shape = ()
     else:
         raise ValueError(f"Unknown contrastive loss function: {contrastive_loss_fn}")
     return loss, l_align, l_unif

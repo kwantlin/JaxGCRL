@@ -16,7 +16,7 @@ for seed in 1 ; do
     --seed ${seed} --num_timesteps 10000000 --batch_size 256 --num_envs 512 \
     --discounting 0.99 --action_repeat 1 --env_name ${env} \
     --episode_length 1025 --unroll_length 62  --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 \
-    --contrastive_loss_fn infonce_backward --energy_fn l2 \
+    --contrastive_loss_fn fb --energy_fn l2 \
     --train_step_multiplier 1 --log_wandb
   done
 
