@@ -356,6 +356,7 @@ def context_loss(
     # Split the random key
     key, encoder_key, sampling_key = jax.random.split(key, 3)
     
+    print("transitions", transitions.observation.shape, transitions.reward.shape, transitions.extras["target"].shape)
     # Extract states, actions, and goals from transitions
     states = transitions.observation[:, :, :state_dim]
     goals = transitions.observation[:, :, state_dim:]
@@ -367,6 +368,7 @@ def context_loss(
     # Concatenate state-action to form trajectory representation
     trajectories = jnp.reshape(jnp.concatenate([states, actions], axis=-1), (-1, states.shape[-2] * (states.shape[-1] + actions.shape[-1])))
     
+    print("trajectories", trajectories.shape)
     # Context encoder outputs a vector of size 2*latent_dim (first half is mean, second half is log_std)
     context_output = context_encoder.apply(context_encoder_params, trajectories)
     print("context output shape", context_output.shape)
