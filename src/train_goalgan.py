@@ -125,6 +125,8 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, gen
     context_state = TrainState.create(apply_fn=None, params=context_encoder_params, tx=optax.adam(learning_rate=critic_lr))
     
     generator_params = generator.init(generator_key, jnp.ones([1, noise_dim]))
+    # Print the shape of generator_params
+    print("Generator params shape:", jax.tree_map(lambda x: x.shape, generator_params))
     generator_state = TrainState.create(apply_fn=generator.apply, params=generator_params, tx=optax.adam(learning_rate=critic_lr))
     
     discriminator_params = discriminator.init(discriminator_key, jnp.ones([1, goal_dim]))
@@ -410,7 +412,7 @@ def context_loss(
     
     return info_loss, metrics
 
-def generator_loss_lsgan(disc_params, discriminator, transitions, noise_dim, key):
+def generator_loss_lsgan(gen_params, disc_params, transitions, generator, discriminator, noise_dim, key):
     """
     Generator loss for LSGAN with parameter c
     This implements 0.5 * E[(D(G(z)) - c)^2]
@@ -431,10 +433,12 @@ def generator_loss_lsgan(disc_params, discriminator, transitions, noise_dim, key
     """
     c = 0
     # Extract goals from transitions
-    goals = transitions.extras["target"][:, -1, :]  # Assuming goals are the last part of observation
+    noise = transitions.extras["state_extras"]["noise"][:, -1, :]  # Assuming goals are the last part of observation
+    print("noise shape provided to generator", noise.shape)
+    goals = generator.apply(gen_params, noise)
     print("goals shape", goals.shape)
     # Discriminator's prediction on fake/generated goals
-    disc_fake = discriminator.apply(disc_params, goals)
+    disc_fake = jax.lax.stop_gradient(discriminator.apply(disc_params, goals))
     print("disc_fake shape", disc_fake.shape)
     # LSGAN generator loss: 0.5 * E[(D(G(z)) - c)^2] 
     # This encourages the generator to create goals that the discriminator classifies as c
@@ -446,7 +450,7 @@ def generator_loss_lsgan(disc_params, discriminator, transitions, noise_dim, key
     
     return gen_loss, metrics
 
-def discriminator_loss_lsgan(disc_params, gen_params, transitions, generator, discriminator, noise_dim, key):
+def discriminator_loss_lsgan(disc_params, transitions, discriminator, noise_dim, key):
     """
     Discriminator loss for LSGAN with the formula:
     min_D V(D) = E_{g~p_data(g)}[y_g(D(g)-b)^2 + (1-y_g)(D(g)-a)^2] + E_{z~p_z(z)}[(D(G(z))-a)^2]
@@ -479,8 +483,8 @@ def discriminator_loss_lsgan(disc_params, gen_params, transitions, generator, di
     # Assign labels based on cumulative rewards
     lower_bound = 0.1 * transitions.reward.shape[1]
     upper_bound = 0.9 * transitions.reward.shape[1]
-    goal_labels = jnp.where(
-        cumulative_rewards > lower_bound,
+    goal_labels = jnp.logical_and(
+        cumulative_rewards > lower_bound, 
         cumulative_rewards < upper_bound
     ).astype(jnp.float32)
     print("goal_labels shape", goal_labels.shape)
@@ -506,6 +510,7 @@ def discriminator_loss_lsgan(disc_params, gen_params, transitions, generator, di
     
     # Total discriminator loss
     disc_loss = loss_real + loss_fake
+    print("disc_loss shape", disc_loss.shape)
     
     metrics = {
         "disc_loss": disc_loss,
@@ -627,6 +632,8 @@ class TargetEnvWrapper(envs.Wrapper):
                 if 'extras' not in state.info:
                     state.info['extras'] = {}
                 state.info['target'] = targets
+                state.info["traj_id"] = jnp.zeros(rng.shape[:-1])
+                state.info["noise"] = noise
                 
                 return state
             else:
@@ -644,23 +651,24 @@ class TargetEnvWrapper(envs.Wrapper):
                 if 'extras' not in state.info:
                     state.info['extras'] = {}
                 state.info['target'] = target
-                
+                state.info["traj_id"] = jnp.zeros(rng.shape[:-1])
+                state.info["noise"] = noise
                 return state
         else:
             # If no generator is provided, use regular reset
+            print("No generator provided, using regular reset!!!!!!!!!!!!!!!!!")
             return self.env.reset(rng)
     
-    def step(self, state, action):
-        """Step the environment forward.
-        
-        Args:
-            state: Current state.
-            action: Action to take.
-            
-        Returns:
-            State: Next state.
-        """
-        return self.env.step(state, action)
+    def step(self, state: State, action: jax.Array) -> State:
+        if "steps" in state.info.keys():
+            traj_id = state.info["traj_id"] + jnp.where(state.info["steps"], 0, 1)
+        else:
+            traj_id = state.info["traj_id"]
+        noise = state.info["noise"]
+        state = self.env.step(state, action)
+        state.info["traj_id"] = traj_id
+        state.info["noise"] = noise
+        return state
 
 def train(
     environment: envs.Env,
@@ -834,6 +842,7 @@ def train(
     goal_size = obs_size - state_dim
     print("REPR_DIM", repr_dim)
     print("GOAL SIZE FOR GENERATOR", goal_size)
+    print("NOISE DIM", noise_dim)
     # Create network functions
     block_size = 2  # Maybe make this a hyperparameter
     num_blocks = max(1, n_hidden // block_size)
@@ -858,7 +867,7 @@ def train(
     
     # Apply wrappers to the environment
     # Important: TrajectoryIdWrapper must be applied first
-    env = TrajectoryIdWrapper(env)  
+    # env = TrajectoryIdWrapper(env)  
     
     # Optionally wrap with TargetEnvWrapper to use generator targets
     if use_generator_for_targets:
@@ -884,7 +893,8 @@ def train(
     
     dummy_obs = jnp.zeros((obs_size,))
     dummy_action = jnp.zeros((action_size,))
-    dummy_extras = {"state_extras": {"truncation": 0.0, "traj_id": 0.0}, "policy_extras": {}}
+    dummy_noise = jnp.zeros((noise_dim,))
+    dummy_extras = {"state_extras": {"truncation": 0.0, "traj_id": 0.0, "noise": dummy_noise}, "policy_extras": {}}
     dummy_transition = Transition(observation=dummy_obs, action=dummy_action, reward=0.0, discount=0.0, extras=dummy_extras)
     
     replay_buffer = TrajectoryUniformSamplingQueue(
@@ -961,10 +971,8 @@ def train(
         # Discriminator update
         (discriminator_loss, discriminator_metrics), discriminator_params, discriminator_optimizer_state = discriminator_update(
             training_state.discriminator_state.params, 
-            training_state.generator_state.params,
-            trajectories, 
-            generator, 
-            discriminator, 
+            trajectories,  
+            discriminator,
             noise_dim,
             key_disc,
             optimizer_state=training_state.discriminator_state.opt_state
@@ -972,9 +980,11 @@ def train(
         
         # Generator update
         (generator_loss, generator_metrics), generator_params, generator_optimizer_state = generator_update(
+            training_state.generator_state.params,
             training_state.discriminator_state.params, 
-            discriminator, 
-            trajectories,
+            trajectories,  
+            generator,
+            discriminator,
             noise_dim,
             key_gen,
             optimizer_state=training_state.generator_state.opt_state
@@ -1006,7 +1016,7 @@ def train(
         def f(carry, unused_t):
             env_state, current_key = carry
             current_key, next_key = jax.random.split(current_key)
-            env_state, transition = actor_step(env, env_state, actor, parametric_action_distribution, actor_params, current_key, extra_fields=("truncation", "traj_id"))
+            env_state, transition = actor_step(env, env_state, actor, parametric_action_distribution, actor_params, current_key, extra_fields=("truncation", "traj_id", "noise"))
             return (env_state, next_key), transition
 
         (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=unroll_length)

@@ -86,7 +86,7 @@ def create_parser():
     # GoalGAN parameters
     parser.add_argument('--generator_lr', type=float, default=3e-4, help="Learning rate for generator network")
     parser.add_argument('--discriminator_lr', type=float, default=3e-4, help="Learning rate for discriminator network")
-    parser.add_argument('--noise_dim', type=int, default=8, help="Dimension of the noise input for the generator")
+    parser.add_argument('--noise_dim', type=int, default=4, help="Dimension of the noise input for the generator")
     parser.add_argument('--use_generator_for_targets', default=False, action="store_true", help="Whether to use the generator for targets during training")
     return parser
 
