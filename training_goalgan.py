@@ -107,7 +107,12 @@ def main(args):
         "training/context_info_loss",
         "training/context_mean_norm",
         "training/context_std_mean",
+        "training/target_mean_x",
+        "training/target_std_x",
+        "training/target_mean_y",
+        "training/target_std_y",
         "training/gen_loss",
+        "training/disc_prob",
         "training/disc_loss",
     ]
 
