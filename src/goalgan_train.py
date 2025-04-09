@@ -77,10 +77,8 @@ class TrainingState:
     critic_state: TrainState
     alpha_state: TrainState
     context_state: TrainState
-    generator_state: TrainState
-    discriminator_state: TrainState
 
-def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, generator, discriminator, state_dim, goal_dim, action_dim, noise_dim, episode_length, actor_lr, critic_lr, alpha_lr, generator_lr, discriminator_lr, num_local_devices_to_use):
+def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, state_dim, goal_dim, action_dim, episode_length, actor_lr, critic_lr, alpha_lr, num_local_devices_to_use):
     """
     Initializes the training state for a contrastive reinforcement learning model. This function sets up the initial states for various components including the policy
     network, CRL networks, and optimizers. All parameters are initialized and replicated across the specified
@@ -104,7 +102,7 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, gen
         policy network parameters, CRL critic parameters, their respective optimizer states, alpha parameter,
         and normalization parameters.
     """
-    actor_key, sa_key, g_key, context_key, generator_key, discriminator_key = jax.random.split(key, 6)
+    actor_key, sa_key, g_key, context_key = jax.random.split(key, 4)
     # print(state_dim, goal_dim, action_dim)
     # Actor and entropy coefficient
     actor_params = actor.init(actor_key, jnp.ones([1, state_dim + goal_dim]))
@@ -123,18 +121,9 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, gen
     # Put everything together into TrainingState
     context_encoder_params = context_encoder.init(context_key, jnp.ones([1, (episode_length - 1) * (state_dim + action_dim)]))
     context_state = TrainState.create(apply_fn=None, params=context_encoder_params, tx=optax.adam(learning_rate=critic_lr))
-    
-    generator_params = generator.init(generator_key, jnp.ones([1, noise_dim]))
-    # Print the shape of generator_params
-    print("Generator params shape:", jax.tree_map(lambda x: x.shape, generator_params))
-    generator_state = TrainState.create(apply_fn=generator.apply, params=generator_params, tx=optax.adam(learning_rate=critic_lr))
-    
-    discriminator_params = discriminator.init(discriminator_key, jnp.ones([1, goal_dim]))
-    discriminator_state = TrainState.create(apply_fn=discriminator.apply, params=discriminator_params, tx=optax.adam(learning_rate=critic_lr))
-    
     training_state = TrainingState(env_steps=jnp.zeros(()), gradient_steps=jnp.zeros(()), 
                                    actor_state=actor_state, critic_state=critic_state, alpha_state=alpha_state,
-                                   context_state=context_state, generator_state=generator_state, discriminator_state=discriminator_state)
+                                   context_state=context_state)
     training_state = jax.device_put_replicated(training_state, jax.local_devices()[:num_local_devices_to_use])
     return training_state
 
@@ -367,6 +356,7 @@ def context_loss(
     # Split the random key
     key, encoder_key, sampling_key = jax.random.split(key, 3)
     
+    print("transitions", transitions.observation.shape, transitions.reward.shape, transitions.extras["target"].shape)
     # Extract states, actions, and goals from transitions
     states = transitions.observation[:, :, :state_dim]
     goals = transitions.observation[:, :, state_dim:]
@@ -374,10 +364,11 @@ def context_loss(
     
     # Get the targets from the extras
     targets = transitions.extras["target"][:, -1, :]
-    print("targets shape in context loss", targets.shape, jnp.mean(targets, axis=0), jnp.std(targets, axis=0))
+    
     # Concatenate state-action to form trajectory representation
     trajectories = jnp.reshape(jnp.concatenate([states, actions], axis=-1), (-1, states.shape[-2] * (states.shape[-1] + actions.shape[-1])))
-    print("trajectories shape in context loss", trajectories.shape)
+    
+    print("trajectories", trajectories.shape)
     # Context encoder outputs a vector of size 2*latent_dim (first half is mean, second half is log_std)
     context_output = context_encoder.apply(context_encoder_params, trajectories)
     print("context output shape", context_output.shape)
@@ -408,137 +399,9 @@ def context_loss(
         "context_info_loss": info_loss,
         "context_mean_norm": jnp.mean(jnp.sqrt(jnp.sum(jnp.square(context_mean), axis=-1))),
         "context_std_mean": jnp.mean(std),
-        "target_mean_x": jnp.mean(targets[:, 0]), 
-        "target_std_x": jnp.std(targets[:, 0]),
-        "target_mean_y": jnp.mean(targets[:, 1]),
-        "target_std_y": jnp.std(targets[:, 1]),
     }
     
     return info_loss, metrics
-
-def generator_loss_lsgan(gen_params, disc_params, transitions, generator, discriminator, noise_dim, key):
-    """
-    Generator loss for LSGAN with parameter c
-    This implements 0.5 * E[(D(G(z)) - c)^2]
-    
-    Args:
-        gen_params: Parameters for the generator
-        disc_params: Parameters for the discriminator
-        discriminator: Discriminator network
-        transitions: Transitions from collected episodes
-        noise_dim: Dimension of the noise input
-        key: Random key for noise generation
-        batch_size: Batch size for training
-        c: LSGAN parameter 'c', default is 1 (what we want fake samples to be classified as)
-        
-    Returns:
-        generator_loss: Scalar loss value for the generator
-        metrics: Dictionary of metrics related to the generator
-    """
-    c = 0
-    # Extract goals from transitions
-    noise = transitions.extras["state_extras"]["noise"][:, -1, :]  # Assuming goals are the last part of observation
-    print("noise shape provided to generator", noise.shape)
-    goals = generator.apply(gen_params, noise)
-    print("goals shape", goals.shape)
-    # Discriminator's prediction on fake/generated goals
-    disc_fake = jax.lax.stop_gradient(discriminator.apply(disc_params, goals))
-    print("disc_fake shape", disc_fake.shape)
-    # LSGAN generator loss: 0.5 * E[(D(G(z)) - c)^2] 
-    # This encourages the generator to create goals that the discriminator classifies as c
-    disc_prob = jnp.mean(disc_fake)
-    gen_loss = jnp.mean(jnp.square(disc_fake - c))
-    
-    metrics = {
-        "gen_loss": gen_loss,
-        "disc_prob": disc_prob,
-    }
-    
-    return gen_loss, metrics
-
-def discriminator_loss_lsgan(disc_params, transitions, discriminator, noise_dim, key):
-    """
-    Discriminator loss for LSGAN with the formula:
-    min_D V(D) = E_{g~p_data(g)}[y_g(D(g)-b)^2 + (1-y_g)(D(g)-a)^2] + E_{z~p_z(z)}[(D(G(z))-a)^2]
-    
-    Args:
-        disc_params: Parameters for the discriminator
-        transitions: Transitions from collected episodes
-        generator: Generator network
-        discriminator: Discriminator network
-        gen_params: Parameters for the generator
-        noise_dim: Dimension of the noise input to generator
-        episode_length: Maximum length of an episode
-        key: JAX random key
-        batch_size: Batch size for training
-        a: LSGAN parameter 'a', default is -1
-        b: LSGAN parameter 'b', default is 1
-        
-    Returns:
-        discriminator_loss: Scalar loss value for the discriminator
-        metrics: Dictionary of metrics related to the discriminator
-    """
-    a = -1
-    b = 1
-    # Split the random key
-    key, gen_key = jax.random.split(key)
-    
-    # Compute cumulative rewards for each trajectory
-    cumulative_rewards = compute_cumulative_rewards(transitions)
-    print("cumulative_rewards shape", cumulative_rewards.shape)
-    # Assign labels based on cumulative rewards
-    lower_bound = 0.1 * transitions.reward.shape[1]
-    upper_bound = 0.9 * transitions.reward.shape[1]
-    goal_labels = jnp.logical_and(
-        cumulative_rewards > lower_bound, 
-        cumulative_rewards < upper_bound
-    ).astype(jnp.float32)
-    print("goal_labels shape", goal_labels.shape)
-
-    # Extract goals from transitions
-    fake_goals = transitions.extras["target"][:, -1, :]
-    print("fake_goals shape", fake_goals.shape)
-
-    disc_fake = discriminator.apply(disc_params, fake_goals)
-    
-    # Compute LSGAN discriminator loss
-    # For real goals labeled as desired (y_g = 1): (D(g) - b)^2
-    loss_real_desired = goal_labels * jnp.square(disc_fake - b)
-    
-    # For real goals labeled as undesired (y_g = 0): (D(g) - a)^2
-    loss_real_undesired = (1 - goal_labels) * jnp.square(disc_fake - a)
-    
-    # Combine losses for real goals
-    loss_real = jnp.mean(loss_real_desired + loss_real_undesired)
-    
-    # For fake goals: (D(G(z)) - a)^2
-    loss_fake = jnp.mean(jnp.square(disc_fake - a))
-    
-    # Total discriminator loss
-    disc_loss = loss_real + loss_fake
-    print("disc_loss shape", disc_loss.shape)
-    
-    metrics = {
-        "disc_loss": disc_loss,
-    }
-    
-    return disc_loss, metrics
-
-def compute_cumulative_rewards(transitions):
-    """
-    Computes the cumulative rewards for each trajectory in the transitions.
-    
-    Args:
-        transitions: Transitions from the replay buffer containing rewards
-        
-    Returns:
-        cumulative_rewards: Sum of rewards for each trajectory
-    """
-    # Sum rewards along the timestep dimension (axis=1)
-    # transitions.reward has shape [batch_size, timesteps]
-    cumulative_rewards = jnp.sum(transitions.reward, axis=1)
-    
-    return cumulative_rewards
 
 def actor_step(env, env_state, actor, parametric_action_distribution, actor_params, key, extra_fields=()):
     """
@@ -586,118 +449,6 @@ def actor_step(env, env_state, actor, parametric_action_distribution, actor_para
 def _unpmap(v):
     return jax.tree_util.tree_map(lambda x: x[0], v)
 
-class TargetEnvWrapper(envs.Wrapper):
-    """Wrapper that uses the generator to produce targets for the environment.
-    
-    This wrapper is designed for goal-conditioned RL environments
-    where we want to use targets generated by a GAN during training.
-    It ensures that environments are reset with appropriate targets.
-    """
-
-    def __init__(self, env, generator=None, generator_params=None, random_targets=False, noise_dim=4):
-        """Initialize the wrapper.
-        
-        Args:
-            env: The environment to wrap.
-            generator: Generator network for producing goals.
-            generator_params: Parameters for the generator.
-            noise_dim: Dimension of the noise input for the generator.
-        """
-        super().__init__(env)
-        self.generator = generator
-        self.generator_params = generator_params
-        self.noise_dim = noise_dim
-        self.random_targets = random_targets
-        
-    def update_generator_params(self, generator_params):
-        """Update the generator parameters.
-        
-        This method allows updating the generator parameters during training,
-        which is useful when the generator is being trained alongside the policy.
-        
-        Args:
-            generator_params: New parameters for the generator.
-        """
-        self.generator_params = generator_params
-        
-    def reset(self, rng):
-        """Reset the environment with targets generated by the generator.
-        
-        Args:
-            rng: Random number generator key.
-            
-        Returns:
-            State: The initial state.
-        """
-        # Handle both batched and non-batched keys
-        is_batched = len(rng.shape) > 1
-        print("is_batched", is_batched)
-        
-        if self.generator is not None and self.generator_params is not None and self.random_targets is True:
-            if is_batched:
-                # For batched operation with pmap
-                batch_size = rng.shape[0]
-                key, subkey = jax.random.split(rng)
-                
-                # Generate targets
-                noise = jax.random.normal(subkey, (batch_size, self.noise_dim))
-                print("batched noise shape", noise.shape)
-                targets = self.generator.apply(self.generator_params, noise)
-                print("batched targets shape", targets.shape)
-                
-                # Standard reset
-                state = self.env.reset_with_target(key, targets)
-                
-                # Store targets in state info for later use
-                if 'extras' not in state.info:
-                    state.info['extras'] = {}
-                # state.info['target'] = targets
-                state.info["traj_id"] = jnp.zeros(rng.shape[:-1])
-                state.info["noise"] = noise
-                
-                return state
-            else:
-                # For non-batched operation
-                key, subkey = jax.random.split(rng)
-                
-                # Generate a single target
-                noise = jax.random.normal(subkey, (1, self.noise_dim))
-                print("single noise shape", noise.shape)
-                target = self.generator.apply(self.generator_params, noise)[0]
-                print("single target shape", target.shape)
-                # Standard reset
-                state = self.env.reset_with_target(key, target)
-                
-                # Store target in state info for later use
-                if 'extras' not in state.info:
-                    state.info['extras'] = {}
-                # state.info['target'] = target
-                state.info["traj_id"] = jnp.zeros(rng.shape[:-1])
-                state.info["noise"] = noise
-                return state
-        else:
-            print("random target!")
-            state = self.env.reset(rng)
-            
-            # Store target in state info for later use
-            if 'extras' not in state.info:
-                state.info['extras'] = {}
-            # state.info['target'] = target
-            state.info["traj_id"] = jnp.zeros(rng.shape[:-1])
-            state.info["noise"] = jnp.zeros((1, self.noise_dim))
-            return state
-    
-    def step(self, state: State, action: jax.Array) -> State:
-        if "steps" in state.info.keys():
-            traj_id = state.info["traj_id"] + jnp.where(state.info["steps"], 0, 1)
-        else:
-            traj_id = state.info["traj_id"]
-        noise = state.info["noise"]
-        state = self.env.step(state, action)
-        state.info["traj_id"] = traj_id
-        state.info["noise"] = noise
-        return state
-
 def train(
     environment: envs.Env,
     num_timesteps,
@@ -708,11 +459,8 @@ def train(
     policy_lr: float = 1e-4,
     alpha_lr: float = 1e-4,
     critic_lr: float = 1e-4,
-    generator_lr: float = 1e-4,
-    discriminator_lr: float = 1e-4,
     seed: int = 0,
     batch_size: int = 256,
-    noise_dim: int = 32,
     contrastive_loss_fn: str = "binary",
     energy_fn: str = "l2",
     logsumexp_penalty: float = 0.0,
@@ -733,7 +481,6 @@ def train(
     n_hidden: int = 2,
     repr_dim: int = 64,
     visualization_interval: int = 5,
-    use_generator_for_targets: bool = True,
 ):
     """
     Trains a contrastive reinforcement learning agent using the specified environment and parameters.
@@ -766,8 +513,6 @@ def train(
             Random seed for reproducibility. Default is 0.
         batch_size: int, optional
             Batch size for training. Default is 256.
-        noise_dim: int, optional
-            Dimension of the noise input for the generator. Default is 64.
         contrastive_loss_fn: str, optional
             Type of contrastive loss function. Default is "binary".
         energy_fn: str, optional
@@ -808,8 +553,6 @@ def train(
             Dimension of the representation from the state-action and goal encoders. Default is 64.
         visualization_interval: int, optional
             Number of evals between each visualization of trajectories. Default is 5.
-        use_generator_for_targets: bool, optional
-            If True, use the generator to produce targets for the environment. Default is False.
 
 
     Raises:
@@ -862,56 +605,10 @@ def train(
 
     rng = jax.random.PRNGKey(seed)
     rng, key = jax.random.split(rng)
-    
-    # Setup network architectures first
-    obs_size = environment.observation_size
-    action_size = environment.action_size
-    state_dim = environment.state_dim
-    goal_size = obs_size - state_dim
-    print("REPR_DIM", repr_dim)
-    print("GOAL SIZE FOR GENERATOR", goal_size)
-    print("NOISE DIM", noise_dim)
-    # Create network functions
-    block_size = 2  # Maybe make this a hyperparameter
-    num_blocks = max(1, n_hidden // block_size)
-    actor = Net(action_size * 2, h_dim, num_blocks, block_size, use_ln)
-    sa_encoder = Net(repr_dim, h_dim, num_blocks, block_size, use_ln)
-    g_encoder = Net(repr_dim, h_dim, num_blocks, block_size, use_ln)
-    context_encoder = Net(goal_size * 2, h_dim, num_blocks, block_size, use_ln)
-    generator = Net(goal_size, h_dim, num_blocks, block_size, use_ln)
-    discriminator = Net(1, h_dim, num_blocks, block_size, use_ln)
-    parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size)
-    
-    # Initialize the training state with all models
-    global_key, local_key = jax.random.split(rng)
-    local_key = jax.random.fold_in(local_key, process_id)    
-    training_state = _init_training_state(
-        global_key, actor, sa_encoder, g_encoder, context_encoder, generator, discriminator, 
-        environment.state_dim, len(environment.goal_indices), environment.action_size, 
-        noise_dim, episode_length, policy_lr, critic_lr, alpha_lr, generator_lr, discriminator_lr, 
-        num_local_devices_to_use
-    )
-    del global_key
-    
-    # Apply wrappers to the environment
-    # Important: TrajectoryIdWrapper must be applied first
-    # env = TrajectoryIdWrapper(env)  
-    
-    # Optionally wrap with TargetEnvWrapper to use generator targets
-    print("noise dim before wrapper", noise_dim)
-    env = TargetEnvWrapper(
-        env, 
-        generator=generator,
-        generator_params=_unpmap(training_state.generator_state.params),
-        random_targets=True,
-        noise_dim=noise_dim,
-        
-    )
-    
-    # Apply training wrapper last
+    env = TrajectoryIdWrapper(env)
     env = wrap_for_training(env, episode_length=episode_length, action_repeat=action_repeat)
-    
     unwrapped_env = environment
+
 
     obs_size = env.observation_size
     action_size = env.action_size
@@ -923,8 +620,7 @@ def train(
     
     dummy_obs = jnp.zeros((obs_size,))
     dummy_action = jnp.zeros((action_size,))
-    dummy_noise = jnp.zeros((noise_dim,))
-    dummy_extras = {"state_extras": {"truncation": 0.0, "traj_id": 0.0, "noise": dummy_noise}, "policy_extras": {}}
+    dummy_extras = {"state_extras": {"truncation": 0.0, "traj_id": 0.0}, "policy_extras": {}}
     dummy_transition = Transition(observation=dummy_obs, action=dummy_action, reward=0.0, discount=0.0, extras=dummy_extras)
     
     replay_buffer = TrajectoryUniformSamplingQueue(
@@ -936,13 +632,27 @@ def train(
     )
     replay_buffer = jit_wrap(replay_buffer)
     
+    # Network functions
+    block_size = 2 # Maybe make this a hyperparameter
+    num_blocks = max(1, n_hidden // block_size)
+    actor = Net(action_size * 2, h_dim, num_blocks, block_size, use_ln)
+    sa_encoder = Net(repr_dim, h_dim, num_blocks, block_size, use_ln)
+    g_encoder = Net(repr_dim, h_dim, num_blocks, block_size, use_ln)
+    context_encoder = Net(goal_size * 2, h_dim, num_blocks, block_size, use_ln)
+    parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size) # Would like to replace this but it's annoying to.
+
+    # Initialize training state (not sure if it makes sense to split and fold local_key here)
+    global_key, local_key = jax.random.split(rng)
+    local_key = jax.random.fold_in(local_key, process_id)    
+    training_state = _init_training_state(global_key, actor, sa_encoder, g_encoder, context_encoder, env.state_dim, len(env.goal_indices), env.action_size, episode_length, policy_lr, critic_lr, alpha_lr, num_local_devices_to_use)
+    del global_key
+    
     # Update functions (may replace later: brax makes it opaque)
     alpha_update = gradients.gradient_update_fn(alpha_loss, training_state.alpha_state.tx, pmap_axis_name=_PMAP_AXIS_NAME)
     actor_update = gradients.gradient_update_fn(actor_loss, training_state.actor_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     critic_update = gradients.gradient_update_fn(critic_loss, training_state.critic_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     context_update = gradients.gradient_update_fn(context_loss, training_state.context_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    generator_update = gradients.gradient_update_fn(generator_loss_lsgan, training_state.generator_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    discriminator_update = gradients.gradient_update_fn(discriminator_loss_lsgan, training_state.discriminator_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+    
     
     def update_step(carry, transitions):
         training_state, key = carry
@@ -976,16 +686,13 @@ def train(
             critic_state=training_state.critic_state.replace(params=critic_params, opt_state=critic_optimizer_state),
             alpha_state=training_state.alpha_state.replace(params=alpha_params, opt_state=alpha_optimizer_state),
             context_state=training_state.context_state,
-            generator_state=training_state.generator_state,
-            discriminator_state=training_state.discriminator_state,
         )
         return (new_training_state, key), metrics
     
     def update_step_context(carry, trajectories):
         training_state, key = carry
-        key, key_context, key_gen, key_disc = jax.random.split(key, 4)
-        
-        # Context encoder update
+        key, key_context = jax.random.split(key, 2)
+        # print("trajectories shape in update context", trajectories.observation.shape)
         (context_loss_val, context_metrics), context_params, context_optimizer_state = context_update(
             training_state.context_state.params, 
             context_encoder, 
@@ -997,7 +704,6 @@ def train(
             key_context, 
             optimizer_state=training_state.context_state.opt_state
         )
-        
 
         metrics = {
             "context_loss": context_loss_val,
@@ -1011,60 +717,7 @@ def train(
             critic_state=training_state.critic_state,
             alpha_state=training_state.alpha_state,
             context_state=training_state.context_state.replace(params=context_params, opt_state=context_optimizer_state),
-            generator_state=training_state.generator_state,
-            discriminator_state=training_state.discriminator_state,
         )
-        
-        return (new_training_state, key), metrics
-    
-    def update_step_gen_disc(carry, trajectories):
-        training_state, key = carry
-        key, key_context, key_gen, key_disc = jax.random.split(key, 4)
-        
-        # Discriminator update
-        (discriminator_loss, discriminator_metrics), discriminator_params, discriminator_optimizer_state = discriminator_update(
-            training_state.discriminator_state.params, 
-            trajectories,  
-            discriminator,
-            noise_dim,
-            key_disc,
-            optimizer_state=training_state.discriminator_state.opt_state
-        )
-        
-        # Generator update
-        (generator_loss, generator_metrics), generator_params, generator_optimizer_state = generator_update(
-            training_state.generator_state.params,
-            training_state.discriminator_state.params, 
-            trajectories,  
-            generator,
-            discriminator,
-            noise_dim,
-            key_gen,
-            optimizer_state=training_state.generator_state.opt_state
-        )
-
-        metrics = {
-            "generator_loss": generator_loss,
-            "discriminator_loss": discriminator_loss,
-        }
-        metrics.update(generator_metrics)
-        metrics.update(discriminator_metrics)
-
-        new_training_state = TrainingState(
-            env_steps=training_state.env_steps,
-            gradient_steps=training_state.gradient_steps,
-            actor_state=training_state.actor_state,
-            critic_state=training_state.critic_state,
-            alpha_state=training_state.alpha_state,
-            context_state=training_state.context_state,
-            generator_state=training_state.generator_state.replace(params=generator_params, opt_state=generator_optimizer_state),
-            discriminator_state=training_state.discriminator_state.replace(params=discriminator_params, opt_state=discriminator_optimizer_state),
-        )
-        
-        # Update the generator parameters in the environment wrapper
-        # This ensures the environment uses the latest generator model for creating targets
-        env.update_generator_params(generator_params)
-        
         return (new_training_state, key), metrics
 
     def get_experience(actor_params, env_state, buffer_state, key):
@@ -1072,7 +725,7 @@ def train(
         def f(carry, unused_t):
             env_state, current_key = carry
             current_key, next_key = jax.random.split(current_key)
-            env_state, transition = actor_step(env, env_state, actor, parametric_action_distribution, actor_params, current_key, extra_fields=("truncation", "traj_id", "noise"))
+            env_state, transition = actor_step(env, env_state, actor, parametric_action_distribution, actor_params, current_key, extra_fields=("truncation", "traj_id"))
             return (env_state, next_key), transition
 
         (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=unroll_length)
@@ -1127,9 +780,8 @@ def train(
         
         ## Train
         (training_state, _), metrics1 = jax.lax.scan(update_step, (training_state, training_key), transitions)
-        (training_state, _), metrics2 = jax.lax.scan(update_step_context, (training_state, training_key), trajectories)        
-        (training_state, _), metrics3 = jax.lax.scan(update_step_gen_disc, (training_state, training_key), trajectories)
-        metrics = {**metrics1, **metrics2, **metrics3}
+        (training_state, _), metrics2 = jax.lax.scan(update_step_context, (training_state, training_key), trajectories)
+        metrics = {**metrics1, **metrics2}
         # print("METRICS", metrics)
         return training_state, buffer_state, metrics
 
@@ -1191,6 +843,7 @@ def train(
     training_state, env_state, buffer_state, _ = prefill_replay_buffer(training_state, env_state, buffer_state, prefill_keys)
     replay_size = jnp.sum(jax.vmap(replay_buffer.size)(buffer_state)) * jax.process_count()
     print("replay size after prefill", replay_size)
+    print("replay buffer.size", replay_buffer.size)
     print("jax process count", jax.process_count())
     assert replay_size >= min_replay_size
     training_walltime = time.time() - t
@@ -1204,8 +857,7 @@ def train(
     make_policy = functools.partial(make_policy, actor, parametric_action_distribution)
     if not eval_env:
         eval_env = environment
-    print("noise dim before eval wrapper", noise_dim)
-    eval_env = TargetEnvWrapper(eval_env, random_targets=True, noise_dim=noise_dim)
+    eval_env = TrajectoryIdWrapper(eval_env)
     eval_env = wrap_for_training(eval_env, episode_length=episode_length, action_repeat=action_repeat)
     evaluator = CrlEvaluator(eval_env, functools.partial(make_policy, deterministic=deterministic_eval), num_eval_envs=num_eval_envs,
                              episode_length=episode_length, action_repeat=action_repeat, key=eval_key)
@@ -1230,9 +882,9 @@ def train(
 
         # Logging and evals
         if process_id == 0:
-            ## Save policy, critic, context, generator, and discriminator params
+            ## Save policy, critic, and context params
             if checkpoint_logdir:
-                params = _unpmap((training_state.actor_state.params, training_state.critic_state.params, training_state.context_state.params, training_state.generator_state.params, training_state.discriminator_state.params))
+                params = _unpmap((training_state.actor_state.params, training_state.critic_state.params, training_state.context_state.params))
                 path = f"{checkpoint_logdir}/step_{current_step}.pkl"
                 brax.io.model.save_params(path, params)
 
@@ -1252,5 +904,5 @@ def train(
     pmap.assert_is_replicated(training_state)
     pmap.synchronize_hosts()
     
-    params = _unpmap((training_state.actor_state.params, training_state.critic_state.params, training_state.context_state.params, training_state.generator_state.params, training_state.discriminator_state.params))
+    params = _unpmap((training_state.actor_state.params, training_state.critic_state.params, training_state.context_state.params))
     return (make_policy, params, metrics)
