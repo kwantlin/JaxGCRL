@@ -442,7 +442,7 @@ def context_loss(
     
     return info_loss, metrics
 
-def generator_loss(gen_params, disc_params, transitions, generator, discriminator, noise_dim, key):
+def generator_loss_lsgan(gen_params, disc_params, transitions, generator, discriminator, noise_dim, key):
     """
     Generator loss for LSGAN with parameter c
     This implements 0.5 * E[(D(G(z)) - c)^2]
@@ -482,7 +482,7 @@ def generator_loss(gen_params, disc_params, transitions, generator, discriminato
     
     return gen_loss, metrics
 
-def discriminator_loss(disc_params, transitions, discriminator, noise_dim, key):
+def discriminator_loss_lsgan(disc_params, transitions, discriminator, noise_dim, key):
     """
     Discriminator loss for LSGAN with the formula:
     min_D V(D) = E_{g~p_data(g)}[y_g(D(g)-b)^2 + (1-y_g)(D(g)-a)^2] + E_{z~p_z(z)}[(D(G(z))-a)^2]
@@ -546,6 +546,7 @@ def discriminator_loss(disc_params, transitions, discriminator, noise_dim, key):
     
     metrics = {
         "disc_loss": disc_loss,
+        "avg_goal_labels": jnp.mean(goal_labels),
     }
     
     return disc_loss, metrics
@@ -771,7 +772,7 @@ def train(
 
     rng = jax.random.PRNGKey(seed)
     rng, key = jax.random.split(rng)
-    env = TrajectoryIdWrapper(env)
+    env = TargetEnvWrapper(env, noise_dim=noise_dim)
     env = wrap_for_training(env, episode_length=episode_length, action_repeat=action_repeat)
     unwrapped_env = environment
 
@@ -821,7 +822,8 @@ def train(
     actor_update = gradients.gradient_update_fn(actor_loss, training_state.actor_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     critic_update = gradients.gradient_update_fn(critic_loss, training_state.critic_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     context_update = gradients.gradient_update_fn(context_loss, training_state.context_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    
+    generator_update = gradients.gradient_update_fn(generator_loss_lsgan, training_state.generator_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+    discriminator_update = gradients.gradient_update_fn(discriminator_loss_lsgan, training_state.discriminator_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     
     def update_step(carry, transitions):
         training_state, key = carry
@@ -838,7 +840,7 @@ def train(
                                                                                         g_encoder, parametric_action_distribution, alpha, transitions, 
                                                                                         config, env.state_dim, env.goal_indices, energy_fn, 
                                                                                         key_actor, optimizer_state=training_state.actor_state.opt_state)
-
+        
         metrics = {
             "actor_loss": actor_loss,
             "alpha_loss": alpha_loss,
@@ -892,13 +894,63 @@ def train(
             discriminator_state=training_state.discriminator_state,
         )
         return (new_training_state, key), metrics
+    
+    def update_step_gen_disc(carry, trajectories):
+        training_state, key = carry
+        key, key_context, key_gen, key_disc = jax.random.split(key, 4)
+        
+        # Discriminator update
+        (discriminator_loss, discriminator_metrics), discriminator_params, discriminator_optimizer_state = discriminator_update(
+            training_state.discriminator_state.params, 
+            trajectories,  
+            discriminator,
+            noise_dim,
+            key_disc,
+            optimizer_state=training_state.discriminator_state.opt_state
+        )
+        
+        # Generator update
+        (generator_loss, generator_metrics), generator_params, generator_optimizer_state = generator_update(
+            training_state.generator_state.params,
+            training_state.discriminator_state.params, 
+            trajectories,  
+            generator,
+            discriminator,
+            noise_dim,
+            key_gen,
+            optimizer_state=training_state.generator_state.opt_state
+        )
+
+        metrics = {
+            "generator_loss": generator_loss,
+            "discriminator_loss": discriminator_loss,
+        }
+        metrics.update(generator_metrics)
+        metrics.update(discriminator_metrics)
+
+        new_training_state = TrainingState(
+            env_steps=training_state.env_steps,
+            gradient_steps=training_state.gradient_steps,
+            actor_state=training_state.actor_state,
+            critic_state=training_state.critic_state,
+            alpha_state=training_state.alpha_state,
+            context_state=training_state.context_state,
+            generator_state=training_state.generator_state.replace(params=generator_params, opt_state=generator_optimizer_state),
+            discriminator_state=training_state.discriminator_state.replace(params=discriminator_params, opt_state=discriminator_optimizer_state),
+        )
+        
+        # Update the generator parameters in the environment wrapper
+        # This ensures the environment uses the latest generator model for creating targets
+        env.update_generator_params(generator_params)
+        
+        return (new_training_state, key), metrics
 
     def get_experience(actor_params, env_state, buffer_state, key):
         @jax.jit
         def f(carry, unused_t):
             env_state, current_key = carry
             current_key, next_key = jax.random.split(current_key)
-            env_state, transition = actor_step(env, env_state, actor, parametric_action_distribution, actor_params, current_key, extra_fields=("truncation", "traj_id"))
+            env_state, transition = actor_step(env, env_state, actor, parametric_action_distribution, actor_params, current_key, extra_fields=("truncation", "traj_id", "noise"))
             return (env_state, next_key), transition
 
         (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=unroll_length)
@@ -954,7 +1006,8 @@ def train(
         ## Train
         (training_state, _), metrics1 = jax.lax.scan(update_step, (training_state, training_key), transitions)
         (training_state, _), metrics2 = jax.lax.scan(update_step_context, (training_state, training_key), trajectories)
-        metrics = {**metrics1, **metrics2}
+        (training_state, _), metrics3 = jax.lax.scan(update_step_gen_disc, (training_state, training_key), trajectories)
+        metrics = {**metrics1, **metrics2, **metrics3}
         # print("METRICS", metrics)
         return training_state, buffer_state, metrics
 
@@ -1030,7 +1083,7 @@ def train(
     make_policy = functools.partial(make_policy, actor, parametric_action_distribution)
     if not eval_env:
         eval_env = environment
-    eval_env = TrajectoryIdWrapper(eval_env)
+    eval_env = TargetEnvWrapper(eval_env, noise_dim=noise_dim)
     eval_env = wrap_for_training(eval_env, episode_length=episode_length, action_repeat=action_repeat)
     evaluator = CrlEvaluator(eval_env, functools.partial(make_policy, deterministic=deterministic_eval), num_eval_envs=num_eval_envs,
                              episode_length=episode_length, action_repeat=action_repeat, key=eval_key)
