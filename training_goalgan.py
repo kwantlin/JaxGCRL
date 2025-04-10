@@ -86,6 +86,8 @@ def main(args):
         "eval/episode_success_easy",
         "eval/episode_dist",
         "eval/episode_reward_survive",
+        "eval/disc_loss",
+        "eval/gen_loss",
         "training/crl_critic_loss",
         "training/actor_loss",
         "training/binary_accuracy",
@@ -112,8 +114,8 @@ def main(args):
         "training/target_mean_y",
         "training/target_std_y",
         "training/gen_loss",
-        "training/disc_prob",
         "training/disc_loss",
+        "training/avg_goal_labels",
     ]
 
     metrics_recorder = MetricsRecorder(args.num_timesteps, metrics_to_collect, run_dir, args.exp_name)
