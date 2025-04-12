@@ -109,13 +109,13 @@ def main(args):
         "training/context_info_loss",
         "training/context_mean_norm",
         "training/context_std_mean",
-        "training/target_mean_x",
-        "training/target_std_x",
-        "training/target_mean_y",
-        "training/target_std_y",
         "training/gen_loss",
         "training/disc_loss",
-        "training/avg_goal_labels",
+        "training/avg_frac_reward",
+        "training/target_x_mean",
+        "training/target_y_mean",
+        "training/target_x_std",
+        "training/target_y_std",
     ]
 
     metrics_recorder = MetricsRecorder(args.num_timesteps, metrics_to_collect, run_dir, args.exp_name)

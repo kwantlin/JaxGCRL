@@ -54,22 +54,27 @@ class Net(nn.Module):
         return x
     
 class TargetEnvWrapper(brax.envs.Wrapper):
-    def __init__(self, env: brax.envs.PipelineEnv, generator=None, generator_params=None, random_targets=False, noise_dim=4):
+    def __init__(self, env: brax.envs.PipelineEnv, generator=None, generator_params=None, noise_dim=4):
         super().__init__(env)
         self.generator = generator
         self.generator_params = generator_params
-        self.random_targets = random_targets
         self.noise_dim = noise_dim
         
     def update_generator_params(self, generator_params):
         self.generator_params = generator_params
 
     def reset(self, rng: jax.Array) -> State:
+        is_batched = len(rng.shape) > 1
         key, subkey = jax.random.split(rng)
-        state = self.env.reset(key)
-        state.info["traj_id"] = jnp.zeros(rng.shape[:-1])
+            
+        # Generate targets
         noise = jax.random.normal(subkey, (1, self.noise_dim))
+        targets = self.generator.apply(self.generator_params, noise)[0]
+        print("targets shape", targets.shape)
+        state = self.env.reset_with_target(key, targets)
+        state.info["traj_id"] = jnp.zeros(key.shape[:-1])
         state.info["noise"] = noise
+        
         return state
 
     def step(self, state: State, action: jax.Array) -> State:
@@ -511,13 +516,16 @@ def discriminator_loss_lsgan(disc_params, transitions, discriminator, noise_dim,
     
     # Compute cumulative rewards for each trajectory
     cumulative_rewards = compute_cumulative_rewards(transitions)
+    print("cumulative_rewards", cumulative_rewards)
+    print("transitions.reward.shape", transitions.reward.shape)
+    frac_cumulative_rewards = cumulative_rewards / transitions.reward.shape[1]
     print("cumulative_rewards shape", cumulative_rewards.shape)
     # Assign labels based on cumulative rewards
-    lower_bound = 0.1 * transitions.reward.shape[1]
-    upper_bound = 0.9 * transitions.reward.shape[1]
+    lower_bound = 0.1
+    upper_bound = 0.9
     goal_labels = jnp.logical_and(
-        cumulative_rewards > lower_bound, 
-        cumulative_rewards < upper_bound
+        frac_cumulative_rewards > lower_bound, 
+        frac_cumulative_rewards < upper_bound
     ).astype(jnp.float32)
     print("goal_labels shape", goal_labels.shape)
 
@@ -546,7 +554,11 @@ def discriminator_loss_lsgan(disc_params, transitions, discriminator, noise_dim,
     
     metrics = {
         "disc_loss": disc_loss,
-        "avg_goal_labels": jnp.mean(goal_labels),
+        "avg_frac_reward": jnp.mean(frac_cumulative_rewards),
+        "target_x_mean": jnp.mean(fake_goals[:, 0]),
+        "target_y_mean": jnp.mean(fake_goals[:, 1]),
+        "target_x_std": jnp.std(fake_goals[:, 0]),
+        "target_y_std": jnp.std(fake_goals[:, 1]),
     }
     
     return disc_loss, metrics
@@ -772,9 +784,6 @@ def train(
 
     rng = jax.random.PRNGKey(seed)
     rng, key = jax.random.split(rng)
-    env = TargetEnvWrapper(env, noise_dim=noise_dim)
-    env = wrap_for_training(env, episode_length=episode_length, action_repeat=action_repeat)
-    unwrapped_env = environment
 
 
     obs_size = env.observation_size
@@ -816,6 +825,10 @@ def train(
     local_key = jax.random.fold_in(local_key, process_id)    
     training_state = _init_training_state(global_key, actor, sa_encoder, g_encoder, context_encoder, generator, discriminator, env.state_dim, len(env.goal_indices), env.action_size, noise_dim, episode_length, policy_lr, critic_lr, alpha_lr, generator_lr, discriminator_lr, num_local_devices_to_use)
     del global_key
+    
+    env = TargetEnvWrapper(env, generator=generator, generator_params=_unpmap(training_state.generator_state.params), noise_dim=noise_dim)
+    env = wrap_for_training(env, episode_length=episode_length, action_repeat=action_repeat)
+    unwrapped_env = environment
     
     # Update functions (may replace later: brax makes it opaque)
     alpha_update = gradients.gradient_update_fn(alpha_loss, training_state.alpha_state.tx, pmap_axis_name=_PMAP_AXIS_NAME)
@@ -1083,7 +1096,7 @@ def train(
     make_policy = functools.partial(make_policy, actor, parametric_action_distribution)
     if not eval_env:
         eval_env = environment
-    eval_env = TargetEnvWrapper(eval_env, noise_dim=noise_dim)
+    eval_env = TrajectoryIdWrapper(eval_env)
     eval_env = wrap_for_training(eval_env, episode_length=episode_length, action_repeat=action_repeat)
     evaluator = CrlEvaluator(eval_env, functools.partial(make_policy, deterministic=deterministic_eval), num_eval_envs=num_eval_envs,
                              episode_length=episode_length, action_repeat=action_repeat, key=eval_key)
