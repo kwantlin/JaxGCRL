@@ -13,6 +13,7 @@ import brax
 from brax import envs
 from brax.training import gradients, distribution, types, pmap
 from brax.training.replay_buffers_test import jit_wrap
+from jax.scipy import stats
 
 from envs.wrappers import TrajectoryIdWrapper
 from src.evaluator import CrlEvaluator
@@ -77,7 +78,8 @@ class TrainingState:
     critic_state: TrainState
     alpha_state: TrainState
     context_state: TrainState
-
+    kde: jax._src.scipy.stats.kde.gaussian_kde
+    
 def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, state_dim, goal_dim, action_dim, episode_length, actor_lr, critic_lr, alpha_lr, num_local_devices_to_use):
     """
     Initializes the training state for a contrastive reinforcement learning model. This function sets up the initial states for various components including the policy
@@ -121,9 +123,12 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, sta
     # Put everything together into TrainingState
     context_encoder_params = context_encoder.init(context_key, jnp.ones([1, (episode_length - 1) * (state_dim + action_dim)]))
     context_state = TrainState.create(apply_fn=None, params=context_encoder_params, tx=optax.adam(learning_rate=critic_lr))
+    
+    dummy_goal_batch = jnp.zeros([10000, goal_dim])
+    dummy_kde = stats.gaussian_kde(dummy_goal_batch.T, bw_method=0.1)
     training_state = TrainingState(env_steps=jnp.zeros(()), gradient_steps=jnp.zeros(()), 
                                    actor_state=actor_state, critic_state=critic_state, alpha_state=alpha_state,
-                                   context_state=context_state)
+                                   context_state=context_state, kde=dummy_kde)
     training_state = jax.device_put_replicated(training_state, jax.local_devices()[:num_local_devices_to_use])
     return training_state
 
@@ -446,6 +451,50 @@ def actor_step(env, env_state, actor, parametric_action_distribution, actor_para
         extras={"policy_extras": {}, "state_extras": state_extras},
     )
 
+def actor_step_kde(env, env_state, actor, parametric_action_distribution, actor_params, explore_goal, key, extra_fields=()):
+    """
+    Executes one step of an actor in the environment by selecting an action based on the
+    policy, stepping the environment, and returning the updated state and transition data.
+
+    Parameters
+    ----------
+    env : Env
+        The environment in which the actor operates.
+    env_state : State
+        The current state of the environment.
+    actor : brax.training.types.Policy
+        The policy used to select the action.
+    parametric_action_distribution : brax.training.distribution.ParametricDistribution
+        A tanh normal distribution, used to map the actor's output to an action vector with elements between [-1, 1].
+    actor_params : Any
+        Parameters for the actor network.
+    key : PRNGKey
+        A random key for stochastic policy decisions.
+    extra_fields : Sequence[str], optional
+        A sequence of extra fields to be extracted from the environment state.
+
+    Returns
+    -------
+    Tuple[State, Transition]
+        A tuple containing the new state after taking the action and the transition data
+        encompassing observation, action, reward, discount, and extra information.
+
+    """
+    new_state = jnp.concatenate([env_state.obs[:, :env.state_dim], explore_goal], axis=1)
+    action_mean_and_SD = actor.apply(actor_params, new_state)
+    action = parametric_action_distribution.sample(action_mean_and_SD, key)
+    nstate = env.step(env_state, action)
+    # print(f"state.pipeline_state shape: {jax.tree_map(lambda x: x.shape, env_state.pipeline_state)}")
+    # print(f"action shape: {jax.tree_map(lambda x: x.shape, action)}")
+    state_extras = {x: nstate.info[x] for x in extra_fields}
+    return nstate, Transition(
+        observation=env_state.obs,
+        action=action,
+        reward=nstate.reward,
+        discount=1 - nstate.done,
+        extras={"policy_extras": {}, "state_extras": state_extras},
+    )
+    
 def _unpmap(v):
     return jax.tree_util.tree_map(lambda x: x[0], v)
 
@@ -686,6 +735,7 @@ def train(
             critic_state=training_state.critic_state.replace(params=critic_params, opt_state=critic_optimizer_state),
             alpha_state=training_state.alpha_state.replace(params=alpha_params, opt_state=alpha_optimizer_state),
             context_state=training_state.context_state,
+            kde=training_state.kde,
         )
         return (new_training_state, key), metrics
     
@@ -717,10 +767,66 @@ def train(
             critic_state=training_state.critic_state,
             alpha_state=training_state.alpha_state,
             context_state=training_state.context_state.replace(params=context_params, opt_state=context_optimizer_state),
+            kde=training_state.kde,
         )
         return (new_training_state, key), metrics
 
-    def get_experience(actor_params, env_state, buffer_state, key):
+    def get_experience(actor_params, kde, transitions, env_state, buffer_state, key):
+        @jax.jit
+        def f(carry, unused_t):
+            env_state, current_key = carry
+            current_key, next_key = jax.random.split(current_key)
+            env_state, transition = actor_step_kde(env, env_state, actor, parametric_action_distribution, actor_params, exploration_goals, current_key, extra_fields=("truncation", "traj_id"))
+            return (env_state, next_key), transition
+        
+        @jax.vmap
+        def get_lowest_probability_goal(buffer_goals):
+            return buffer_goals[jnp.argmin(kde(buffer_goals.T))]
+        
+        key, subkey = jax.random.split(key)
+        print("kde: transitions.extras['future_state'][:, env.goal_indices].shape", transitions.extras['future_state'][:, env.goal_indices].shape)
+        buffer_goals = jax.random.permutation(subkey, transitions.extras['future_state'][:, env.goal_indices])
+        print("kde: buffer_goals shape before reshape", buffer_goals.shape)
+        buffer_goals = buffer_goals.reshape(num_envs, -1, goal_size) # Permute and expand back to (#envs, #envs, goal_dim.
+                                                                              # first dim is for vectorized envs, second dim is just # of samples
+                                                                              # which we happen to make equal to num_envs...?
+        print("kde: buffer_goals shape", buffer_goals.shape)
+        exploration_goals = get_lowest_probability_goal(buffer_goals)
+        print("kde: exploration_goals shape", exploration_goals.shape)
+        (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=unroll_length)
+        buffer_state = replay_buffer.insert(buffer_state, data)
+        return env_state, buffer_state
+
+    def training_step(training_state, env_state, buffer_state, key):
+        # Collect experience
+        sampling_key, permutation_key, experience_key, training_key = jax.random.split(key, 4)
+        
+        buffer_state, transitions = replay_buffer.sample(buffer_state)
+        batch_keys = jax.random.split(sampling_key, transitions.observation.shape[0])
+        vmap_flatten_crl_fn = jax.vmap(TrajectoryUniformSamplingQueue.flatten_crl_fn, in_axes=(None, None, 0, 0))
+        transitions = vmap_flatten_crl_fn(config, env, transitions, batch_keys)
+        transitions = jax.tree_util.tree_map(lambda x: jnp.reshape(x, (-1,) + x.shape[2:], order="F"), transitions)
+        print("kde: transitions shape before permutation", transitions.observation.shape)
+        permutation = jax.random.permutation(experience_key, len(transitions.action)) #???
+        print("kde: permutation shape", permutation.shape)
+        transitions = jax.tree_util.tree_map(lambda x: x[permutation], transitions)
+        print("kde: transitions shape after permutation", transitions.observation.shape)
+        
+        # Fit KDE before collection (using 10k goals)
+        data_to_kde = transitions.extras['future_state'][:, env.goal_indices][:10000]
+        print("kde: data_to_kde shape", data_to_kde.shape)
+        kde = stats.gaussian_kde(data_to_kde.T, bw_method=0.1)
+        training_state = training_state.replace(kde=kde)
+        
+        env_state, buffer_state = get_experience(training_state.actor_state.params, training_state.kde, transitions, env_state, buffer_state, experience_key)
+        training_state = training_state.replace(env_steps=training_state.env_steps + env_steps_per_actor_step)
+        
+        # Train
+        training_state, buffer_state, metrics = train_steps(training_state, buffer_state, training_key)
+        return training_state, env_state, buffer_state, metrics
+
+
+    def get_experience_prefill(actor_params, env_state, buffer_state, key):
         @jax.jit
         def f(carry, unused_t):
             env_state, current_key = carry
@@ -731,23 +837,13 @@ def train(
         (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=unroll_length)
         buffer_state = replay_buffer.insert(buffer_state, data)
         return env_state, buffer_state
-
-    def training_step(training_state, env_state, buffer_state, key):
-        # Collect experience
-        experience_key, training_key = jax.random.split(key, 2)
-        env_state, buffer_state = get_experience(training_state.actor_state.params, env_state, buffer_state, experience_key)
-        training_state = training_state.replace(env_steps=training_state.env_steps + env_steps_per_actor_step)
-        
-        # Train
-        training_state, buffer_state, metrics = train_steps(training_state, buffer_state, training_key)
-        return training_state, env_state, buffer_state, metrics
-
+    
     def prefill_replay_buffer(training_state, env_state, buffer_state, key):
         def f(carry, unused):
             # Collect experience
             training_state, env_state, buffer_state, key = carry
             key, new_key = jax.random.split(key)
-            env_state, buffer_state = get_experience(training_state.actor_state.params, env_state, buffer_state, key)
+            env_state, buffer_state = get_experience_prefill(training_state.actor_state.params, env_state, buffer_state, key)
             new_training_state = training_state.replace(env_steps=training_state.env_steps + env_steps_per_actor_step)
             return (new_training_state, env_state, buffer_state, new_key), ()
         print("current num_prefill_actor_steps", num_prefill_actor_steps)
