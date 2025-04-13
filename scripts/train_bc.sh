@@ -9,7 +9,7 @@ eval "$(conda shell.bash hook)"
 conda activate jaxgcrl
 
 # Hardcoded checkpoint path for training
-saved_ckpt_path="/n/fs/klips/JaxGCRL/runs/run_ant-main_s_1/ckpt/step_11427840.pkl"
+saved_ckpt_path="/home/kwantlin/JaxGCRL/runs/run_ant-main_s_1/ckpt/step_11427840.pkl"
 
 env=ant
 

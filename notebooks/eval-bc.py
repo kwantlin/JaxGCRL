@@ -22,11 +22,12 @@ import seaborn as sns
 import pandas as pd
 
 
-RUN_FOLDER_PATH = '/n/fs/klips/JaxGCRL/runs/run_ant-bc_s_1'
+RUN_FOLDER_PATH = '/home/kwantlin/JaxGCRL/runs/run_ant-main_s_1'
 CKPT_NAME = '/step_11427840.pkl'
 
 params = model.load_params(RUN_FOLDER_PATH + '/ckpt' + CKPT_NAME)
-policy_params, context_params = params
+policy_params, encoders_params, context_params = params
+sa_encoder_params, g_encoder_params = encoders_params['sa_encoder'], encoders_params['g_encoder']
 
 args_path = RUN_FOLDER_PATH + '/args.pkl'
 
@@ -40,9 +41,20 @@ obs_size = env.observation_size
 action_size = env.action_size
 goal_size = env.observation_size - env.state_dim
 
+BC_RUN_FOLDER_PATH = '/home/kwantlin/JaxGCRL/runs/run_ant-bc_s_1'
+BC_CKPT_NAME = '/step_11427840.pkl'
 
-# The SAEncoder, GoalEncoder, and Actor all use the same function. Output size for SA/Goal encoders should be representation size, and for Actor should be 2 * action_size.
-# To keep parity with the existing architecture, by default we only use one residual block of depth 2, hence effectively not using the residual connections.
+bc_params = model.load_params(BC_RUN_FOLDER_PATH + '/ckpt' + BC_CKPT_NAME)
+bc_policy_params, bc_context_params = bc_params
+
+bc_args_path = BC_RUN_FOLDER_PATH + '/args.pkl'
+
+with open(bc_args_path, "rb") as f:
+    bc_args = pickle.load(f)
+
+bc_config = get_env_config(bc_args)
+
+
 class Net(nn.Module):
     """
     MLP with residual connections: residual blocks have $block_size layers. Uses swish activation, optionally uses layernorm.
@@ -75,15 +87,12 @@ class Net(nn.Module):
 def make_policy(actor, parametric_action_distribution, params, deterministic=False):
     def policy(obs, key_sample):
         obs = jnp.expand_dims(obs, 0)
-        # print("obs shape", obs.shape)
         logits = actor.apply(params, obs)
-        # print("logits shape", logits.shape)
         if deterministic:
             action = parametric_action_distribution.mode(logits)
         else:
             action = parametric_action_distribution.sample(logits, key_sample)
             action = action[0]
-            # print("action shape", action.shape)
         extras = {}
         return action, extras
     return policy
@@ -93,10 +102,15 @@ def make_policy(actor, parametric_action_distribution, params, deterministic=Fal
 block_size = 2 # Maybe make this a hyperparameter
 num_blocks = max(1, args.n_hidden // block_size)
 actor = Net(action_size * 2, args.h_dim, num_blocks, block_size, args.use_ln)
+bc_actor = Net(action_size * 2, args.h_dim, num_blocks, block_size, args.use_ln)
+sa_net = Net(args.repr_dim, args.h_dim, num_blocks, block_size, args.use_ln)
+g_net = Net(args.repr_dim, args.h_dim, num_blocks, block_size, args.use_ln)
 context_net = Net(goal_size * 2, args.h_dim, num_blocks, block_size, args.use_ln)
 parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size) # Would like to replace this but it's annoying to.
 
 inference_fn = make_policy(actor, parametric_action_distribution, policy_params)
+bc_inference_fn = make_policy(bc_actor, parametric_action_distribution, bc_policy_params)
+
 # inference_fn = inference_fn(params[:1])
 
 # crl_networks = networks.make_crl_networks(config, env, obs_size, action_size)
@@ -104,6 +118,8 @@ inference_fn = make_policy(actor, parametric_action_distribution, policy_params)
 # inference_fn = networks.make_inference_fn(crl_networks)
 # inference_fn = inference_fn(params[:2])
 
+sa_encoder = lambda obs: sa_net.apply(sa_encoder_params, obs)
+g_encoder = lambda obs: g_net.apply(g_encoder_params, obs)
 context_encoder = lambda traj: context_net.apply(context_params, traj)
 
 
@@ -112,7 +128,7 @@ NUM_ENVS = 100
 jit_env_reset = jax.jit(env.reset)
 jit_env_step = jax.jit(env.step)
 jit_inference_fn = jax.jit(inference_fn)
-
+bc_jit_inference_fn = jax.jit(bc_inference_fn)
 
 def collect_trajectory(rng):
     def step_fn(carry, _):
@@ -149,7 +165,7 @@ context_output = context_encoder(sa_pairs)
 context_mean, context_log_std = jnp.split(context_output, 2, axis=-1)
 # print(context_mean, context_log_std)
 
-# Sample 10 times from each episode's context distribution
+# Sample NUM_SAMPLES times from each episode's context distribution
 NUM_SAMPLES = 100
 sample_rng = jax.random.PRNGKey(0)
 sample_rngs = jax.random.split(sample_rng, NUM_ENVS)
@@ -204,11 +220,41 @@ last_state_rews = jax.vmap(collect_trajectory_with_target)(
     goals
 )
 
+def bc_collect_trajectory_with_target(rng, target, true_goal):
+    def step_fn(carry, _):
+        state, rng = carry
+        act_rng, next_rng = jax.random.split(rng)
+        act, _ = bc_jit_inference_fn(state.obs, act_rng)
+        next_state = jit_env_step(state, act)
+        
+        # Compute distance-based reward
+        current_pos = next_state.obs[env.goal_indices]
+        dist_to_goal = jnp.linalg.norm(current_pos - true_goal)
+        reward = jnp.where(dist_to_goal < env.goal_reach_thresh, 1.0, 0.0)
+        
+        return (next_state, next_rng), reward
+    
+    init_state = jit_env_reset_with_target(rng=rng, target=target)
+    (final_state, _), rewards = jax.lax.scan(
+        step_fn, 
+        (init_state, rng), 
+        None, 
+        length=1024
+    )
+    return rewards
+
+bc_last_state_rews = jax.vmap(bc_collect_trajectory_with_target)(
+    last_state_rngs,
+    last_states,
+    goals
+)
+
 # Compute euclidean distances between goals and last states
 goal_distances = jnp.linalg.norm(last_states - goals, axis=1)
 # print("Goal distances with last states as goal:", goal_distances)
 
 total_rewards_last_state = jnp.sum(last_state_rews, axis=1)  # Sum rewards along trajectory dimension
+total_rewards_bc_last_state = jnp.sum(bc_last_state_rews, axis=1)  # Sum rewards along trajectory dimension
 # print("Total rewards per rollout with last states as goal:", total_rewards_last_state)
 
 # Collect trajectories using inferred goals as targets
@@ -232,10 +278,28 @@ inferred_goal_rews = jax.tree_map(
     *inferred_goal_results
 )
 
+# BC: For each env, collect trajectories for all inferred goals
+bc_inferred_goal_results = []
+for env_idx in range(NUM_ENVS):
+    env_rews = jax.vmap(bc_collect_trajectory_with_target, in_axes=(0, 0, None))(
+        inferred_goal_rngs[env_idx], 
+        inferred_goals[env_idx],
+        goals[env_idx]
+    )
+    bc_inferred_goal_results.append((env_rews))
+
+# Stack results back into arrays with same shape as before
+bc_inferred_goal_rews = jax.tree_map(
+    lambda *x: jnp.stack(x), 
+    *bc_inferred_goal_results
+)
+
 print("inferred_goal_rews shape:", inferred_goal_rews.shape)
 total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(inferred_goal_rews, axis=2), axis=1)
+total_rewards_bc_inferred_goal_mean = jnp.mean(jnp.sum(bc_inferred_goal_rews, axis=2), axis=1)
 # print("(Mean) Total rewards per rollout with inferred goals:", total_rewards_inferred_goal_mean)
 total_rewards_inferred_goal_std = jnp.std(jnp.sum(inferred_goal_rews, axis=2), axis=1)
+total_rewards_bc_inferred_goal_std = jnp.std(jnp.sum(bc_inferred_goal_rews, axis=2), axis=1)
 # print("(Std) Total rewards per rollout with inferred goals:", total_rewards_inferred_goal_std)
 # Compute euclidean distances between goals and last states
 goal_distances = jnp.linalg.norm(inferred_goals - goals[:, None], axis=-1)
@@ -243,15 +307,33 @@ goal_distances = jnp.linalg.norm(inferred_goals - goals[:, None], axis=-1)
 
 # Compute differences and their statistics for total rewards vs last state rewards
 reward_diff_last_state = total_rewards_last_state - total_rewards
+reward_diff_bc_last_state = total_rewards_bc_last_state - total_rewards
+
 reward_diff_last_state_mean = jnp.mean(reward_diff_last_state)
+reward_diff_bc_last_state_mean = jnp.mean(reward_diff_bc_last_state)
+
 reward_diff_last_state_std = jnp.std(reward_diff_last_state)
+reward_diff_bc_last_state_std = jnp.std(reward_diff_bc_last_state)
+
 print("Mean difference between total rewards and last state rewards:", reward_diff_last_state_mean)
 print("Std of difference between total rewards and last state rewards:", reward_diff_last_state_std)
 
+print("Mean difference between total rewards and last state rewards:", reward_diff_bc_last_state_mean)
+print("Std of difference between total rewards and last state rewards:", reward_diff_bc_last_state_std)
+
+
 # Compute differences and their statistics for total rewards vs inferred goal rewards
 reward_diff_inferred = total_rewards_inferred_goal_mean - total_rewards
+reward_diff_bc_inferred = total_rewards_bc_inferred_goal_mean - total_rewards
+
 reward_diff_inferred_mean = jnp.mean(reward_diff_inferred)
+reward_diff_bc_inferred_mean = jnp.mean(reward_diff_bc_inferred)
+
 reward_diff_inferred_std = jnp.std(reward_diff_inferred)
+reward_diff_bc_inferred_std = jnp.std(reward_diff_bc_inferred)
 print("Mean difference between total rewards and inferred goal rewards:", reward_diff_inferred_mean)
 print("Std of difference between total rewards and inferred goal rewards:", reward_diff_inferred_std)
+
+print("Mean difference between total rewards and inferred goal rewards:", reward_diff_bc_inferred_mean)
+print("Std of difference between total rewards and inferred goal rewards:", reward_diff_bc_inferred_std)
 
