@@ -13,6 +13,7 @@ import brax
 from brax import envs
 from brax.training import gradients, distribution, types, pmap
 from brax.training.replay_buffers_test import jit_wrap
+from jax.scipy import stats
 
 from envs.wrappers import TrajectoryIdWrapper
 from src.evaluator import CrlEvaluator
@@ -77,10 +78,9 @@ class TrainingState:
     critic_state: TrainState
     alpha_state: TrainState
     context_state: TrainState
-    generator_state: TrainState
-    discriminator_state: TrainState
-
-def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, generator, discriminator, state_dim, goal_dim, action_dim, noise_dim, episode_length, actor_lr, critic_lr, alpha_lr, generator_lr, discriminator_lr, num_local_devices_to_use):
+    kde: jax._src.scipy.stats.kde.gaussian_kde
+    
+def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, state_dim, goal_dim, action_dim, episode_length, actor_lr, critic_lr, alpha_lr, num_local_devices_to_use):
     """
     Initializes the training state for a contrastive reinforcement learning model. This function sets up the initial states for various components including the policy
     network, CRL networks, and optimizers. All parameters are initialized and replicated across the specified
@@ -104,7 +104,7 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, gen
         policy network parameters, CRL critic parameters, their respective optimizer states, alpha parameter,
         and normalization parameters.
     """
-    actor_key, sa_key, g_key, context_key, generator_key, discriminator_key = jax.random.split(key, 6)
+    actor_key, sa_key, g_key, context_key = jax.random.split(key, 4)
     # print(state_dim, goal_dim, action_dim)
     # Actor and entropy coefficient
     actor_params = actor.init(actor_key, jnp.ones([1, state_dim + goal_dim]))
@@ -124,15 +124,11 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, gen
     context_encoder_params = context_encoder.init(context_key, jnp.ones([1, (episode_length - 1) * (state_dim + action_dim)]))
     context_state = TrainState.create(apply_fn=None, params=context_encoder_params, tx=optax.adam(learning_rate=critic_lr))
     
-    generator_params = generator.init(generator_key, jnp.ones([1, noise_dim]))
-    generator_state = TrainState.create(apply_fn=generator.apply, params=generator_params, tx=optax.adam(learning_rate=generator_lr))
-    
-    discriminator_params = discriminator.init(discriminator_key, jnp.ones([1, goal_dim]))
-    discriminator_state = TrainState.create(apply_fn=discriminator.apply, params=discriminator_params, tx=optax.adam(learning_rate=discriminator_lr))
-    
+    dummy_goal_batch = jnp.zeros([10000, goal_dim])
+    dummy_kde = stats.gaussian_kde(dummy_goal_batch.T, bw_method=0.1)
     training_state = TrainingState(env_steps=jnp.zeros(()), gradient_steps=jnp.zeros(()), 
                                    actor_state=actor_state, critic_state=critic_state, alpha_state=alpha_state,
-                                   context_state=context_state, generator_state=generator_state, discriminator_state=discriminator_state)
+                                   context_state=context_state, kde=dummy_kde)
     training_state = jax.device_put_replicated(training_state, jax.local_devices()[:num_local_devices_to_use])
     return training_state
 
@@ -412,138 +408,6 @@ def context_loss(
     
     return info_loss, metrics
 
-def generator_loss_lsgan(gen_params, disc_params, transitions, generator, discriminator, noise_dim, key):
-    """
-    Generator loss for LSGAN with parameter c
-    This implements 0.5 * E[(D(G(z)) - c)^2]
-    
-    Args:
-        gen_params: Parameters for the generator
-        disc_params: Parameters for the discriminator
-        discriminator: Discriminator network
-        transitions: Transitions from collected episodes
-        noise_dim: Dimension of the noise input
-        key: Random key for noise generation
-        batch_size: Batch size for training
-        c: LSGAN parameter 'c', default is 1 (what we want fake samples to be classified as)
-        
-    Returns:
-        generator_loss: Scalar loss value for the generator
-        metrics: Dictionary of metrics related to the generator
-    """
-    c = 0
-    # Extract goals from transitions
-    noise = transitions.extras["state_extras"]["noise"][:, -1, :]  # Assuming goals are the last part of observation
-    print("noise shape provided to generator", noise.shape)
-    goals = generator.apply(gen_params, noise)
-    print("goals shape", goals.shape)
-    # Discriminator's prediction on fake/generated goals
-    disc_fake = jax.lax.stop_gradient(discriminator.apply(disc_params, goals))
-    print("disc_fake shape", disc_fake.shape)
-    # LSGAN generator loss: 0.5 * E[(D(G(z)) - c)^2] 
-    # This encourages the generator to create goals that the discriminator classifies as c
-    disc_prob = jnp.mean(disc_fake)
-    gen_loss = jnp.mean(jnp.square(disc_fake - c))
-    
-    metrics = {
-        "gen_loss": gen_loss,
-        "disc_prob": disc_prob,
-    }
-    
-    return gen_loss, metrics
-
-def discriminator_loss_lsgan(disc_params, transitions, discriminator, noise_dim, key):
-    """
-    Discriminator loss for LSGAN with the formula:
-    min_D V(D) = E_{g~p_data(g)}[y_g(D(g)-b)^2 + (1-y_g)(D(g)-a)^2] + E_{z~p_z(z)}[(D(G(z))-a)^2]
-    
-    Args:
-        disc_params: Parameters for the discriminator
-        transitions: Transitions from collected episodes
-        generator: Generator network
-        discriminator: Discriminator network
-        gen_params: Parameters for the generator
-        noise_dim: Dimension of the noise input to generator
-        episode_length: Maximum length of an episode
-        key: JAX random key
-        batch_size: Batch size for training
-        a: LSGAN parameter 'a', default is -1
-        b: LSGAN parameter 'b', default is 1
-        
-    Returns:
-        discriminator_loss: Scalar loss value for the discriminator
-        metrics: Dictionary of metrics related to the discriminator
-    """
-    a = -1
-    b = 1
-    # Split the random key
-    key, gen_key = jax.random.split(key)
-    
-    # Compute cumulative rewards for each trajectory
-    cumulative_rewards = compute_cumulative_rewards(transitions)
-    print("cumulative_rewards", cumulative_rewards)
-    print("transitions.reward.shape", transitions.reward.shape)
-    frac_cumulative_rewards = cumulative_rewards / transitions.reward.shape[1]
-    print("cumulative_rewards shape", cumulative_rewards.shape)
-    # Assign labels based on cumulative rewards
-    lower_bound = 0.1
-    upper_bound = 0.9
-    goal_labels = jnp.logical_and(
-        frac_cumulative_rewards > lower_bound, 
-        frac_cumulative_rewards < upper_bound
-    ).astype(jnp.float32)
-    print("goal_labels shape", goal_labels.shape)
-
-    # Extract goals from transitions
-    fake_goals = transitions.extras["target"][:, -1, :]
-    print("fake_goals shape", fake_goals.shape)
-
-    disc_fake = discriminator.apply(disc_params, fake_goals)
-    
-    # Compute LSGAN discriminator loss
-    # For real goals labeled as desired (y_g = 1): (D(g) - b)^2
-    loss_real_desired = goal_labels * jnp.square(disc_fake - b)
-    
-    # For real goals labeled as undesired (y_g = 0): (D(g) - a)^2
-    loss_real_undesired = (1 - goal_labels) * jnp.square(disc_fake - a)
-    
-    # Combine losses for real goals
-    loss_real = jnp.mean(loss_real_desired + loss_real_undesired)
-    
-    # For fake goals: (D(G(z)) - a)^2
-    loss_fake = jnp.mean(jnp.square(disc_fake - a))
-    
-    # Total discriminator loss
-    disc_loss = loss_real + loss_fake
-    print("disc_loss shape", disc_loss.shape)
-    
-    metrics = {
-        "disc_loss": disc_loss,
-        "avg_frac_reward": jnp.mean(frac_cumulative_rewards),
-        "target_x_mean": jnp.mean(fake_goals[:, 0]),
-        "target_y_mean": jnp.mean(fake_goals[:, 1]),
-        "target_x_std": jnp.std(fake_goals[:, 0]),
-        "target_y_std": jnp.std(fake_goals[:, 1]),
-    }
-    
-    return disc_loss, metrics
-
-def compute_cumulative_rewards(transitions):
-    """
-    Computes the cumulative rewards for each trajectory in the transitions.
-    
-    Args:
-        transitions: Transitions from the replay buffer containing rewards
-        
-    Returns:
-        cumulative_rewards: Sum of rewards for each trajectory
-    """
-    # Sum rewards along the timestep dimension (axis=1)
-    # transitions.reward has shape [batch_size, timesteps]
-    cumulative_rewards = jnp.sum(transitions.reward, axis=1)
-    
-    return cumulative_rewards
-
 def actor_step(env, env_state, actor, parametric_action_distribution, actor_params, key, extra_fields=()):
     """
     Executes one step of an actor in the environment by selecting an action based on the
@@ -587,6 +451,50 @@ def actor_step(env, env_state, actor, parametric_action_distribution, actor_para
         extras={"policy_extras": {}, "state_extras": state_extras},
     )
 
+def actor_step_kde(env, env_state, actor, parametric_action_distribution, actor_params, explore_goal, key, extra_fields=()):
+    """
+    Executes one step of an actor in the environment by selecting an action based on the
+    policy, stepping the environment, and returning the updated state and transition data.
+
+    Parameters
+    ----------
+    env : Env
+        The environment in which the actor operates.
+    env_state : State
+        The current state of the environment.
+    actor : brax.training.types.Policy
+        The policy used to select the action.
+    parametric_action_distribution : brax.training.distribution.ParametricDistribution
+        A tanh normal distribution, used to map the actor's output to an action vector with elements between [-1, 1].
+    actor_params : Any
+        Parameters for the actor network.
+    key : PRNGKey
+        A random key for stochastic policy decisions.
+    extra_fields : Sequence[str], optional
+        A sequence of extra fields to be extracted from the environment state.
+
+    Returns
+    -------
+    Tuple[State, Transition]
+        A tuple containing the new state after taking the action and the transition data
+        encompassing observation, action, reward, discount, and extra information.
+
+    """
+    new_state = jnp.concatenate([env_state.obs[:, :env.state_dim], explore_goal], axis=1)
+    action_mean_and_SD = actor.apply(actor_params, new_state)
+    action = parametric_action_distribution.sample(action_mean_and_SD, key)
+    nstate = env.step(env_state, action)
+    # print(f"state.pipeline_state shape: {jax.tree_map(lambda x: x.shape, env_state.pipeline_state)}")
+    # print(f"action shape: {jax.tree_map(lambda x: x.shape, action)}")
+    state_extras = {x: nstate.info[x] for x in extra_fields}
+    return nstate, Transition(
+        observation=new_state,
+        action=action,
+        reward=nstate.reward,
+        discount=1 - nstate.done,
+        extras={"policy_extras": {}, "state_extras": state_extras},
+    )
+    
 def _unpmap(v):
     return jax.tree_util.tree_map(lambda x: x[0], v)
 
@@ -600,8 +508,6 @@ def train(
     policy_lr: float = 1e-4,
     alpha_lr: float = 1e-4,
     critic_lr: float = 1e-4,
-    generator_lr: float = 1e-4,
-    discriminator_lr: float = 1e-4,
     seed: int = 0,
     batch_size: int = 256,
     contrastive_loss_fn: str = "binary",
@@ -623,7 +529,6 @@ def train(
     h_dim: int = 256,
     n_hidden: int = 2,
     repr_dim: int = 64,
-    noise_dim: int = 4,
     visualization_interval: int = 5,
 ):
     """
@@ -783,14 +688,12 @@ def train(
     sa_encoder = Net(repr_dim, h_dim, num_blocks, block_size, use_ln)
     g_encoder = Net(repr_dim, h_dim, num_blocks, block_size, use_ln)
     context_encoder = Net(goal_size * 2, h_dim, num_blocks, block_size, use_ln)
-    generator = Net(goal_size, h_dim, num_blocks, block_size, use_ln)
-    discriminator = Net(1, h_dim, num_blocks, block_size, use_ln)
     parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size) # Would like to replace this but it's annoying to.
 
     # Initialize training state (not sure if it makes sense to split and fold local_key here)
     global_key, local_key = jax.random.split(rng)
     local_key = jax.random.fold_in(local_key, process_id)    
-    training_state = _init_training_state(global_key, actor, sa_encoder, g_encoder, context_encoder, generator, discriminator, env.state_dim, len(env.goal_indices), env.action_size, noise_dim, episode_length, policy_lr, critic_lr, alpha_lr, generator_lr, discriminator_lr, num_local_devices_to_use)
+    training_state = _init_training_state(global_key, actor, sa_encoder, g_encoder, context_encoder, env.state_dim, len(env.goal_indices), env.action_size, episode_length, policy_lr, critic_lr, alpha_lr, num_local_devices_to_use)
     del global_key
     
     # Update functions (may replace later: brax makes it opaque)
@@ -798,8 +701,7 @@ def train(
     actor_update = gradients.gradient_update_fn(actor_loss, training_state.actor_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     critic_update = gradients.gradient_update_fn(critic_loss, training_state.critic_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     context_update = gradients.gradient_update_fn(context_loss, training_state.context_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    generator_update = gradients.gradient_update_fn(generator_loss_lsgan, training_state.generator_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    discriminator_update = gradients.gradient_update_fn(discriminator_loss_lsgan, training_state.discriminator_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+    
     
     def update_step(carry, transitions):
         training_state, key = carry
@@ -833,8 +735,7 @@ def train(
             critic_state=training_state.critic_state.replace(params=critic_params, opt_state=critic_optimizer_state),
             alpha_state=training_state.alpha_state.replace(params=alpha_params, opt_state=alpha_optimizer_state),
             context_state=training_state.context_state,
-            generator_state=training_state.generator_state,
-            discriminator_state=training_state.discriminator_state,
+            kde=training_state.kde,
         )
         return (new_training_state, key), metrics
     
@@ -866,58 +767,64 @@ def train(
             critic_state=training_state.critic_state,
             alpha_state=training_state.alpha_state,
             context_state=training_state.context_state.replace(params=context_params, opt_state=context_optimizer_state),
-            generator_state=training_state.generator_state,
-            discriminator_state=training_state.discriminator_state,
+            kde=training_state.kde,
         )
         return (new_training_state, key), metrics
-    
-    def update_step_gen_disc(carry, trajectories):
-        training_state, key = carry
-        key, key_context, key_gen, key_disc = jax.random.split(key, 4)
-        
-        # Discriminator update
-        (discriminator_loss, discriminator_metrics), discriminator_params, discriminator_optimizer_state = discriminator_update(
-            training_state.discriminator_state.params, 
-            trajectories,  
-            discriminator,
-            noise_dim,
-            key_disc,
-            optimizer_state=training_state.discriminator_state.opt_state
-        )
-        
-        # Generator update
-        (generator_loss, generator_metrics), generator_params, generator_optimizer_state = generator_update(
-            training_state.generator_state.params,
-            training_state.discriminator_state.params, 
-            trajectories,  
-            generator,
-            discriminator,
-            noise_dim,
-            key_gen,
-            optimizer_state=training_state.generator_state.opt_state
-        )
 
-        metrics = {
-            "generator_loss": generator_loss,
-            "discriminator_loss": discriminator_loss,
-        }
-        metrics.update(generator_metrics)
-        metrics.update(discriminator_metrics)
-
-        new_training_state = TrainingState(
-            env_steps=training_state.env_steps,
-            gradient_steps=training_state.gradient_steps,
-            actor_state=training_state.actor_state,
-            critic_state=training_state.critic_state,
-            alpha_state=training_state.alpha_state,
-            context_state=training_state.context_state,
-            generator_state=training_state.generator_state.replace(params=generator_params, opt_state=generator_optimizer_state),
-            discriminator_state=training_state.discriminator_state.replace(params=discriminator_params, opt_state=discriminator_optimizer_state),
-        )
+    def get_experience(actor_params, kde, transitions, env_state, buffer_state, key):
+        @jax.jit
+        def f(carry, unused_t):
+            env_state, current_key = carry
+            current_key, next_key = jax.random.split(current_key)
+            env_state, transition = actor_step_kde(env, env_state, actor, parametric_action_distribution, actor_params, exploration_goals, current_key, extra_fields=("truncation", "traj_id"))
+            return (env_state, next_key), transition
         
-        return (new_training_state, key), metrics
+        @jax.vmap
+        def get_lowest_probability_goal(buffer_goals):
+            return buffer_goals[jnp.argmin(kde(buffer_goals.T))]
+        
+        key, subkey = jax.random.split(key)
+        buffer_goals = jax.random.permutation(subkey, transitions.extras['state'][:, env.goal_indices])
+        buffer_goals = buffer_goals.reshape(num_envs, -1, goal_size) # Permute and expand back to (#envs, #envs, goal_dim.
+                                                                              # first dim is for vectorized envs, second dim is just # of samples
+                                                                              # which we happen to make equal to num_envs...?
+        print("kde: buffer_goals shape", buffer_goals.shape)
+        exploration_goals = get_lowest_probability_goal(buffer_goals)
+        print("kde: exploration_goals shape", exploration_goals.shape)
+        (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=unroll_length)
+        buffer_state = replay_buffer.insert(buffer_state, data)
+        return env_state, buffer_state
 
-    def get_experience(actor_params, env_state, buffer_state, key):
+    def training_step(training_state, env_state, buffer_state, key):
+        # Collect experience
+        sampling_key, permutation_key, experience_key, training_key = jax.random.split(key, 4)
+        
+        buffer_state, transitions = replay_buffer.sample(buffer_state)
+        batch_keys = jax.random.split(sampling_key, transitions.observation.shape[0])
+        vmap_flatten_crl_fn = jax.vmap(TrajectoryUniformSamplingQueue.flatten_crl_fn, in_axes=(None, None, 0, 0))
+        transitions = vmap_flatten_crl_fn(config, env, transitions, batch_keys)
+        transitions = jax.tree_util.tree_map(lambda x: jnp.reshape(x, (-1,) + x.shape[2:], order="F"), transitions)
+        print("kde: transitions shape before permutation", transitions.observation.shape)
+        permutation = jax.random.permutation(experience_key, len(transitions.action)) #???
+        print("kde: permutation shape", permutation.shape)
+        transitions = jax.tree_util.tree_map(lambda x: x[permutation], transitions)
+        print("kde: transitions shape after permutation", transitions.observation.shape)
+        
+        # Fit KDE before collection (using 10k goals)
+        data_to_kde = transitions.extras['state'][:, env.goal_indices][:10000]
+        print("kde: data_to_kde shape", data_to_kde.shape)
+        kde = stats.gaussian_kde(data_to_kde.T, bw_method=0.1)
+        training_state = training_state.replace(kde=kde)
+        
+        env_state, buffer_state = get_experience(training_state.actor_state.params, training_state.kde, transitions, env_state, buffer_state, experience_key)
+        training_state = training_state.replace(env_steps=training_state.env_steps + env_steps_per_actor_step)
+        
+        # Train
+        training_state, buffer_state, metrics = train_steps(training_state, buffer_state, training_key)
+        return training_state, env_state, buffer_state, metrics
+
+
+    def get_experience_prefill(actor_params, env_state, buffer_state, key):
         @jax.jit
         def f(carry, unused_t):
             env_state, current_key = carry
@@ -928,23 +835,13 @@ def train(
         (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=unroll_length)
         buffer_state = replay_buffer.insert(buffer_state, data)
         return env_state, buffer_state
-
-    def training_step(training_state, env_state, buffer_state, key):
-        # Collect experience
-        experience_key, training_key = jax.random.split(key, 2)
-        env_state, buffer_state = get_experience(training_state.actor_state.params, env_state, buffer_state, experience_key)
-        training_state = training_state.replace(env_steps=training_state.env_steps + env_steps_per_actor_step)
-        
-        # Train
-        training_state, buffer_state, metrics = train_steps(training_state, buffer_state, training_key)
-        return training_state, env_state, buffer_state, metrics
-
+    
     def prefill_replay_buffer(training_state, env_state, buffer_state, key):
         def f(carry, unused):
             # Collect experience
             training_state, env_state, buffer_state, key = carry
             key, new_key = jax.random.split(key)
-            env_state, buffer_state = get_experience(training_state.actor_state.params, env_state, buffer_state, key)
+            env_state, buffer_state = get_experience_prefill(training_state.actor_state.params, env_state, buffer_state, key)
             new_training_state = training_state.replace(env_steps=training_state.env_steps + env_steps_per_actor_step)
             return (new_training_state, env_state, buffer_state, new_key), ()
         print("current num_prefill_actor_steps", num_prefill_actor_steps)
@@ -978,7 +875,6 @@ def train(
         ## Train
         (training_state, _), metrics1 = jax.lax.scan(update_step, (training_state, training_key), transitions)
         (training_state, _), metrics2 = jax.lax.scan(update_step_context, (training_state, training_key), trajectories)
-        # (training_state, _), metrics3 = jax.lax.scan(update_step_gen_disc, (training_state, training_key), trajectories)
         metrics = {**metrics1, **metrics2}
         # print("METRICS", metrics)
         return training_state, buffer_state, metrics
