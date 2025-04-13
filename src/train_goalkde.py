@@ -784,9 +784,7 @@ def train(
             return buffer_goals[jnp.argmin(kde(buffer_goals.T))]
         
         key, subkey = jax.random.split(key)
-        print("kde: transitions.extras['future_state'][:, env.goal_indices].shape", transitions.extras['future_state'][:, env.goal_indices].shape)
-        buffer_goals = jax.random.permutation(subkey, transitions.extras['future_state'][:, env.goal_indices])
-        print("kde: buffer_goals shape before reshape", buffer_goals.shape)
+        buffer_goals = jax.random.permutation(subkey, transitions.extras['state'][:, env.goal_indices])
         buffer_goals = buffer_goals.reshape(num_envs, -1, goal_size) # Permute and expand back to (#envs, #envs, goal_dim.
                                                                               # first dim is for vectorized envs, second dim is just # of samples
                                                                               # which we happen to make equal to num_envs...?
@@ -813,7 +811,7 @@ def train(
         print("kde: transitions shape after permutation", transitions.observation.shape)
         
         # Fit KDE before collection (using 10k goals)
-        data_to_kde = transitions.extras['future_state'][:, env.goal_indices][:10000]
+        data_to_kde = transitions.extras['state'][:, env.goal_indices][:10000]
         print("kde: data_to_kde shape", data_to_kde.shape)
         kde = stats.gaussian_kde(data_to_kde.T, bw_method=0.1)
         training_state = training_state.replace(kde=kde)
