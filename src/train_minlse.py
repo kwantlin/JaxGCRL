@@ -78,7 +78,6 @@ class TrainingState:
     critic_state: TrainState
     alpha_state: TrainState
     context_state: TrainState
-    kde: jax._src.scipy.stats.kde.gaussian_kde
     
 def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, state_dim, goal_dim, action_dim, episode_length, actor_lr, critic_lr, alpha_lr, num_local_devices_to_use):
     """
@@ -123,12 +122,10 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, context_encoder, sta
     # Put everything together into TrainingState
     context_encoder_params = context_encoder.init(context_key, jnp.ones([1, (episode_length - 1) * (state_dim + action_dim)]))
     context_state = TrainState.create(apply_fn=None, params=context_encoder_params, tx=optax.adam(learning_rate=critic_lr))
-    
-    dummy_goal_batch = jnp.zeros([10000, goal_dim])
-    dummy_kde = stats.gaussian_kde(dummy_goal_batch.T, bw_method=0.1)
+
     training_state = TrainingState(env_steps=jnp.zeros(()), gradient_steps=jnp.zeros(()), 
                                    actor_state=actor_state, critic_state=critic_state, alpha_state=alpha_state,
-                                   context_state=context_state, kde=dummy_kde)
+                                   context_state=context_state)
     training_state = jax.device_put_replicated(training_state, jax.local_devices()[:num_local_devices_to_use])
     return training_state
 
@@ -451,7 +448,7 @@ def actor_step(env, env_state, actor, parametric_action_distribution, actor_para
         extras={"policy_extras": {}, "state_extras": state_extras},
     )
 
-def actor_step_kde(env, env_state, actor, parametric_action_distribution, actor_params, explore_goal, key, extra_fields=()):
+def actor_step_minlse(env, env_state, actor, parametric_action_distribution, actor_params, explore_goal, key, extra_fields=()):
     """
     Executes one step of an actor in the environment by selecting an action based on the
     policy, stepping the environment, and returning the updated state and transition data.
@@ -735,7 +732,6 @@ def train(
             critic_state=training_state.critic_state.replace(params=critic_params, opt_state=critic_optimizer_state),
             alpha_state=training_state.alpha_state.replace(params=alpha_params, opt_state=alpha_optimizer_state),
             context_state=training_state.context_state,
-            kde=training_state.kde,
         )
         return (new_training_state, key), metrics
     
@@ -767,30 +763,37 @@ def train(
             critic_state=training_state.critic_state,
             alpha_state=training_state.alpha_state,
             context_state=training_state.context_state.replace(params=context_params, opt_state=context_optimizer_state),
-            kde=training_state.kde,
         )
         return (new_training_state, key), metrics
 
-    def get_experience(actor_params, kde, transitions, env_state, buffer_state, key):
+    def get_experience(training_state, transitions, energy_fn, env_state, buffer_state, key):
         @jax.jit
         def f(carry, unused_t):
             env_state, current_key = carry
             current_key, next_key = jax.random.split(current_key)
-            env_state, transition = actor_step_kde(env, env_state, actor, parametric_action_distribution, actor_params, exploration_goals, current_key, extra_fields=("truncation", "traj_id"))
+            env_state, transition = actor_step_minlse(env, env_state, actor, parametric_action_distribution, training_state.actor_state.params, exploration_goals, current_key, extra_fields=("truncation", "traj_id"))
             return (env_state, next_key), transition
         
-        @jax.vmap
-        def get_lowest_probability_goal(buffer_goals):
-            return buffer_goals[jnp.argmin(kde(buffer_goals.T))]
+        @jax.jit
+        def get_worst_best_goal(rs, ra, rg):
+            print("rs, ra, rg", rs.shape, ra.shape, rg.shape)
+            sa_encoder_params, g_encoder_params = jax.lax.stop_gradient(training_state.critic_state.params["sa_encoder"]), jax.lax.stop_gradient(training_state.critic_state.params["g_encoder"])
+            sa = jnp.concatenate([rs, ra], axis=-1)
+            random_sa_repr = sa_encoder.apply(sa_encoder_params,sa)
+            random_g_repr = g_encoder.apply(g_encoder_params, rg)            
+            logits = compute_energy(energy_fn, random_sa_repr, random_g_repr)
+            return rg[ jnp.argmin( jax.nn.logsumexp(logits + 1e-6, axis=0) ) ]
         
-        key, subkey = jax.random.split(key)
-        buffer_goals = jax.random.permutation(subkey, transitions.extras['state'][:, env.goal_indices])
-        buffer_goals = buffer_goals.reshape(num_envs, -1, goal_size) # Permute and expand back to (#envs, #envs, goal_dim.
-                                                                              # first dim is for vectorized envs, second dim is just # of samples
-                                                                              # which we happen to make equal to num_envs...?
-        print("kde: buffer_goals shape", buffer_goals.shape)
-        exploration_goals = get_lowest_probability_goal(buffer_goals)
-        print("kde: exploration_goals shape", exploration_goals.shape)
+        random_g_key, key = jax.random.split(key, 2)
+        
+        # sampling random state, actions 
+        random_states = transitions.observation[:, :state_dim].reshape(num_envs, -1, state_dim)
+        random_actions = transitions.action.reshape(num_envs, -1, action_size)
+        
+        random_goals = transitions.observation[:, state_dim:].reshape(num_envs, -1, goal_size)
+        # print("random_states, random_actions, random_goals", random_states.shape, random_actions.shape, random_goals.shape)
+        exploration_goals = jax.vmap(get_worst_best_goal, in_axes=0)(random_states, random_actions, random_goals)
+        # print("exploration_goals", exploration_goals.shape)
         (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=unroll_length)
         buffer_state = replay_buffer.insert(buffer_state, data)
         return env_state, buffer_state
@@ -804,19 +807,10 @@ def train(
         vmap_flatten_crl_fn = jax.vmap(TrajectoryUniformSamplingQueue.flatten_crl_fn, in_axes=(None, None, 0, 0))
         transitions = vmap_flatten_crl_fn(config, env, transitions, batch_keys)
         transitions = jax.tree_util.tree_map(lambda x: jnp.reshape(x, (-1,) + x.shape[2:], order="F"), transitions)
-        print("kde: transitions shape before permutation", transitions.observation.shape)
         permutation = jax.random.permutation(experience_key, len(transitions.action)) #???
-        print("kde: permutation shape", permutation.shape)
         transitions = jax.tree_util.tree_map(lambda x: x[permutation], transitions)
-        print("kde: transitions shape after permutation", transitions.observation.shape)
         
-        # Fit KDE before collection (using 10k goals)
-        data_to_kde = transitions.extras['state'][:, env.goal_indices][:10000]
-        print("kde: data_to_kde shape", data_to_kde.shape)
-        kde = stats.gaussian_kde(data_to_kde.T, bw_method=0.1)
-        training_state = training_state.replace(kde=kde)
-        
-        env_state, buffer_state = get_experience(training_state.actor_state.params, training_state.kde, transitions, env_state, buffer_state, experience_key)
+        env_state, buffer_state = get_experience(training_state, transitions, energy_fn, env_state, buffer_state, experience_key)
         training_state = training_state.replace(env_steps=training_state.env_steps + env_steps_per_actor_step)
         
         # Train

@@ -8,7 +8,7 @@ from brax.io import model
 from pyinstrument import Profiler
 
 
-from src.train_goalgan import train
+from src.train_minlse import train
 from utils import MetricsRecorder, get_env_config, create_env, create_eval_env, create_parser, render
 
 
@@ -55,8 +55,6 @@ def main(args):
         policy_lr=args.policy_lr,
         critic_lr=args.critic_lr,
         alpha_lr=args.alpha_lr,
-        generator_lr=args.generator_lr,
-        discriminator_lr=args.discriminator_lr,
         contrastive_loss_fn=args.contrastive_loss_fn,
         energy_fn=args.energy_fn,
         logsumexp_penalty=args.logsumexp_penalty,
@@ -75,7 +73,6 @@ def main(args):
         h_dim=args.h_dim,
         n_hidden=args.n_hidden,
         repr_dim=args.repr_dim,
-        noise_dim=args.noise_dim,
         visualization_interval=args.visualization_interval,
     )
 
@@ -86,8 +83,6 @@ def main(args):
         "eval/episode_success_easy",
         "eval/episode_dist",
         "eval/episode_reward_survive",
-        "eval/disc_loss",
-        "eval/gen_loss",
         "training/crl_critic_loss",
         "training/actor_loss",
         "training/binary_accuracy",
@@ -109,13 +104,6 @@ def main(args):
         "training/context_info_loss",
         "training/context_mean_norm",
         "training/context_std_mean",
-        "training/gen_loss",
-        "training/disc_loss",
-        "training/avg_frac_reward",
-        "training/target_x_mean",
-        "training/target_y_mean",
-        "training/target_x_std",
-        "training/target_y_std",
     ]
 
     metrics_recorder = MetricsRecorder(args.num_timesteps, metrics_to_collect, run_dir, args.exp_name)
