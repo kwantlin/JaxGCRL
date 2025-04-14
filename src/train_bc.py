@@ -77,7 +77,7 @@ class TrainingState:
     alpha_state: TrainState
     context_state: TrainState
 
-def _init_training_state(key, actor, context_encoder, mean_field, state_dim, goal_dim, action_dim, episode_length, actor_lr, alpha_lr, num_local_devices_to_use):
+def _init_training_state(key, actor, context_encoder, var_post, state_dim, goal_dim, action_dim, episode_length, actor_lr, alpha_lr, num_local_devices_to_use):
     """
     Initializes the training state for a contrastive reinforcement learning model. This function sets up the initial states for various components including the policy
     network, CRL networks, and optimizers. All parameters are initialized and replicated across the specified
@@ -109,7 +109,7 @@ def _init_training_state(key, actor, context_encoder, mean_field, state_dim, goa
     log_alpha = {"log_alpha": jnp.array(0.0)}
     alpha_state = TrainState.create(apply_fn=None, params=log_alpha, tx=optax.adam(learning_rate=alpha_lr))
 
-    if mean_field:
+    if var_post == "meanfield":
         dummy_input = jnp.ones([1, (state_dim + action_dim)])
     else:
         dummy_input = jnp.ones([1, (episode_length - 1) * (state_dim + action_dim)])
@@ -526,7 +526,7 @@ def train(
     n_hidden: int = 2,
     repr_dim: int = 64,
     visualization_interval: int = 5,
-    mean_field: bool = False,
+    var_post: str = "meanfield",
     saved_ckpt_path: Optional[str] = None,
 ):
     """
@@ -693,13 +693,13 @@ def train(
     # Initialize training state (not sure if it makes sense to split and fold local_key here)
     global_key, local_key = jax.random.split(rng)
     local_key = jax.random.fold_in(local_key, process_id)    
-    training_state = _init_training_state(global_key, actor, context_encoder, mean_field, env.state_dim, len(env.goal_indices), env.action_size, episode_length, policy_lr, alpha_lr, num_local_devices_to_use)
+    training_state = _init_training_state(global_key, actor, context_encoder, var_post, env.state_dim, len(env.goal_indices), env.action_size, episode_length, policy_lr, alpha_lr, num_local_devices_to_use)
     del global_key
     
     # Update functions (may replace later: brax makes it opaque)
     alpha_update = gradients.gradient_update_fn(alpha_loss, training_state.alpha_state.tx, pmap_axis_name=_PMAP_AXIS_NAME)
     actor_update = gradients.gradient_update_fn(actor_loss, training_state.actor_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    if mean_field:
+    if var_post == "meanfield":
         context_update = gradients.gradient_update_fn(context_loss_meanfield, training_state.context_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     else:
         context_update = gradients.gradient_update_fn(context_loss, training_state.context_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)

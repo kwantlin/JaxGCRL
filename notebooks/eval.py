@@ -613,17 +613,17 @@ plt.axhline(y=0, color='gray', linestyle='--', alpha=0.7)
 
 # Customize the plot
 plt.title('Performance Difference Compared to Expert Demonstrations', fontsize=16)
-plt.ylabel('Mean Reward Difference', fontsize=14)
+plt.ylabel('Mean Regret', fontsize=14)
 plt.xlabel('Method', fontsize=14)
 plt.xticks(rotation=45, ha='right')
 plt.grid(axis='y', linestyle='--', alpha=0.7)
 plt.tight_layout()
 
 # Add a note explaining the interpretation
-plt.figtext(0.5, 0.01, 
-            "Note: Higher values indicate better performance compared to expert demonstrations.\n"
-            "Error bars represent standard error of the mean.", 
-            ha='center', fontsize=10)
+# plt.figtext(0.5, 0.01, 
+#             "Note: Higher values indicate better performance compared to expert demonstrations.\n"
+#             "Error bars represent standard error of the mean.", 
+#             ha='center', fontsize=10)
 
 # Save the figure
 plt.savefig('performance_comparison.png', dpi=300, bbox_inches='tight')
