@@ -20,36 +20,52 @@ from jax import numpy as jnp
 import seaborn as sns
 import pandas as pd
 
+# note: ant: step_11427840
+# note: reacher: step_10380288
+# note: pusher_easy: step_30601216
 
+env_name = 'pusher_easy'
 # Load standard CRL checkpoint. For expert demos!
-RUN_FOLDER_PATH = '/home/kwantlin/JaxGCRL/runs/run_ant-main_s_1'
-CKPT_NAME = '/step_11427840.pkl'
+RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-main_s_1'
+CKPT_NAME = '/step_30601216.pkl'
 params = model.load_params(RUN_FOLDER_PATH + '/ckpt' + CKPT_NAME)
 policy_params, encoders_params, context_params = params
 
 # CRL Mean field checkpoint
-MEAN_FIELD_RUN_FOLDER_PATH = '/home/kwantlin/JaxGCRL/runs/run_ant-main-meanfield_s_1'
-MEAN_FIELD_CKPT_NAME = '/step_11427840.pkl'
+MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-main-meanfield_s_1'
+MEAN_FIELD_CKPT_NAME = '/step_30601216.pkl'
 mean_field_params = model.load_params(MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + MEAN_FIELD_CKPT_NAME)
 _, _, mean_field_context_params = mean_field_params
 
-# CRL Mean field encoded checkpoint
-MEAN_FIELD_ENCODED_RUN_FOLDER_PATH = '/home/kwantlin/JaxGCRL/runs/run_ant-main-meanfield-encoded_s_1'
-MEAN_FIELD_ENCODED_CKPT_NAME = '/step_11427840.pkl'
-mean_field_encoded_params = model.load_params(MEAN_FIELD_ENCODED_RUN_FOLDER_PATH + '/ckpt' + MEAN_FIELD_ENCODED_CKPT_NAME)
-mean_field_encoded_policy_params, mean_field_encoded_encoder_params, mean_field_encoded_context_params = mean_field_encoded_params
-mean_field_encoded_sa_encoder_params, _ = mean_field_encoded_encoder_params['sa_encoder'], mean_field_encoded_encoder_params['g_encoder']
+# # CRL Mean field encoded checkpoint
+# MEAN_FIELD_ENCODED_RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-main-meanfield-encoded_s_1'
+# MEAN_FIELD_ENCODED_CKPT_NAME = '/step_11427840.pkl'
+# mean_field_encoded_params = model.load_params(MEAN_FIELD_ENCODED_RUN_FOLDER_PATH + '/ckpt' + MEAN_FIELD_ENCODED_CKPT_NAME)
+# mean_field_encoded_policy_params, mean_field_encoded_encoder_params, mean_field_encoded_context_params = mean_field_encoded_params
+# mean_field_encoded_sa_encoder_params, _ = mean_field_encoded_encoder_params['sa_encoder'], mean_field_encoded_encoder_params['g_encoder']
+
+# GoalKDE + CRL
+GOALKDE_RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-goalkde_s_1'
+GOALKDE_CKPT_NAME = '/step_30601216.pkl'
+goalkde_params = model.load_params(GOALKDE_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_CKPT_NAME)
+goalkde_policy_params, goalkde_encoder_params, goalkde_context_params = goalkde_params
+
+# GoalKDE + CRL Mean field
+GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-goalkde-meanfield_s_1'
+GOALKDE_MEAN_FIELD_CKPT_NAME = '/step_30601216.pkl'
+goalkde_mean_field_params = model.load_params(GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_MEAN_FIELD_CKPT_NAME)
+_, _, goalkde_mean_field_context_params = goalkde_mean_field_params
 
 # BC
-BC_RUN_FOLDER_PATH = '/home/kwantlin/JaxGCRL/runs/run_ant-bc_s_1'
-BC_CKPT_NAME = '/step_11427840.pkl'
+BC_RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-bc_s_1'
+BC_CKPT_NAME = '/step_30601216.pkl'
 bc_params = model.load_params(BC_RUN_FOLDER_PATH + '/ckpt' + BC_CKPT_NAME)
 bc_policy_params, bc_context_params = bc_params
 
 
 # BC MEAN FIELD
-BC_MEAN_FIELD_RUN_FOLDER_PATH = '/home/kwantlin/JaxGCRL/runs/run_ant-bc-meanfield_s_1'
-BC_MEAN_FIELD_CKPT_NAME = '/step_11427840.pkl'
+BC_MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-bc-meanfield_s_1'
+BC_MEAN_FIELD_CKPT_NAME = '/step_30601216.pkl'
 bc_mean_field_params = model.load_params(BC_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + BC_MEAN_FIELD_CKPT_NAME)
 _, bc_mean_field_context_params = bc_mean_field_params
 
@@ -126,9 +142,13 @@ inference_fn = make_policy(actor, parametric_action_distribution, policy_params)
 context_encoder = lambda traj: context_net.apply(context_params, traj)
 mean_field_context_encoder = lambda traj: context_net.apply(mean_field_context_params, traj)
 # Mean field encoded context encoder, which uses the sa_net to encode the state-action pairs
-mean_field_encoded_sa_net = Net(args.repr_dim, args.h_dim, num_blocks, block_size, args.use_ln)
-mean_field_encoded_sa_encoder = lambda obs: mean_field_encoded_sa_net.apply(mean_field_encoded_sa_encoder_params, obs)
-mean_field_encoded_context_encoder = lambda traj: context_net.apply(mean_field_encoded_context_params, traj)
+# mean_field_encoded_sa_net = Net(args.repr_dim, args.h_dim, num_blocks, block_size, args.use_ln)
+# mean_field_encoded_sa_encoder = lambda obs: mean_field_encoded_sa_net.apply(mean_field_encoded_sa_encoder_params, obs)
+# mean_field_encoded_context_encoder = lambda traj: context_net.apply(mean_field_encoded_context_params, traj)
+
+goalkde_inference_fn = make_policy(actor, parametric_action_distribution, goalkde_policy_params)
+goalkde_context_encoder = lambda traj: context_net.apply(goalkde_context_params, traj)
+goalkde_mean_field_context_encoder = lambda traj: context_net.apply(goalkde_mean_field_context_params, traj)
 
 bc_inference_fn = make_policy(actor, parametric_action_distribution, bc_policy_params)
 bc_context_encoder = lambda traj: context_net.apply(bc_context_params, traj)
@@ -139,6 +159,7 @@ NUM_ENVS = 1000
 jit_env_reset = jax.jit(env.reset)
 jit_env_step = jax.jit(env.step)
 jit_inference_fn = jax.jit(inference_fn)
+jit_goalkde_inference_fn = jax.jit(goalkde_inference_fn)
 jit_bc_inference_fn = jax.jit(bc_inference_fn)
 def collect_trajectory(rng):
     def step_fn(carry, _):
@@ -168,7 +189,7 @@ last_states = observations[:, -1, env.goal_indices]
 print(last_states.shape)
 # Calculate total reward per rollout
 total_rewards = jnp.sum(rewards, axis=1)  # Sum rewards along trajectory dimension
-print("Total rewards per rollout (mean and std):", jnp.mean(total_rewards), jnp.std(total_rewards))
+print("Total rewards per rollout (mean and stderr):", jnp.mean(total_rewards), jnp.std(total_rewards) / jnp.sqrt(NUM_ENVS))
 
 
 # Process with standard context encoder
@@ -191,15 +212,15 @@ print("mean field context log std shape", mf_context_log_std.shape)
 
 
 # Process with mean field context encoder
-mf_encoded_encoder_output = mean_field_encoded_sa_encoder(sa_pairs_mf)
-print("mean field encoded encoder output shape", mf_encoded_encoder_output.shape)
-mf_encoded_context_output = mean_field_encoded_context_encoder(mf_encoded_encoder_output)
-print("mean field encoded context output shape", mf_encoded_context_output.shape)
-mf_encoded_context_mean, mf_encoded_context_log_std = jnp.split(mf_encoded_context_output, 2, axis=-1)
-mf_encoded_context_mean = jnp.reshape(mf_encoded_context_mean, (NUM_ENVS, NUM_STEPS, -1))
-mf_encoded_context_log_std = jnp.reshape(mf_encoded_context_log_std, (NUM_ENVS, NUM_STEPS, -1))
-print("mean field encoded context mean shape", mf_encoded_context_mean.shape)
-print("mean field encoded context log std shape", mf_encoded_context_log_std.shape)
+# mf_encoded_encoder_output = mean_field_encoded_sa_encoder(sa_pairs_mf)
+# print("mean field encoded encoder output shape", mf_encoded_encoder_output.shape)
+# mf_encoded_context_output = mean_field_encoded_context_encoder(mf_encoded_encoder_output)
+# print("mean field encoded context output shape", mf_encoded_context_output.shape)
+# mf_encoded_context_mean, mf_encoded_context_log_std = jnp.split(mf_encoded_context_output, 2, axis=-1)
+# mf_encoded_context_mean = jnp.reshape(mf_encoded_context_mean, (NUM_ENVS, NUM_STEPS, -1))
+# mf_encoded_context_log_std = jnp.reshape(mf_encoded_context_log_std, (NUM_ENVS, NUM_STEPS, -1))
+# print("mean field encoded context mean shape", mf_encoded_context_mean.shape)
+# print("mean field encoded context log std shape", mf_encoded_context_log_std.shape)
 
 # Sample NUM_SAMPLES times from each episode's context distribution
 NUM_SAMPLES = 1
@@ -271,7 +292,11 @@ inferred_goals = jax.vmap(sample_from_gaussian)(
     context_mean,
     context_log_std
 )
+
 print("inferred_goals shape:", inferred_goals.shape)
+print("goal shape:", goals.shape)
+goal_to_inferred_goal_distances = jnp.linalg.norm(goals - jnp.squeeze(inferred_goals, axis=1), axis=1)
+print("mean goal to inferred goal distance:", jnp.mean(goal_to_inferred_goal_distances))
 
 # Generate samples for each episode using mean field context encoder
 mf_inferred_goals = jax.vmap(sample_from_mean_field_gaussian)(
@@ -281,14 +306,16 @@ mf_inferred_goals = jax.vmap(sample_from_mean_field_gaussian)(
 )
 print("mean field inferred_goals shape:", mf_inferred_goals.shape)
 
+goal_to_mf_inferred_goal_distances = jnp.linalg.norm(goals - jnp.squeeze(mf_inferred_goals, axis=1), axis=1)
+print("mean goal to mf inferred goal distance:", jnp.mean(goal_to_mf_inferred_goal_distances))
 
-# Generate samples for each episode using mean field context encoder
-mf_encoded_inferred_goals = jax.vmap(sample_from_mean_field_gaussian)(
-    sample_rngs,
-    mf_encoded_context_mean,
-    mf_encoded_context_log_std
-)
-print("mean field encoded inferred_goals shape:", mf_encoded_inferred_goals.shape)
+# # Generate samples for each episode using mean field context encoder
+# mf_encoded_inferred_goals = jax.vmap(sample_from_mean_field_gaussian)(
+#     sample_rngs,
+#     mf_encoded_context_mean,
+#     mf_encoded_context_log_std
+# )
+# print("mean field encoded inferred_goals shape:", mf_encoded_inferred_goals.shape)
 
 def collect_trajectory_with_target(rng, target, true_goal):
     def step_fn(carry, _):
@@ -323,7 +350,9 @@ last_state_rews = jax.vmap(collect_trajectory_with_target)(
 )
 
 # Compute euclidean distances between goals and last states
-goal_distances = jnp.linalg.norm(last_states - goals, axis=1)
+goal_to_last_state_distances = jnp.linalg.norm(last_states - goals, axis=1)
+print("goal_to_last_state_distances shape:", goal_to_last_state_distances.shape)
+print("mean goal to last state distance:", jnp.mean(goal_to_last_state_distances))
 
 total_rewards_last_state = jnp.sum(last_state_rews, axis=1)  # Sum rewards along trajectory dimension
 
@@ -341,6 +370,8 @@ inferred_goal_rews = jax.vmap(
 )
 
 print("inferred_goal_rews shape:", inferred_goal_rews.shape)
+print(jnp.sum(inferred_goal_rews, axis=2).shape)
+print(jnp.mean(jnp.sum(inferred_goal_rews, axis=2), axis=1).shape)
 total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(inferred_goal_rews, axis=2), axis=1)
 total_rewards_inferred_goal_std = jnp.std(jnp.sum(inferred_goal_rews, axis=2), axis=1)
 
@@ -361,25 +392,25 @@ print("mean field inferred_goal_rews shape:", mf_inferred_goal_rews.shape)
 mf_total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(mf_inferred_goal_rews, axis=2), axis=1)
 mf_total_rewards_inferred_goal_std = jnp.std(jnp.sum(mf_inferred_goal_rews, axis=2), axis=1)
 
-# Collect trajectories using mean field encoded inferred goals
-mf_encoded_inferred_goal_rngs = jax.random.split(jax.random.PRNGKey(2), NUM_ENVS * NUM_SAMPLES)
-mf_encoded_inferred_goal_rngs = mf_encoded_inferred_goal_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
+# # Collect trajectories using mean field encoded inferred goals
+# mf_encoded_inferred_goal_rngs = jax.random.split(jax.random.PRNGKey(2), NUM_ENVS * NUM_SAMPLES)
+# mf_encoded_inferred_goal_rngs = mf_encoded_inferred_goal_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
 
-mf_encoded_inferred_goal_rews = jax.vmap(
-    jax.vmap(collect_trajectory_with_target, in_axes=(0, 0, None)),
-    in_axes=(0, 0, 0)
-)(
-    mf_encoded_inferred_goal_rngs,
-    mf_encoded_inferred_goals,
-    goals
-)
+# mf_encoded_inferred_goal_rews = jax.vmap(
+#     jax.vmap(collect_trajectory_with_target, in_axes=(0, 0, None)),
+#     in_axes=(0, 0, 0)
+# )(
+#     mf_encoded_inferred_goal_rngs,
+#     mf_encoded_inferred_goals,
+#     goals
+# )
 
-print("mean field encoded inferred_goal_rews shape:", mf_encoded_inferred_goal_rews.shape)
-mf_encoded_total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(mf_encoded_inferred_goal_rews, axis=2), axis=1)
-mf_encoded_total_rewards_inferred_goal_std = jnp.std(jnp.sum(mf_encoded_inferred_goal_rews, axis=2), axis=1)
+# print("mean field encoded inferred_goal_rews shape:", mf_encoded_inferred_goal_rews.shape)
+# mf_encoded_total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(mf_encoded_inferred_goal_rews, axis=2), axis=1)
+# mf_encoded_total_rewards_inferred_goal_std = jnp.std(jnp.sum(mf_encoded_inferred_goal_rews, axis=2), axis=1)
 
 # Compute differences and their statistics for total rewards vs last state rewards
-reward_diff_last_state = total_rewards_last_state - total_rewards
+reward_diff_last_state = total_rewards - total_rewards_last_state
 reward_diff_last_state_mean = jnp.mean(reward_diff_last_state)
 reward_diff_last_state_stderror = jnp.std(reward_diff_last_state) / jnp.sqrt(NUM_ENVS)
 
@@ -387,7 +418,7 @@ print("Mean difference between total rewards and last state rewards:", reward_di
 print("Standard error of difference between total rewards and last state rewards:", reward_diff_last_state_stderror)
 
 # Compute differences and their statistics for total rewards vs inferred goal rewards (standard context encoder)
-reward_diff_inferred = total_rewards_inferred_goal_mean - total_rewards
+reward_diff_inferred = total_rewards - total_rewards_inferred_goal_mean
 reward_diff_inferred_mean = jnp.mean(reward_diff_inferred)
 reward_diff_inferred_stderror = jnp.std(reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
 
@@ -395,20 +426,170 @@ print("Mean difference between total rewards and inferred goal rewards (standard
 print("Standard error of difference between total rewards and inferred goal rewards (standard):", reward_diff_inferred_stderror)
 
 # Compute differences and their statistics for total rewards vs mean field inferred goal rewards
-mf_reward_diff_inferred = mf_total_rewards_inferred_goal_mean - total_rewards
+mf_reward_diff_inferred = total_rewards - mf_total_rewards_inferred_goal_mean
 mf_reward_diff_inferred_mean = jnp.mean(mf_reward_diff_inferred)
 mf_reward_diff_inferred_stderror = jnp.std(mf_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
 
 print("Mean difference between total rewards and inferred goal rewards (mean field):", mf_reward_diff_inferred_mean)
 print("Standard error of difference between total rewards and inferred goal rewards (mean field):", mf_reward_diff_inferred_stderror)
 
-# Compute differences and their statistics for total rewards vs mean field encoded inferred goal rewards
-mf_encoded_reward_diff_inferred = mf_encoded_total_rewards_inferred_goal_mean - total_rewards
-mf_encoded_reward_diff_inferred_mean = jnp.mean(mf_encoded_reward_diff_inferred)
-mf_encoded_reward_diff_inferred_stderror = jnp.std(mf_encoded_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
+# # Compute differences and their statistics for total rewards vs mean field encoded inferred goal rewards
+# mf_encoded_reward_diff_inferred = mf_encoded_total_rewards_inferred_goal_mean - total_rewards
+# mf_encoded_reward_diff_inferred_mean = jnp.mean(mf_encoded_reward_diff_inferred)
+# mf_encoded_reward_diff_inferred_stderror = jnp.std(mf_encoded_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
 
-print("Mean difference between total rewards and inferred goal rewards (mean field encoded):", mf_encoded_reward_diff_inferred_mean)
-print("Standard error of difference between total rewards and inferred goal rewards (mean field encoded):", mf_encoded_reward_diff_inferred_stderror)
+# print("Mean difference between total rewards and inferred goal rewards (mean field encoded):", mf_encoded_reward_diff_inferred_mean)
+# print("Standard error of difference between total rewards and inferred goal rewards (mean field encoded):", mf_encoded_reward_diff_inferred_stderror)
+
+
+
+
+
+### GoalKDE ###
+
+# Process with standard context encoder
+# sa_pairs = jnp.reshape(jnp.concatenate((states, actions), axis=-1), (NUM_ENVS, -1))
+# print("sa pairs shape", sa_pairs.shape)
+goalkde_context_output = goalkde_context_encoder(sa_pairs)
+goalkde_context_mean, goalkde_context_log_std = jnp.split(goalkde_context_output, 2, axis=-1)
+print("goalkde context mean shape", goalkde_context_mean.shape)
+print("goalkde context log std shape", goalkde_context_log_std.shape)
+
+# Process with mean field context encoder
+# sa_pairs_mf = jnp.reshape(jnp.concatenate((states, actions), axis=-1), (NUM_ENVS * NUM_STEPS, -1))
+# print("mean field sa pairs shape", sa_pairs_mf.shape)
+goalkde_mf_context_output = goalkde_mean_field_context_encoder(sa_pairs_mf)
+goalkde_mf_context_mean, goalkde_mf_context_log_std = jnp.split(goalkde_mf_context_output, 2, axis=-1)
+goalkde_mf_context_mean = jnp.reshape(goalkde_mf_context_mean, (NUM_ENVS, NUM_STEPS, -1))
+goalkde_mf_context_log_std = jnp.reshape(goalkde_mf_context_log_std, (NUM_ENVS, NUM_STEPS, -1))
+print("goalkde mean field context mean shape", goalkde_mf_context_mean.shape)
+print("goalkde mean field context log std shape", goalkde_mf_context_log_std.shape)
+
+# Sample NUM_SAMPLES times from each episode's context distribution
+sample_rng = jax.random.PRNGKey(0)
+sample_rngs = jax.random.split(sample_rng, NUM_ENVS)
+
+# Generate samples for each episode using standard context encoder
+goalkde_inferred_goals = jax.vmap(sample_from_gaussian)(
+    sample_rngs,
+    goalkde_context_mean,
+    goalkde_context_log_std
+)
+print("goalkde inferred_goals shape:", goalkde_inferred_goals.shape)
+
+goal_to_goalkde_inferred_goal_distances = jnp.linalg.norm(goals - jnp.squeeze(goalkde_inferred_goals, axis=1), axis=1)
+print("mean goal to goalkde inferred goal distance:", jnp.mean(goal_to_goalkde_inferred_goal_distances))
+
+# Generate samples for each episode using mean field context encoder
+goalkde_mf_inferred_goals = jax.vmap(sample_from_mean_field_gaussian)(
+    sample_rngs,
+    goalkde_mf_context_mean,
+    goalkde_mf_context_log_std
+)
+print("goalkde mean field inferred_goals shape:", goalkde_mf_inferred_goals.shape)
+
+goal_to_goalkde_mf_inferred_goal_distances = jnp.linalg.norm(goals - jnp.squeeze(goalkde_mf_inferred_goals, axis=1), axis=1)
+print("mean goal to goalkde mf inferred goal distance:", jnp.mean(goal_to_goalkde_mf_inferred_goal_distances))
+
+def goalkde_collect_trajectory_with_target(rng, target, true_goal):
+    def step_fn(carry, _):
+        state, rng = carry
+        act_rng, next_rng = jax.random.split(rng)
+        obs = jnp.concatenate((state.obs[:env.state_dim], target), axis=-1)
+        act, _ = jit_goalkde_inference_fn(obs, act_rng)
+        next_state = jit_env_step(state, act)
+        
+        # Compute distance-based reward
+        current_pos = next_state.obs[env.goal_indices]
+        dist_to_goal = jnp.linalg.norm(current_pos - true_goal)
+        reward = jnp.where(dist_to_goal < env.goal_reach_thresh, 1.0, 0.0)
+        
+        return (next_state, next_rng), reward
+    
+    init_state = jit_env_reset(rng=rng)
+    (final_state, _), rewards = jax.lax.scan(
+        step_fn, 
+        (init_state, rng), 
+        None, 
+        length=NUM_STEPS
+    )
+    return rewards
+
+# Collect trajectories using last states as targets
+last_state_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS)
+goalkde_last_state_rews = jax.vmap(goalkde_collect_trajectory_with_target)(
+    last_state_rngs,
+    last_states,
+    goals
+)
+
+# Compute euclidean distances between goals and last states
+# goalkde_goal_distances = jnp.linalg.norm(last_states - goals, axis=2)
+# print("mean goal to goal distance:", jnp.mean(goalkde_goal_distances))
+
+print(goalkde_last_state_rews.shape)
+goalkde_total_rewards_last_state = jnp.sum(goalkde_last_state_rews, axis=1)  # Sum rewards along trajectory dimension
+
+# Collect trajectories using inferred goals as targets from standard context encoder
+goalkde_inferred_goal_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS * NUM_SAMPLES)
+goalkde_inferred_goal_rngs = goalkde_inferred_goal_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
+
+goalkde_inferred_goal_rews = jax.vmap(
+    jax.vmap(goalkde_collect_trajectory_with_target, in_axes=(0, 0, None)),
+    in_axes=(0, 0, 0)
+)(
+    goalkde_inferred_goal_rngs,
+    goalkde_inferred_goals,
+    goals
+)
+
+print("goalkde inferred_goal_rews shape:", goalkde_inferred_goal_rews.shape)
+goalkde_total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(goalkde_inferred_goal_rews, axis=2), axis=1)
+goalkde_total_rewards_inferred_goal_std = jnp.std(jnp.sum(goalkde_inferred_goal_rews, axis=2), axis=1)
+
+# Collect trajectories using mean field inferred goals
+goalkde_mf_inferred_goal_rngs = jax.random.split(jax.random.PRNGKey(2), NUM_ENVS * NUM_SAMPLES)
+goalkde_mf_inferred_goal_rngs = goalkde_mf_inferred_goal_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
+
+goalkde_mf_inferred_goal_rews = jax.vmap(
+    jax.vmap(goalkde_collect_trajectory_with_target, in_axes=(0, 0, None)),
+    in_axes=(0, 0, 0)
+)(
+    goalkde_mf_inferred_goal_rngs,
+    goalkde_mf_inferred_goals,
+    goals
+)
+
+print("goalkde mean field inferred_goal_rews shape:", goalkde_mf_inferred_goal_rews.shape)
+goalkde_mf_total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(goalkde_mf_inferred_goal_rews, axis=2), axis=1)
+goalkde_mf_total_rewards_inferred_goal_std = jnp.std(jnp.sum(goalkde_mf_inferred_goal_rews, axis=2), axis=1)
+
+# Compute differences and their statistics for total rewards vs last state rewards
+goalkde_reward_diff_last_state = total_rewards - goalkde_total_rewards_last_state
+goalkde_reward_diff_last_state_mean = jnp.mean(goalkde_reward_diff_last_state)
+goalkde_reward_diff_last_state_stderror = jnp.std(goalkde_reward_diff_last_state) / jnp.sqrt(NUM_ENVS)
+
+print("Mean difference between total rewards and GoalKDE last state rewards:", goalkde_reward_diff_last_state_mean)
+print("Standard error of difference between total rewards and GoalKDE last state rewards:", goalkde_reward_diff_last_state_stderror)
+
+# Compute differences and their statistics for total rewards vs inferred goal rewards (standard context encoder)
+goalkde_reward_diff_inferred = total_rewards - goalkde_total_rewards_inferred_goal_mean
+goalkde_reward_diff_inferred_mean = jnp.mean(goalkde_reward_diff_inferred)
+goalkde_reward_diff_inferred_stderror = jnp.std(goalkde_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
+
+print("Mean difference between total rewards and GoalKDE inferred goal rewards (standard):", goalkde_reward_diff_inferred_mean)
+print("Standard error of difference between total rewards and GoalKDE inferred goal rewards (standard):", goalkde_reward_diff_inferred_stderror)
+
+# Compute differences and their statistics for total rewards vs mean field inferred goal rewards
+goalkde_mf_reward_diff_inferred = total_rewards - goalkde_mf_total_rewards_inferred_goal_mean
+goalkde_mf_reward_diff_inferred_mean = jnp.mean(goalkde_mf_reward_diff_inferred)
+goalkde_mf_reward_diff_inferred_stderror = jnp.std(goalkde_mf_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
+
+print("Mean difference between total rewards and GoalKDE inferred goal rewards (mean field):", goalkde_mf_reward_diff_inferred_mean)
+print("Standard error of difference between total rewards and GoalKDE inferred goal rewards (mean field):", goalkde_mf_reward_diff_inferred_stderror)
+
+
+
 
 
 
@@ -447,6 +628,9 @@ bc_inferred_goals = jax.vmap(sample_from_gaussian)(
 )
 print("bc inferred_goals shape:", bc_inferred_goals.shape)
 
+goal_to_bc_inferred_goal_distances = jnp.linalg.norm(goals - jnp.squeeze(bc_inferred_goals, axis=1), axis=1)
+print("mean goal to bc inferred goal distance:", jnp.mean(goal_to_bc_inferred_goal_distances))
+
 # Generate samples for each episode using mean field context encoder
 bc_mf_inferred_goals = jax.vmap(sample_from_mean_field_gaussian)(
     sample_rngs,
@@ -454,6 +638,9 @@ bc_mf_inferred_goals = jax.vmap(sample_from_mean_field_gaussian)(
     bc_mf_context_log_std
 )
 print("bc mean field inferred_goals shape:", bc_mf_inferred_goals.shape)
+
+goal_to_bc_mf_inferred_goal_distances = jnp.linalg.norm(goals - jnp.squeeze(bc_mf_inferred_goals, axis=1), axis=1)
+print("mean goal to bc mf inferred goal distance:", jnp.mean(goal_to_bc_mf_inferred_goal_distances))
 
 def bc_collect_trajectory_with_target(rng, target, true_goal):
     def step_fn(carry, _):
@@ -488,7 +675,8 @@ bc_last_state_rews = jax.vmap(bc_collect_trajectory_with_target)(
 )
 
 # Compute euclidean distances between goals and last states
-bc_goal_distances = jnp.linalg.norm(last_states - goals, axis=1)
+# bc_goal_distances = jnp.linalg.norm(last_states - goals, axis=1)
+# print("mean goal to goal distance:", jnp.mean(bc_goal_distances))
 
 bc_total_rewards_last_state = jnp.sum(bc_last_state_rews, axis=1)  # Sum rewards along trajectory dimension
 
@@ -527,7 +715,7 @@ bc_mf_total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(bc_mf_inferred_goal_re
 bc_mf_total_rewards_inferred_goal_std = jnp.std(jnp.sum(bc_mf_inferred_goal_rews, axis=2), axis=1)
 
 # Compute differences and their statistics for total rewards vs last state rewards
-bc_reward_diff_last_state = bc_total_rewards_last_state - total_rewards
+bc_reward_diff_last_state = total_rewards - bc_total_rewards_last_state
 bc_reward_diff_last_state_mean = jnp.mean(bc_reward_diff_last_state)
 bc_reward_diff_last_state_stderror = jnp.std(bc_reward_diff_last_state) / jnp.sqrt(NUM_ENVS)
 
@@ -535,7 +723,7 @@ print("Mean difference between total rewards and BC last state rewards:", bc_rew
 print("Standard error of difference between total rewards and BC last state rewards:", bc_reward_diff_last_state_stderror)
 
 # Compute differences and their statistics for total rewards vs inferred goal rewards (standard context encoder)
-bc_reward_diff_inferred = bc_total_rewards_inferred_goal_mean - total_rewards
+bc_reward_diff_inferred = total_rewards - bc_total_rewards_inferred_goal_mean
 bc_reward_diff_inferred_mean = jnp.mean(bc_reward_diff_inferred)
 bc_reward_diff_inferred_stderror = jnp.std(bc_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
 
@@ -543,7 +731,7 @@ print("Mean difference between total rewards and BC inferred goal rewards (stand
 print("Standard error of difference between total rewards and BC inferred goal rewards (standard):", bc_reward_diff_inferred_stderror)
 
 # Compute differences and their statistics for total rewards vs mean field inferred goal rewards
-bc_mf_reward_diff_inferred = bc_mf_total_rewards_inferred_goal_mean - total_rewards
+bc_mf_reward_diff_inferred = total_rewards - bc_mf_total_rewards_inferred_goal_mean
 bc_mf_reward_diff_inferred_mean = jnp.mean(bc_mf_reward_diff_inferred)
 bc_mf_reward_diff_inferred_stderror = jnp.std(bc_mf_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
 
@@ -553,7 +741,8 @@ print("Standard error of difference between total rewards and BC inferred goal r
 
 # Create a visualization of the performance differences
 # Prepare data for plotting
-methods = ['CRL Last State', 'CRL Inferred Goal', 'CRL Mean Field', 'CRL Mean Field Encoded',
+methods = ['CRL Last State', 'CRL Inferred Goal', 'CRL Mean Field',
+           'GoalKDE Last State', 'GoalKDE Inferred Goal', 'GoalKDE Mean Field',
            'BC Last State', 'BC Inferred Goal', 'BC Mean Field']
 
 # Collect all the mean differences and convert from JAX arrays to numpy arrays
@@ -561,10 +750,12 @@ mean_diffs = [
     float(reward_diff_last_state_mean),
     float(reward_diff_inferred_mean),
     float(mf_reward_diff_inferred_mean),
-    float(mf_encoded_reward_diff_inferred_mean),
+    float(goalkde_reward_diff_last_state_mean),
+    float(goalkde_reward_diff_inferred_mean),
+    float(goalkde_mf_reward_diff_inferred_mean),
     float(bc_reward_diff_last_state_mean),
     float(bc_reward_diff_inferred_mean),
-    float(bc_mf_reward_diff_inferred_mean)
+    float(bc_mf_reward_diff_inferred_mean),
 ]
 
 # Collect all the standard errors and convert from JAX arrays to numpy arrays
@@ -572,7 +763,9 @@ std_errors = [
     float(reward_diff_last_state_stderror),
     float(reward_diff_inferred_stderror),
     float(mf_reward_diff_inferred_stderror),
-    float(mf_encoded_reward_diff_inferred_stderror),
+    float(goalkde_reward_diff_last_state_stderror),
+    float(goalkde_reward_diff_inferred_stderror),
+    float(goalkde_mf_reward_diff_inferred_stderror),
     float(bc_reward_diff_last_state_stderror),
     float(bc_reward_diff_inferred_stderror),
     float(bc_mf_reward_diff_inferred_stderror)
@@ -583,7 +776,7 @@ df = pd.DataFrame({
     'Method': methods,
     'Mean Difference': mean_diffs,
     'Std Error': std_errors,
-    'Method Type': ['CRL']*4 + ['BC']*3
+    'Method Type': ['CRL']*3 + ['GoalKDE']*3 + ['BC']*3
 })
 
 # Set up the figure
@@ -595,7 +788,7 @@ ax = sns.barplot(
     y='Mean Difference', 
     hue='Method Type',
     data=df,
-    palette=['#1f77b4', '#ff7f0e']  # Blue for CRL, Orange for BC
+    palette=['#1f77b4', '#ff7f0e', '#2ca02c']  # Blue for CRL, Orange for GoalKDE, Green for BC
 )
 
 # Add error bars
@@ -608,11 +801,20 @@ for i, (_, row) in enumerate(df.iterrows()):
         capsize=5
     )
 
-# Add a horizontal line at y=0 for reference
-plt.axhline(y=0, color='gray', linestyle='--', alpha=0.7)
+# Add a horizontal line at y=avg rew for reference (zero regret = matching expert performance)
+plt.axhline(y=jnp.mean(total_rewards), color='green', linestyle='-', alpha=0.7, label=f'Mean Expert Reward: {float(jnp.mean(total_rewards)):.3f}')
+
+# Add horizontal lines for standard error bands
+# expert_stderr = float(jnp.std(total_rewards) / jnp.sqrt(NUM_ENVS))
+# plt.axhline(y=jnp.mean(total_rewards)+expert_stderr, color='green', linestyle=':', alpha=0.5, label=f'+1 StdErr: {expert_stderr:.3f}')
+# plt.axhline(y=jnp.mean(total_rewards)-expert_stderr, color='green', linestyle=':', alpha=0.5, label=f'-1 StdErr: {-expert_stderr:.3f}')
+
+# Add a note about expert performance in the legend
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(handles=handles, labels=labels, loc='best')
 
 # Customize the plot
-plt.title('Performance Difference Compared to Expert Demonstrations', fontsize=16)
+plt.title(f'Regret Compared to Expert Demonstrations ({env_name})', fontsize=16)
 plt.ylabel('Mean Regret', fontsize=14)
 plt.xlabel('Method', fontsize=14)
 plt.xticks(rotation=45, ha='right')
@@ -626,9 +828,85 @@ plt.tight_layout()
 #             ha='center', fontsize=10)
 
 # Save the figure
-plt.savefig('performance_comparison.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'performance_comparison_{env_name}.png', dpi=300, bbox_inches='tight')
 
 # Show the plot
 plt.show()
 
 
+# Create a new figure for goal distance comparison
+plt.figure(figsize=(12, 6))
+
+# Prepare data for the distance comparison plot
+distance_data = {
+    'Method': [
+        'Last State', 
+        'CRL Inferred Goal', 'CRL MF Inferred Goal',
+        'GoalKDE Inferred Goal', 'GoalKDE MF Inferred Goal',
+        'BC Inferred Goal', 'BC MF Inferred Goal'
+    ],
+    'Mean Distance': [
+        float(jnp.mean(goal_to_last_state_distances)),
+        float(jnp.mean(goal_to_inferred_goal_distances)), 
+        float(jnp.mean(goal_to_mf_inferred_goal_distances)),
+        float(jnp.mean(goal_to_goalkde_inferred_goal_distances)),
+        float(jnp.mean(goal_to_goalkde_mf_inferred_goal_distances)),
+        float(jnp.mean(goal_to_bc_inferred_goal_distances)),
+        float(jnp.mean(goal_to_bc_mf_inferred_goal_distances))
+    ],
+    'Std Error': [
+        float(jnp.std(goal_to_last_state_distances) / jnp.sqrt(NUM_ENVS)),
+        float(jnp.std(goal_to_inferred_goal_distances) / jnp.sqrt(NUM_ENVS)),
+        float(jnp.std(goal_to_mf_inferred_goal_distances) / jnp.sqrt(NUM_ENVS)),
+        float(jnp.std(goal_to_goalkde_inferred_goal_distances) / jnp.sqrt(NUM_ENVS)),
+        float(jnp.std(goal_to_goalkde_mf_inferred_goal_distances) / jnp.sqrt(NUM_ENVS)),
+        float(jnp.std(goal_to_bc_inferred_goal_distances) / jnp.sqrt(NUM_ENVS)),
+        float(jnp.std(goal_to_bc_mf_inferred_goal_distances) / jnp.sqrt(NUM_ENVS))
+    ],
+    'Method Type': [
+        'Baseline',
+        'CRL', 'CRL (Mean Field)',
+        'GoalKDE', 'GoalKDE (Mean Field)',
+        'BC', 'BC (Mean Field)'
+    ]
+}
+
+# Create DataFrame for the distance plot
+distance_df = pd.DataFrame(distance_data)
+
+# Create the bar plot for distances
+ax = sns.barplot(
+    x='Method', 
+    y='Mean Distance', 
+    hue='Method Type',
+    data=distance_df,
+    palette=['gray', '#1f77b4', '#1f77b4', '#ff7f0e', '#ff7f0e', '#2ca02c', '#2ca02c']
+)
+
+# Add error bars
+for i, (_, row) in enumerate(distance_df.iterrows()):
+    ax.errorbar(
+        i, row['Mean Distance'], 
+        yerr=row['Std Error'], 
+        fmt='none', 
+        color='black', 
+        capsize=5
+    )
+
+# Customize the plot
+plt.title(f'Goal Distance Comparison ({env_name})', fontsize=16)
+plt.ylabel('Mean Distance to True Goal', fontsize=14)
+plt.xlabel('Method', fontsize=14)
+plt.xticks(rotation=45, ha='right')
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+
+# Add legend
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(handles=handles, labels=labels, loc='best')
+
+# Save the figure
+plt.savefig(f'goal_distance_comparison_{env_name}.png', dpi=300, bbox_inches='tight')
+
+# Show the plot
+plt.show()

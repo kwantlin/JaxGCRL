@@ -584,6 +584,8 @@ def actor_step_kde(env, env_state, actor, parametric_action_distribution, actor_
     new_state = jnp.concatenate([env_state.obs[:, :env.state_dim], explore_goal], axis=1)
     action_mean_and_SD = actor.apply(actor_params, new_state)
     action = parametric_action_distribution.sample(action_mean_and_SD, key)
+    # env_state.obs = new_state  # This doesn't work with JAX immutability
+    env_state = env_state.replace(obs=new_state)
     nstate = env.step(env_state, action)
     # print(f"state.pipeline_state shape: {jax.tree_map(lambda x: x.shape, env_state.pipeline_state)}")
     # print(f"action shape: {jax.tree_map(lambda x: x.shape, action)}")
