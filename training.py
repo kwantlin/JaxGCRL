@@ -73,6 +73,7 @@ def main(args):
         h_dim=args.h_dim,
         n_hidden=args.n_hidden,
         repr_dim=args.repr_dim,
+        var_post=args.var_post,
         visualization_interval=args.visualization_interval,
     )
 

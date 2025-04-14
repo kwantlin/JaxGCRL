@@ -74,6 +74,7 @@ def main(args):
         n_hidden=args.n_hidden,
         repr_dim=args.repr_dim,
         visualization_interval=args.visualization_interval,
+        mean_field=args.mean_field,
         saved_ckpt_path=args.saved_ckpt_path,
     )
 
