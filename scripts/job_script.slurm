@@ -10,8 +10,7 @@
 eval "$(conda shell.bash hook)"
 conda activate jaxgcrl
 
-env=arm_push_easy
-
+env=ant
 for seed in 1 ; do
   XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training.py \
     --project_name test --group_name first_run --exp_name ${env}-with-context --num_evals 50 \
