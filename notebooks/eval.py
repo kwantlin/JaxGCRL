@@ -21,19 +21,20 @@ import seaborn as sns
 import pandas as pd
 
 # note: ant: step_11427840
-# note: reacher: step_10380288
-# note: pusher_easy: step_30601216
+# note: reacher: step_20490752
+# note: simple_u_maze: step_20490752
+# note: pusher_easy: step_30823424
 
 env_name = 'pusher_easy'
 # Load standard CRL checkpoint. For expert demos!
-RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-main_s_1'
-CKPT_NAME = '/step_30601216.pkl'
+RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-main-standard_s_1'
+CKPT_NAME = '/step_24712704.pkl'
 params = model.load_params(RUN_FOLDER_PATH + '/ckpt' + CKPT_NAME)
 policy_params, encoders_params, context_params = params
 
 # CRL Mean field checkpoint
-MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-main-meanfield_s_1'
-MEAN_FIELD_CKPT_NAME = '/step_30601216.pkl'
+MEAN_FIELD_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-main-meanfield_s_1'
+MEAN_FIELD_CKPT_NAME = '/step_24712704.pkl'
 mean_field_params = model.load_params(MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + MEAN_FIELD_CKPT_NAME)
 _, _, mean_field_context_params = mean_field_params
 
@@ -45,27 +46,27 @@ _, _, mean_field_context_params = mean_field_params
 # mean_field_encoded_sa_encoder_params, _ = mean_field_encoded_encoder_params['sa_encoder'], mean_field_encoded_encoder_params['g_encoder']
 
 # GoalKDE + CRL
-GOALKDE_RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-goalkde_s_1'
-GOALKDE_CKPT_NAME = '/step_30601216.pkl'
+GOALKDE_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-goalkde-standard_s_1'
+GOALKDE_CKPT_NAME = '/step_29601280.pkl'
 goalkde_params = model.load_params(GOALKDE_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_CKPT_NAME)
 goalkde_policy_params, goalkde_encoder_params, goalkde_context_params = goalkde_params
 
 # GoalKDE + CRL Mean field
-GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-goalkde-meanfield_s_1'
-GOALKDE_MEAN_FIELD_CKPT_NAME = '/step_30601216.pkl'
+GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-goalkde-meanfield_s_1'
+GOALKDE_MEAN_FIELD_CKPT_NAME = '/step_29601280.pkl'
 goalkde_mean_field_params = model.load_params(GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_MEAN_FIELD_CKPT_NAME)
 _, _, goalkde_mean_field_context_params = goalkde_mean_field_params
 
 # BC
-BC_RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-bc_s_1'
-BC_CKPT_NAME = '/step_30601216.pkl'
+BC_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-bc-standard_s_1'
+BC_CKPT_NAME = '/step_17602048.pkl'
 bc_params = model.load_params(BC_RUN_FOLDER_PATH + '/ckpt' + BC_CKPT_NAME)
 bc_policy_params, bc_context_params = bc_params
 
 
 # BC MEAN FIELD
-BC_MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kwantlin/JaxGCRL/runs/run_{env_name}-bc-meanfield_s_1'
-BC_MEAN_FIELD_CKPT_NAME = '/step_30601216.pkl'
+BC_MEAN_FIELD_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-bc-meanfield_s_1'
+BC_MEAN_FIELD_CKPT_NAME = '/step_16776704.pkl'
 bc_mean_field_params = model.load_params(BC_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + BC_MEAN_FIELD_CKPT_NAME)
 _, bc_mean_field_context_params = bc_mean_field_params
 
@@ -154,7 +155,7 @@ bc_inference_fn = make_policy(actor, parametric_action_distribution, bc_policy_p
 bc_context_encoder = lambda traj: context_net.apply(bc_context_params, traj)
 bc_mean_field_context_encoder = lambda traj: context_net.apply(bc_mean_field_context_params, traj)
 
-NUM_ENVS = 1000
+NUM_ENVS = 2000
 
 jit_env_reset = jax.jit(env.reset)
 jit_env_step = jax.jit(env.step)
@@ -515,6 +516,15 @@ def goalkde_collect_trajectory_with_target(rng, target, true_goal):
     )
     return rewards
 
+# Collect trajectories using true goals as targets
+last_state_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS)
+goalkde_true_goal_rews = jax.vmap(goalkde_collect_trajectory_with_target)(
+    last_state_rngs,
+    goals,
+    goals
+)
+
+
 # Collect trajectories using last states as targets
 last_state_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS)
 goalkde_last_state_rews = jax.vmap(goalkde_collect_trajectory_with_target)(
@@ -528,6 +538,9 @@ goalkde_last_state_rews = jax.vmap(goalkde_collect_trajectory_with_target)(
 # print("mean goal to goal distance:", jnp.mean(goalkde_goal_distances))
 
 print(goalkde_last_state_rews.shape)
+
+goalkde_total_rewards_true_goal = jnp.sum(goalkde_true_goal_rews, axis=1)
+
 goalkde_total_rewards_last_state = jnp.sum(goalkde_last_state_rews, axis=1)  # Sum rewards along trajectory dimension
 
 # Collect trajectories using inferred goals as targets from standard context encoder
@@ -563,6 +576,11 @@ goalkde_mf_inferred_goal_rews = jax.vmap(
 print("goalkde mean field inferred_goal_rews shape:", goalkde_mf_inferred_goal_rews.shape)
 goalkde_mf_total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(goalkde_mf_inferred_goal_rews, axis=2), axis=1)
 goalkde_mf_total_rewards_inferred_goal_std = jnp.std(jnp.sum(goalkde_mf_inferred_goal_rews, axis=2), axis=1)
+
+# Compute differences and their statistics for total rewards vs true goal rewards
+goalkde_reward_diff_true_goal = total_rewards - goalkde_total_rewards_true_goal
+goalkde_reward_diff_true_goal_mean = jnp.mean(goalkde_reward_diff_true_goal)
+goalkde_reward_diff_true_goal_stderror = jnp.std(goalkde_reward_diff_true_goal) / jnp.sqrt(NUM_ENVS)
 
 # Compute differences and their statistics for total rewards vs last state rewards
 goalkde_reward_diff_last_state = total_rewards - goalkde_total_rewards_last_state
@@ -666,6 +684,15 @@ def bc_collect_trajectory_with_target(rng, target, true_goal):
     )
     return rewards
 
+
+# Collect trajectories using true goals as targets
+true_goal_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS)
+bc_true_goal_rews = jax.vmap(bc_collect_trajectory_with_target)(
+    true_goal_rngs,
+    goals,
+    goals
+)
+
 # Collect trajectories using last states as targets
 last_state_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS)
 bc_last_state_rews = jax.vmap(bc_collect_trajectory_with_target)(
@@ -678,7 +705,10 @@ bc_last_state_rews = jax.vmap(bc_collect_trajectory_with_target)(
 # bc_goal_distances = jnp.linalg.norm(last_states - goals, axis=1)
 # print("mean goal to goal distance:", jnp.mean(bc_goal_distances))
 
+bc_total_rewards_true_goal = jnp.sum(bc_true_goal_rews, axis=1)
+
 bc_total_rewards_last_state = jnp.sum(bc_last_state_rews, axis=1)  # Sum rewards along trajectory dimension
+
 
 # Collect trajectories using inferred goals as targets from standard context encoder
 bc_inferred_goal_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS * NUM_SAMPLES)
@@ -714,6 +744,11 @@ print("bc mean field inferred_goal_rews shape:", bc_mf_inferred_goal_rews.shape)
 bc_mf_total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(bc_mf_inferred_goal_rews, axis=2), axis=1)
 bc_mf_total_rewards_inferred_goal_std = jnp.std(jnp.sum(bc_mf_inferred_goal_rews, axis=2), axis=1)
 
+# Compute differences and their statistics for total rewards vs true goal rewards
+bc_reward_diff_true_goal = total_rewards - bc_total_rewards_true_goal
+bc_reward_diff_true_goal_mean = jnp.mean(bc_reward_diff_true_goal)
+bc_reward_diff_true_goal_stderror = jnp.std(bc_reward_diff_true_goal) / jnp.sqrt(NUM_ENVS)
+
 # Compute differences and their statistics for total rewards vs last state rewards
 bc_reward_diff_last_state = total_rewards - bc_total_rewards_last_state
 bc_reward_diff_last_state_mean = jnp.mean(bc_reward_diff_last_state)
@@ -742,17 +777,19 @@ print("Standard error of difference between total rewards and BC inferred goal r
 # Create a visualization of the performance differences
 # Prepare data for plotting
 methods = ['CRL Last State', 'CRL Inferred Goal', 'CRL Mean Field',
-           'GoalKDE Last State', 'GoalKDE Inferred Goal', 'GoalKDE Mean Field',
-           'BC Last State', 'BC Inferred Goal', 'BC Mean Field']
+           'GoalKDE True Goal', 'GoalKDE Last State', 'GoalKDE Inferred Goal', 'GoalKDE Mean Field',
+           'BC True Goal', 'BC Last State', 'BC Inferred Goal', 'BC Mean Field']
 
 # Collect all the mean differences and convert from JAX arrays to numpy arrays
 mean_diffs = [
     float(reward_diff_last_state_mean),
     float(reward_diff_inferred_mean),
     float(mf_reward_diff_inferred_mean),
+    float(goalkde_reward_diff_true_goal_mean),
     float(goalkde_reward_diff_last_state_mean),
     float(goalkde_reward_diff_inferred_mean),
     float(goalkde_mf_reward_diff_inferred_mean),
+    float(bc_reward_diff_true_goal_mean),
     float(bc_reward_diff_last_state_mean),
     float(bc_reward_diff_inferred_mean),
     float(bc_mf_reward_diff_inferred_mean),
@@ -763,12 +800,14 @@ std_errors = [
     float(reward_diff_last_state_stderror),
     float(reward_diff_inferred_stderror),
     float(mf_reward_diff_inferred_stderror),
+    float(goalkde_reward_diff_true_goal_stderror),
     float(goalkde_reward_diff_last_state_stderror),
     float(goalkde_reward_diff_inferred_stderror),
     float(goalkde_mf_reward_diff_inferred_stderror),
+    float(bc_reward_diff_true_goal_stderror),
     float(bc_reward_diff_last_state_stderror),
     float(bc_reward_diff_inferred_stderror),
-    float(bc_mf_reward_diff_inferred_stderror)
+    float(bc_mf_reward_diff_inferred_stderror),
 ]
 
 # Create a DataFrame for easier plotting with seaborn
@@ -776,7 +815,7 @@ df = pd.DataFrame({
     'Method': methods,
     'Mean Difference': mean_diffs,
     'Std Error': std_errors,
-    'Method Type': ['CRL']*3 + ['GoalKDE']*3 + ['BC']*3
+    'Method Type': ['CRL']*3 + ['GoalKDE']*4 + ['BC']*4
 })
 
 # Set up the figure
@@ -830,9 +869,15 @@ plt.tight_layout()
 # Save the figure
 plt.savefig(f'performance_comparison_{env_name}.png', dpi=300, bbox_inches='tight')
 
-# Show the plot
-plt.show()
-
+# Save the performance comparison data to CSV
+performance_df = pd.DataFrame({
+    'Method': methods,
+    'Mean Difference': mean_diffs,
+    'Std Error': std_errors,
+    'Method Type': ['CRL']*3 + ['GoalKDE']*4 + ['BC']*4
+})
+performance_df.to_csv(f'performance_comparison_{env_name}.csv', index=False)
+print(f"Performance comparison data saved to performance_comparison_{env_name}.csv")
 
 # Create a new figure for goal distance comparison
 plt.figure(figsize=(12, 6))
@@ -907,6 +952,10 @@ ax.legend(handles=handles, labels=labels, loc='best')
 
 # Save the figure
 plt.savefig(f'goal_distance_comparison_{env_name}.png', dpi=300, bbox_inches='tight')
+
+# Save the goal distance comparison data to CSV
+distance_df.to_csv(f'goal_distance_comparison_{env_name}.csv', index=False)
+print(f"Goal distance comparison data saved to goal_distance_comparison_{env_name}.csv")
 
 # Show the plot
 plt.show()

@@ -266,17 +266,20 @@ def context_loss(
     # Split the random key
     key, encoder_key, sampling_key = jax.random.split(key, 3)
     
+    print("transitions", transitions.observation.shape, transitions.reward.shape)
     # Extract states, actions, and goals from transitions
     states = transitions.observation[:, :, :state_dim]
     goals = transitions.observation[:, :, state_dim:]
     actions = transitions.action
     
     # Get the targets from the extras
-    targets = transitions.extras["target"][:, -1, :]
+    targets = goals[:, -1, :]
+    print("targets", targets.shape)
     
     # Concatenate state-action to form trajectory representation
     trajectories = jnp.reshape(jnp.concatenate([states, actions], axis=-1), (-1, states.shape[-2] * (states.shape[-1] + actions.shape[-1])))
     
+    print("trajectories", trajectories.shape)
     # Context encoder outputs a vector of size 2*latent_dim (first half is mean, second half is log_std)
     context_output = context_encoder.apply(context_encoder_params, trajectories)
     print("context output shape", context_output.shape)
@@ -336,15 +339,15 @@ def context_loss_meanfield(
     # Split the random key
     key, encoder_key, sampling_key = jax.random.split(key, 3)
     
-    print("transitions", transitions.observation.shape, transitions.reward.shape, transitions.extras["target"].shape)
+    print("transitions", transitions.observation.shape, transitions.reward.shape)
     # Extract states, actions, and goals from transitions
     states = transitions.observation[:, :, :state_dim]
     goals = transitions.observation[:, :, state_dim:]
     actions = transitions.action
     
     # Get the targets from the extras
-    targets = transitions.extras["target"][:, -1, :]
-    
+    targets = goals[:, -1, :]
+    print("targets", targets.shape)
     # Create state-action pairs
     sa_pairs = jnp.concatenate([states, actions], axis=-1)
     batch_size, seq_len, sa_dim = sa_pairs.shape
@@ -655,7 +658,7 @@ def train(
     env = TrajectoryIdWrapper(env)
     env = wrap_for_training(env, episode_length=episode_length, action_repeat=action_repeat)
     unwrapped_env = environment
-
+    env_train_context = wrap_for_training(environment, episode_length=episode_length, action_repeat=action_repeat)
 
     obs_size = env.observation_size
     action_size = env.action_size
@@ -777,6 +780,41 @@ def train(
         (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=unroll_length)
         buffer_state = replay_buffer.insert(buffer_state, data)
         return env_state, buffer_state
+    
+    def get_experience_context(actor_params, key):
+        @jax.jit
+        def f(carry, unused_t):
+            env_state, current_key = carry
+            current_key, next_key = jax.random.split(current_key)
+            env_state, transition = actor_step(env_train_context, env_state, actor, parametric_action_distribution, actor_params, current_key)
+            return (env_state, next_key), transition
+
+        # Looking at the original environment initialization to match the key structure
+        # First, create appropriate keys for all environments
+        reset_key, step_key = jax.random.split(key)
+        
+        # Create the exact same key structure as used in the main training loop
+        # This is crucial - the key structure must match what the env expects
+        env_keys = jax.random.split(reset_key, num_envs)
+        
+        # The environment expects a key with shape [num_envs, 2]
+        # Each key is a PRNGKey with shape [2]
+        print("env_keys shape:", env_keys.shape)
+        
+        # Reset the environment with properly structured keys
+        env_state = env_train_context.reset(env_keys)
+        
+        print("get experience context env_state observation shape", env_state.obs.shape)
+        (env_state, _), data = jax.lax.scan(f, (env_state, step_key), (), length=episode_length)
+        # Flip axes 0 and 1 for all attributes in data
+        # This transforms data from shape [unroll_length, num_envs, ...] to [num_envs, unroll_length, ...]
+        print("data shape before flipping", data.observation.shape)
+        data = jax.tree_util.tree_map(
+            lambda x: jnp.swapaxes(x, 0, 1) if isinstance(x, jnp.ndarray) and x.ndim >= 2 else x,
+            data
+        )
+        print("data shape", data.observation.shape)
+        return data
 
     def training_step(training_state, env_state, buffer_state, key):
         # Collect experience
@@ -826,6 +864,17 @@ def train(
         
         ## Train
         (training_state, _), metrics1 = jax.lax.scan(update_step, (training_state, training_key), transitions)
+        
+        trajectories = get_experience_context(jax.lax.stop_gradient(training_state.actor_state.params), training_key)
+        # Add an axis at the front of trajectories to match the expected shape for update_step_context
+        trajectories = jax.tree_util.tree_map(lambda x: x[None, ...], trajectories)
+        print("trajectories before slice", trajectories.observation.shape)
+        trajectories = jax.tree_util.tree_map(
+            lambda x: x[:, :, :-1, ...] if x.ndim > 2 else x,
+            trajectories
+        )
+        print("trajectories before update step context", trajectories.observation.shape)
+        
         (training_state, _), metrics2 = jax.lax.scan(update_step_context, (training_state, training_key), trajectories)
         metrics = {**metrics1, **metrics2}
         return training_state, buffer_state, metrics
