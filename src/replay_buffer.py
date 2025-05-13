@@ -162,6 +162,7 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
 
         batch = create_batch_vmaped(buffer_state.data[:, envs_idxs, :], matrix)
         transitions = self._unflatten_fn(batch)
+        print("transitions", transitions.observation.shape)
         return buffer_state.replace(key=key), transitions
 
     @staticmethod
@@ -198,9 +199,6 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
         target = transition.observation[:-1, env.state_dim:]
         noise = transition.extras["state_extras"]["noise"][:-1] if "noise" in transition.extras["state_extras"].keys() else jnp.zeros(1)
         print("state, target, noise", state.shape, target.shape, noise.shape)
-        next_observation = transition.observation[1, :env.state_dim]
-        print("next observation", next_observation.shape)
-        print("future state", future_state.shape)
         extras = {
             "policy_extras": {},
             "state_extras": {
@@ -212,7 +210,6 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
             "future_state": future_state,
             "future_action": future_action,
             "target": target,
-            "next_observation": next_observation,
         }
 
         return transition._replace(
