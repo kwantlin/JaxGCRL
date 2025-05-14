@@ -77,6 +77,9 @@ class TrainingState:
     critic_state: TrainState
     value_state: TrainState
     fb_repr_state: TrainState
+    target_critic_params: flax.core.FrozenDict
+    target_forward_repr_params: flax.core.FrozenDict
+    target_backward_repr_params: flax.core.FrozenDict
 
 def _init_training_state(key, actor, critic, value, forward_repr, backward_repr, state_dim, goal_dim, action_dim, repr_dim, episode_length, actor_lr, critic_lr, repr_lr, num_local_devices_to_use):
     """
@@ -102,78 +105,109 @@ def _init_training_state(key, actor, critic, value, forward_repr, backward_repr,
     repr_optimizer = optax.adam(learning_rate=repr_lr)
     fb_repr_state = TrainState.create(apply_fn=None, params=(forward_repr_params, backward_repr_params), tx=repr_optimizer)
 
+    # Target networks: just store params
+    target_critic_params = jax.tree_util.tree_map(lambda x: x.copy(), critic_params)
+    target_forward_repr_params = jax.tree_util.tree_map(lambda x: x.copy(), forward_repr_params)
+    target_backward_repr_params = jax.tree_util.tree_map(lambda x: x.copy(), backward_repr_params)
+
     training_state = TrainingState(
         env_steps=jnp.zeros(()), 
         gradient_steps=jnp.zeros(()), 
         actor_state=actor_state,
         critic_state=critic_state,
         value_state=value_state,
-        fb_repr_state=fb_repr_state
+        fb_repr_state=fb_repr_state,
+        target_critic_params=target_critic_params,
+        target_forward_repr_params=target_forward_repr_params,
+        target_backward_repr_params=target_backward_repr_params
     )
     
     training_state = jax.device_put_replicated(training_state, jax.local_devices()[:num_local_devices_to_use])
     return training_state
 
 
-def forward_backward_repr_loss(forward_params, backward_params, forward_repr, backward_repr, transitions, state_dim, goal_dim, repr_dim, key, tau=0.005, latent_mix_prob=0.5):
-    print("forward_backward_repr_loss transitions", transitions.observation.shape)
+def forward_backward_repr_loss(
+    forward_params, backward_params, forward_repr, backward_repr, transitions, state_dim, goal_dim, repr_dim, key,
+    target_forward_params=None, target_backward_params=None, actor=None, actor_params=None, const_std=True, repr_agg='mean', orthonorm_coef=1.0, discount=0.99
+):
+    """
+    Compute the forward-backward representation loss, following the structure of ogbench/impls/agents/fb_repr.py.
+    """
     states = transitions.observation[:, :state_dim]
     actions = transitions.action
     next_states = transitions.extras["future_state"][:, :state_dim]
     goals = transitions.observation[:, state_dim:]
     batch_size = states.shape[0]
-    latent_dim =goal_dim
-    actions_dtype = actions.dtype
+    latent_dim = goal_dim
 
     # Sample latents - we already did this in the actor step
     latents = goals
 
-    # Compute forward and backward representations
+    # Compute next actions using the actor
+    next_dist = actor.apply(jax.lax.stop_gradient(actor_params), jnp.concatenate([next_states, latents], axis=-1))
+    if const_std:
+        next_actions = jnp.clip(next_dist[..., :next_dist.shape[-1] // 2], -1, 1)  # mode
+    else:
+        next_actions = jnp.clip(next_dist[..., :next_dist.shape[-1] // 2], -1, 1)  # fallback to mode if sampling not available
+
+    # Compute target forward and backward representations using target params
+    if target_forward_params is not None:
+        next_forward_reprs = forward_repr.apply(target_forward_params, jnp.concatenate([next_states, next_actions, latents], axis=-1))
+    else:
+        next_forward_reprs = forward_repr.apply(forward_params, jnp.concatenate([next_states, next_actions, latents], axis=-1))
+    if target_backward_params is not None:
+        next_backward_reprs = backward_repr.apply(target_backward_params, next_states)
+    else:
+        next_backward_reprs = backward_repr.apply(backward_params, next_states)
+    next_backward_reprs = next_backward_reprs / jnp.linalg.norm(next_backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
+    target_occ_measures = jnp.einsum('bd,td->bt', next_forward_reprs, next_backward_reprs)
+
+    # Aggregate target occupancy measures
+    if repr_agg == 'mean':
+        target_occ_measures = jnp.mean(target_occ_measures, axis=0)
+    else:
+        target_occ_measures = jnp.min(target_occ_measures, axis=0)
+
+    # Compute current forward and backward representations
     forward_reprs = forward_repr.apply(forward_params, jnp.concatenate([states, actions, latents], axis=-1))
     backward_reprs = backward_repr.apply(backward_params, next_states)
     backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
-
-    # Compute occupancy measures
     occ_measures = jnp.einsum('bd,td->bt', forward_reprs, backward_reprs)
 
-    # Compute target occupancy measures using target networks
-    target_forward_reprs = forward_repr.apply(forward_params, jnp.concatenate([next_states, actions, latents], axis=-1))
-    target_backward_reprs = backward_repr.apply(backward_params, next_states)
-    target_backward_reprs = target_backward_reprs / jnp.linalg.norm(target_backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
-    target_occ_measures = jnp.einsum('bd,td->bt', target_forward_reprs, target_backward_reprs)
-
-    # Compute loss
     I = jnp.eye(occ_measures.shape[0])
     repr_off_diag_loss = jax.vmap(
         lambda x: (x * (1 - I)) ** 2,
         0, 0
-    )(occ_measures - tau * target_occ_measures)
-    
+    )(occ_measures - discount * target_occ_measures)
+
     repr_diag_loss = jax.vmap(jnp.diag, 0, 0)(occ_measures)
-    
+
     repr_loss = jnp.mean(
         repr_diag_loss + jnp.sum(repr_off_diag_loss, axis=-1) / (occ_measures.shape[0] - 1)
     )
-    
+
     # Orthonormalization loss
     covariance = jnp.matmul(backward_reprs, backward_reprs.T)
     ortho_diag_loss = -2 * jnp.diag(covariance)
     ortho_off_diag_loss = (covariance * (1 - I)) ** 2
-    ortho_loss = jnp.mean(
+    ortho_loss = orthonorm_coef * jnp.mean(
         ortho_diag_loss + jnp.sum(ortho_off_diag_loss, axis=-1) / (occ_measures.shape[0] - 1)
     )
-    
+
     total_loss = repr_loss + ortho_loss
-    
+
     metrics = {
         'repr_loss': repr_loss,
+        'repr_diag_loss': jnp.mean(jnp.sum(repr_diag_loss, axis=-1) / (occ_measures.shape[0] - 1)),
+        'repr_off_diag_loss': jnp.mean(repr_off_diag_loss),
         'ortho_loss': ortho_loss,
-        'total_loss': total_loss,
+        'ortho_diag_loss': jnp.sum(ortho_diag_loss, axis=-1) / (occ_measures.shape[0] - 1),
+        'ortho_off_diag_loss': jnp.mean(ortho_off_diag_loss),
         'occ_measure_mean': occ_measures.mean(),
         'occ_measure_max': occ_measures.max(),
         'occ_measure_min': occ_measures.min(),
     }
-    
+
     return total_loss, metrics
 
 def actor_loss(actor_params, training_state, actor, critic, value, parametric_action_distribution, transitions, state_dim, goal_dim, repr_dim, key, awr_alpha=10.0):
@@ -205,64 +239,58 @@ def actor_loss(actor_params, training_state, actor, critic, value, parametric_ac
     }
     return actor_loss, metrics
 
-def critic_loss(critic_params, value_params, training_state, critic, value, forward_repr, backward_repr, parametric_action_distribution, transitions, state_dim, goal_dim, repr_dim, key, gamma=0.99):
-    """Compute the critic loss using IQL-style value estimation."""
+def critic_loss(critic_params, value_params, training_state, critic, value, forward_repr, backward_repr, parametric_action_distribution, transitions, state_dim, goal_dim, repr_dim, key, discount=0.99):
+    """Compute the IQL critic loss (matching fb_repr.py logic, using constant discount)."""
     states = transitions.observation[:, :state_dim]
     actions = transitions.action
     goals = transitions.observation[:, state_dim:]
-    print("transitions extras next_state", transitions.extras["next_state"].shape)
     next_states = transitions.extras["next_state"][:, :state_dim]
-    print("critic_loss next_states", next_states.shape)
     rewards = transitions.reward
-    discounts = transitions.discount
-    
-    # Compute current Q-values
-    q_values = critic.apply(critic_params, jnp.concatenate([states, actions, goals], axis=-1))
-    
-    # Compute target Q-values using value function
-    next_values = value.apply(value_params, jnp.concatenate([next_states, goals], axis=-1))
-    target_q_values = rewards + gamma * discounts * next_values
-    
-    # Compute critic loss
-    critic_loss = jnp.mean((q_values - target_q_values) ** 2)
-    
+
+    # Compute next_v using value network
+    next_v = value.apply(value_params, jnp.concatenate([next_states, goals], axis=-1))
+
+    # Get q1, q2 from critic
+    q1 = critic.apply(critic_params, jnp.concatenate([states, actions, goals], axis=-1))
+
+    # Compute target q using the provided discount constant
+    q = rewards + discount * next_v
+
+    # Compute critic loss as mean squared error for both q1 and q2
+    critic_loss = ((q1 - q) ** 2).mean()
+
     metrics = {
         'critic_loss': critic_loss,
-        'q_values_mean': q_values.mean(),
-        'q_values_max': q_values.max(),
-        'q_values_min': q_values.min(),
-        'target_q_values_mean': target_q_values.mean(),
+        'q_mean': q.mean(),
+        'q_max': q.max(),
+        'q_min': q.min(),
     }
-    
     return critic_loss, metrics
 
-def value_loss(value_params, training_state, value, forward_repr, backward_repr, parametric_action_distribution, transitions, state_dim, goal_dim, repr_dim, key, expectile=0.7):
-    """Compute the value loss using expectile regression."""
-    print("value loss: transitions", transitions.observation.shape)
+def value_loss(value_params, training_state, value, critic, parametric_action_distribution, transitions, state_dim, goal_dim, repr_dim, key, expectile=0.9):
+    """Compute the IQL value loss (matching fb_repr.py logic)."""
+    # Unpack states, actions, goals
     states = transitions.observation[:, :state_dim]
     goals = transitions.observation[:, state_dim:]
-    
-    # Get Q-values from target critic
-    action_mean_and_SD = training_state.actor_state.apply_fn(training_state.actor_state.params, jnp.concatenate([states, goals], axis=-1))
-    actions = parametric_action_distribution.sample_no_postprocessing(action_mean_and_SD, key)
-    q_values = training_state.critic_state.apply_fn(training_state.critic_state.params, 
-                                                  jnp.concatenate([states, actions, goals], axis=-1))
-    
+    actions = transitions.action
+
+    # Compute Q-values from target critic (q1, q2)
+    q= critic.apply(training_state.target_critic_params, jnp.concatenate([states, actions, goals], axis=-1))
+
     # Compute value estimates
-    value_estimates = value.apply(value_params, jnp.concatenate([states, goals], axis=-1))
-    
-    # Compute expectile regression loss
-    diff = q_values - value_estimates
-    weight = jnp.where(diff > 0, expectile, 1 - expectile)
+    v = value.apply(value_params, jnp.concatenate([states, goals], axis=-1))
+
+    # Expectile loss (as in fb_repr.py)
+    diff = q - v
+    weight = jnp.where(diff >= 0, expectile, 1 - expectile)
     value_loss = jnp.mean(weight * (diff ** 2))
-    
+
     metrics = {
         'value_loss': value_loss,
-        'value_estimates_mean': value_estimates.mean(),
-        'value_estimates_max': value_estimates.max(),
-        'value_estimates_min': value_estimates.min(),
+        'v_mean': v.mean(),
+        'v_max': v.max(),
+        'v_min': v.min(),
     }
-    
     return value_loss, metrics
 
 
@@ -323,9 +351,22 @@ def sample_latents(batch_size, latent_dim, key):
     latents = latents / jnp.linalg.norm(latents, axis=-1, keepdims=True) * jnp.sqrt(latent_dim)
     return latents
 
-def fb_repr_loss_fn(params, forward_repr, backward_repr, transitions, state_dim, goal_dim, repr_dim, key, tau=0.005, latent_mix_prob=0.5):
+def fb_repr_loss_fn(
+    params, forward_repr, backward_repr, transitions, state_dim, goal_dim, repr_dim, key,
+    target_forward_params, target_backward_params, actor, actor_params, const_std, repr_agg, orthonorm_coef, discount
+):
     forward_params, backward_params = params
-    loss, metrics = forward_backward_repr_loss(forward_params, backward_params, forward_repr, backward_repr, transitions, state_dim, goal_dim, repr_dim, key, tau, latent_mix_prob)
+    loss, metrics = forward_backward_repr_loss(
+        forward_params, backward_params, forward_repr, backward_repr, transitions, state_dim, goal_dim, repr_dim, key, 
+        target_forward_params=target_forward_params,
+        target_backward_params=target_backward_params,
+        actor=actor,
+        actor_params=actor_params,
+        const_std=const_std,
+        repr_agg=repr_agg,
+        orthonorm_coef=orthonorm_coef,
+        discount=discount
+    )
     return loss, metrics
 
 def train(
@@ -457,7 +498,15 @@ def train(
             len(env.goal_indices),
             repr_dim,
             key_fb,
-            optimizer_state=training_state.fb_repr_state.opt_state
+            training_state.target_forward_repr_params,
+            training_state.target_backward_repr_params,
+            actor,
+            training_state.actor_state.params,
+            True,
+            'mean',
+            1.0,
+            0.99,
+            optimizer_state=training_state.fb_repr_state.opt_state,
         )
         
         # Update value function
@@ -465,14 +514,14 @@ def train(
             training_state.value_state.params,
             training_state,
             value,
-            forward_repr,
-            backward_repr,
+            critic,
             parametric_action_distribution,
             transitions,
             env.state_dim,
             len(env.goal_indices),
             repr_dim,
             key_value,
+            0.9,
             optimizer_state=training_state.value_state.opt_state
         )
         
@@ -491,6 +540,7 @@ def train(
             len(env.goal_indices),
             repr_dim,
             key_critic,
+            0.99,
             optimizer_state=training_state.critic_state.opt_state
         )
         
@@ -510,6 +560,23 @@ def train(
             optimizer_state=training_state.actor_state.opt_state
         )
         
+        # Update target networks
+        new_target_critic_params = jax.tree_util.tree_map(
+            lambda p, tp: p * tau + tp * (1 - tau),
+            critic_params,
+            training_state.target_critic_params
+        )
+        new_target_forward_repr_params = jax.tree_util.tree_map(
+            lambda p, tp: p * tau + tp * (1 - tau),
+            fb_repr_params[0],
+            training_state.target_forward_repr_params
+        )
+        new_target_backward_repr_params = jax.tree_util.tree_map(
+            lambda p, tp: p * tau + tp * (1 - tau),
+            fb_repr_params[1],
+            training_state.target_backward_repr_params
+        )
+
         metrics = {
             'fb_loss': fb_loss,
             'actor_loss': actor_loss,
@@ -528,6 +595,9 @@ def train(
             critic_state=training_state.critic_state.replace(params=critic_params, opt_state=critic_optimizer_state),
             value_state=training_state.value_state.replace(params=value_params, opt_state=value_optimizer_state),
             fb_repr_state=training_state.fb_repr_state.replace(params=fb_repr_params, opt_state=fb_repr_opt_state),
+            target_critic_params=new_target_critic_params,
+            target_forward_repr_params=new_target_forward_repr_params,
+            target_backward_repr_params=new_target_backward_repr_params
         )
         
         return (new_training_state, key), metrics
@@ -672,11 +742,14 @@ def train(
                     training_state.actor_state.params,
                     training_state.value_state.params,
                     training_state.critic_state.params,
-                    training_state.fb_repr_state.params
+                    training_state.fb_repr_state.params,
+                    training_state.target_critic_params,
+                    training_state.target_forward_repr_params,
+                    training_state.target_backward_repr_params
                 ))
                 path = f"{checkpoint_logdir}/step_{current_step}.pkl"
                 # Log all params
-                logging.info(f"Saving checkpoint at {path} with actor, value, critic, and fb_repr params.")
+                logging.info(f"Saving checkpoint at {path} with actor, value, critic, fb_repr, and target params.")
                 brax.io.model.save_params(path, params)
 
             ## Run evals
@@ -696,8 +769,11 @@ def train(
         training_state.actor_state.params,
         training_state.value_state.params,
         training_state.critic_state.params,
-        training_state.fb_repr_state.params
+        training_state.fb_repr_state.params,
+        training_state.target_critic_params,
+        training_state.target_forward_repr_params,
+        training_state.target_backward_repr_params
     ))
     # Log all params at the end as well
-    logging.info("Returning actor, value, critic, and fb_repr params.")
+    logging.info("Returning actor, value, critic, fb_repr, and target params.")
     return (make_policy, params, metrics)
