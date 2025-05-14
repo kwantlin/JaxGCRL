@@ -74,14 +74,14 @@ class TrainingState:
     gradient_steps: jnp.ndarray
     env_steps: jnp.ndarray
     actor_state: TrainState
-    critic_state: TrainState
-    value_state: TrainState
+    # critic_state: TrainState
+    # value_state: TrainState
     fb_repr_state: TrainState
-    target_critic_params: flax.core.FrozenDict
+    # target_critic_params: flax.core.FrozenDict
     target_forward_repr_params: flax.core.FrozenDict
     target_backward_repr_params: flax.core.FrozenDict
 
-def _init_training_state(key, actor, critic, value, forward_repr, backward_repr, state_dim, goal_dim, action_dim, repr_dim, episode_length, actor_lr, critic_lr, repr_lr, num_local_devices_to_use):
+def _init_training_state(key, actor, forward_repr, backward_repr, state_dim, goal_dim, action_dim, repr_dim, episode_length, actor_lr, repr_lr, num_local_devices_to_use):
     """
     Initializes the training state for a forward-backward representation learning model.
     """
@@ -92,10 +92,10 @@ def _init_training_state(key, actor, critic, value, forward_repr, backward_repr,
     actor_state = TrainState.create(apply_fn=actor.apply, params=actor_params, tx=optax.adam(learning_rate=actor_lr))
 
     # Critic and Value
-    critic_params = critic.init(critic_key, jnp.ones([1, state_dim + action_dim + goal_dim]))
-    value_params = value.init(value_key, jnp.ones([1, state_dim + goal_dim]))
-    critic_state = TrainState.create(apply_fn=critic.apply, params=critic_params, tx=optax.adam(learning_rate=critic_lr))
-    value_state = TrainState.create(apply_fn=value.apply, params=value_params, tx=optax.adam(learning_rate=critic_lr))
+    # critic_params = critic.init(critic_key, jnp.ones([1, state_dim + action_dim + goal_dim]))
+    # value_params = value.init(value_key, jnp.ones([1, state_dim + goal_dim]))
+    # critic_state = TrainState.create(apply_fn=critic.apply, params=critic_params, tx=optax.adam(learning_rate=critic_lr))
+    # value_state = TrainState.create(apply_fn=value.apply, params=value_params, tx=optax.adam(learning_rate=critic_lr))
 
     # Forward and backward representation networks
     forward_repr_params = forward_repr.init(forward_key, jnp.ones([1, state_dim + action_dim + goal_dim]))
@@ -106,7 +106,7 @@ def _init_training_state(key, actor, critic, value, forward_repr, backward_repr,
     fb_repr_state = TrainState.create(apply_fn=None, params=(forward_repr_params, backward_repr_params), tx=repr_optimizer)
 
     # Target networks: just store params
-    target_critic_params = jax.tree_util.tree_map(lambda x: x.copy(), critic_params)
+    # target_critic_params = jax.tree_util.tree_map(lambda x: x.copy(), critic_params)
     target_forward_repr_params = jax.tree_util.tree_map(lambda x: x.copy(), forward_repr_params)
     target_backward_repr_params = jax.tree_util.tree_map(lambda x: x.copy(), backward_repr_params)
 
@@ -114,10 +114,10 @@ def _init_training_state(key, actor, critic, value, forward_repr, backward_repr,
         env_steps=jnp.zeros(()), 
         gradient_steps=jnp.zeros(()), 
         actor_state=actor_state,
-        critic_state=critic_state,
-        value_state=value_state,
+        # critic_state=critic_state,
+        # value_state=value_state,
         fb_repr_state=fb_repr_state,
-        target_critic_params=target_critic_params,
+        # target_critic_params=target_critic_params,
         target_forward_repr_params=target_forward_repr_params,
         target_backward_repr_params=target_backward_repr_params
     )
@@ -128,7 +128,7 @@ def _init_training_state(key, actor, critic, value, forward_repr, backward_repr,
 
 def forward_backward_repr_loss(
     forward_params, backward_params, forward_repr, backward_repr, transitions, state_dim, goal_dim, repr_dim, key,
-    target_forward_params=None, target_backward_params=None, actor=None, actor_params=None, const_std=True, repr_agg='mean', orthonorm_coef=1.0, discount=0.99
+    training_state, actor,const_std=True, repr_agg='mean', orthonorm_coef=1.0, discount=0.99
 ):
     """
     Compute the forward-backward representation loss, following the structure of ogbench/impls/agents/fb_repr.py.
@@ -144,19 +144,19 @@ def forward_backward_repr_loss(
     latents = goals
 
     # Compute next actions using the actor
-    next_dist = actor.apply(jax.lax.stop_gradient(actor_params), jnp.concatenate([next_states, latents], axis=-1))
+    next_dist = actor.apply(jax.lax.stop_gradient(training_state.actor_state.params), jnp.concatenate([next_states, latents], axis=-1))
     if const_std:
         next_actions = jnp.clip(next_dist[..., :next_dist.shape[-1] // 2], -1, 1)  # mode
     else:
         next_actions = jnp.clip(next_dist[..., :next_dist.shape[-1] // 2], -1, 1)  # fallback to mode if sampling not available
 
     # Compute target forward and backward representations using target params
-    if target_forward_params is not None:
-        next_forward_reprs = forward_repr.apply(target_forward_params, jnp.concatenate([next_states, next_actions, latents], axis=-1))
+    if training_state.target_forward_repr_params is not None:
+        next_forward_reprs = forward_repr.apply(training_state.target_forward_repr_params, jnp.concatenate([next_states, next_actions, latents], axis=-1))
     else:
         next_forward_reprs = forward_repr.apply(forward_params, jnp.concatenate([next_states, next_actions, latents], axis=-1))
-    if target_backward_params is not None:
-        next_backward_reprs = backward_repr.apply(target_backward_params, next_states)
+    if training_state.target_backward_repr_params is not None:
+        next_backward_reprs = backward_repr.apply(training_state.target_backward_repr_params, next_states)
     else:
         next_backward_reprs = backward_repr.apply(backward_params, next_states)
     next_backward_reprs = next_backward_reprs / jnp.linalg.norm(next_backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
@@ -210,32 +210,39 @@ def forward_backward_repr_loss(
 
     return total_loss, metrics
 
-def actor_loss(actor_params, training_state, actor, critic, value, parametric_action_distribution, transitions, state_dim, goal_dim, repr_dim, key, awr_alpha=10.0):
-    """Compute the IQL-style actor loss for the FB agent."""
+def actor_loss(actor_params, training_state, actor, forward_repr, parametric_action_distribution, transitions, state_dim, goal_dim, repr_dim, key, entropy_coef=0.1):
+    """Compute the FB-style actor loss (not IQL)."""
     states = transitions.observation[:, :state_dim]
     goals = transitions.observation[:, state_dim:]
-    actions = transitions.action
 
-    # Q(s, a, g)
-    q_values = critic.apply(training_state.critic_state.params, jnp.concatenate([states, actions, goals], axis=-1)).squeeze(-1)
-    # V(s, g)
-    v_values = value.apply(training_state.value_state.params, jnp.concatenate([states, goals], axis=-1)).squeeze(-1)
-    # Advantage
-    adv = q_values - v_values
-
-    exp_adv = jnp.exp(awr_alpha * adv)
-    exp_adv = jnp.minimum(exp_adv, 100.0)
-
-    # Actor distribution
+    # Sample actions from the actor
     action_mean_and_SD = actor.apply(actor_params, jnp.concatenate([states, goals], axis=-1))
-    log_prob = parametric_action_distribution.log_prob(action_mean_and_SD, actions)
+    actions = parametric_action_distribution.sample(action_mean_and_SD, key)
 
-    actor_loss = -(exp_adv * log_prob).mean()
+    # Compute forward representations for these actions
+    # Assume forward_repr returns (F1, F2)
+    F1= forward_repr.apply(training_state.fb_repr_state.params[0], jnp.concatenate([states, actions, goals], axis=-1))
+
+    # Q-values as dot product between F and z (goals)
+    Q1 = jnp.einsum('sd,sd->s', F1, goals)
+    # Q2 = jnp.einsum('sd,sd->s', F2, goals)
+    # Q = jnp.minimum(Q1, Q2)
+    Q = Q1
+
+    # Actor loss: negative minimum Q-value
+    actor_loss = -Q
+
+    # Entropy regularization if Gaussian
+    log_prob = parametric_action_distribution.log_prob(action_mean_and_SD, actions)
+    actor_loss = actor_loss + entropy_coef * log_prob
+    mean_log_prob = log_prob.mean()
+
+    actor_loss = actor_loss.mean()
 
     metrics = {
         'actor_loss': actor_loss,
-        'adv_mean': adv.mean(),
-        'log_prob_mean': log_prob.mean(),
+        'actor_Q': Q.mean(),
+        'actor_log_prob': mean_log_prob,
     }
     return actor_loss, metrics
 
@@ -353,15 +360,12 @@ def sample_latents(batch_size, latent_dim, key):
 
 def fb_repr_loss_fn(
     params, forward_repr, backward_repr, transitions, state_dim, goal_dim, repr_dim, key,
-    target_forward_params, target_backward_params, actor, actor_params, const_std, repr_agg, orthonorm_coef, discount
+    training_state, actor, const_std, repr_agg, orthonorm_coef, discount
 ):
     forward_params, backward_params = params
     loss, metrics = forward_backward_repr_loss(
         forward_params, backward_params, forward_repr, backward_repr, transitions, state_dim, goal_dim, repr_dim, key, 
-        target_forward_params=target_forward_params,
-        target_backward_params=target_backward_params,
-        actor=actor,
-        actor_params=actor_params,
+        training_state, actor=actor,
         const_std=const_std,
         repr_agg=repr_agg,
         orthonorm_coef=orthonorm_coef,
@@ -464,8 +468,8 @@ def train(
     block_size = 2
     num_blocks = max(1, n_hidden // block_size)
     actor = Net(action_size * 2, h_dim, num_blocks, block_size, use_ln)
-    critic = Net(1, h_dim, num_blocks, block_size, use_ln)  # Outputs a single Q-value
-    value = Net(1, h_dim, num_blocks, block_size, use_ln)   # Outputs a single V-value
+    # critic = Net(1, h_dim, num_blocks, block_size, use_ln)  # Outputs a single Q-value
+    # value = Net(1, h_dim, num_blocks, block_size, use_ln)   # Outputs a single V-value
     forward_repr = Net(goal_dim, h_dim, num_blocks, block_size, use_ln)
     backward_repr = Net(goal_dim, h_dim, num_blocks, block_size, use_ln)
     parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size)
@@ -473,14 +477,14 @@ def train(
     # Initialize training state
     global_key, local_key = jax.random.split(rng)
     local_key = jax.random.fold_in(local_key, process_id)    
-    training_state = _init_training_state(global_key, actor, critic, value, forward_repr, backward_repr, state_dim, len(env.goal_indices), env.action_size, repr_dim, episode_length, policy_lr, policy_lr, repr_lr, num_local_devices_to_use)
+    training_state = _init_training_state(global_key, actor, forward_repr, backward_repr, state_dim, len(env.goal_indices), env.action_size, repr_dim, episode_length, policy_lr, repr_lr, num_local_devices_to_use)
     del global_key
     
     # Update functions
     
     actor_update = gradients.gradient_update_fn(actor_loss, training_state.actor_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    critic_update = gradients.gradient_update_fn(critic_loss, training_state.critic_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    value_update = gradients.gradient_update_fn(value_loss, training_state.value_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+    # critic_update = gradients.gradient_update_fn(critic_loss, training_state.critic_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+    # value_update = gradients.gradient_update_fn(value_loss, training_state.value_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     # Joint gradient update for forward and backward representations
     fb_repr_update = gradients.gradient_update_fn(fb_repr_loss_fn, training_state.fb_repr_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     
@@ -498,10 +502,8 @@ def train(
             len(env.goal_indices),
             repr_dim,
             key_fb,
-            training_state.target_forward_repr_params,
-            training_state.target_backward_repr_params,
+            training_state,
             actor,
-            training_state.actor_state.params,
             True,
             'mean',
             1.0,
@@ -509,63 +511,63 @@ def train(
             optimizer_state=training_state.fb_repr_state.opt_state,
         )
         
-        # Update value function
-        (value_loss, value_metrics), value_params, value_optimizer_state = value_update(
-            training_state.value_state.params,
-            training_state,
-            value,
-            critic,
-            parametric_action_distribution,
-            transitions,
-            env.state_dim,
-            len(env.goal_indices),
-            repr_dim,
-            key_value,
-            0.9,
-            optimizer_state=training_state.value_state.opt_state
-        )
+        # # Update value function
+        # (value_loss, value_metrics), value_params, value_optimizer_state = value_update(
+        #     training_state.value_state.params,
+        #     training_state,
+        #     value,
+        #     critic,
+        #     parametric_action_distribution,
+        #     transitions,
+        #     env.state_dim,
+        #     len(env.goal_indices),
+        #     repr_dim,
+        #     key_value,
+        #     0.9,
+        #     optimizer_state=training_state.value_state.opt_state
+        # )
         
-        # Update critic
-        (critic_loss, critic_metrics), critic_params, critic_optimizer_state = critic_update(
-            training_state.critic_state.params,
-            value_params,  # Pass current value params for target computation
-            training_state,
-            critic,
-            value,
-            forward_repr,
-            backward_repr,
-            parametric_action_distribution,
-            transitions,
-            env.state_dim,
-            len(env.goal_indices),
-            repr_dim,
-            key_critic,
-            0.99,
-            optimizer_state=training_state.critic_state.opt_state
-        )
+        # # Update critic
+        # (critic_loss, critic_metrics), critic_params, critic_optimizer_state = critic_update(
+        #     training_state.critic_state.params,
+        #     value_params,  # Pass current value params for target computation
+        #     training_state,
+        #     critic,
+        #     value,
+        #     forward_repr,
+        #     backward_repr,
+        #     parametric_action_distribution,
+        #     transitions,
+        #     env.state_dim,
+        #     len(env.goal_indices),
+        #     repr_dim,
+        #     key_critic,
+        #     0.99,
+        #     optimizer_state=training_state.critic_state.opt_state
+        # )
         
         # Update actor
         (actor_loss, actor_metrics), actor_params, actor_optimizer_state = actor_update(
             training_state.actor_state.params,
             training_state,
             actor,
-            critic,
-            value,
+            forward_repr,
             parametric_action_distribution,
             transitions,
             env.state_dim,
             len(env.goal_indices),
             repr_dim,
             key_actor,
+            0.1,
             optimizer_state=training_state.actor_state.opt_state
         )
         
         # Update target networks
-        new_target_critic_params = jax.tree_util.tree_map(
-            lambda p, tp: p * tau + tp * (1 - tau),
-            critic_params,
-            training_state.target_critic_params
-        )
+        # new_target_critic_params = jax.tree_util.tree_map(
+        #     lambda p, tp: p * tau + tp * (1 - tau),
+        #     critic_params,
+        #     training_state.target_critic_params
+        # )
         new_target_forward_repr_params = jax.tree_util.tree_map(
             lambda p, tp: p * tau + tp * (1 - tau),
             fb_repr_params[0],
@@ -580,22 +582,22 @@ def train(
         metrics = {
             'fb_loss': fb_loss,
             'actor_loss': actor_loss,
-            'critic_loss': critic_loss,
-            'value_loss': value_loss,
+            # 'critic_loss': critic_loss,
+            # 'value_loss': value_loss,
         }
         metrics.update(fb_metrics)
         metrics.update(actor_metrics)
-        metrics.update(critic_metrics)
-        metrics.update(value_metrics)
+        # metrics.update(critic_metrics)
+        # metrics.update(value_metrics)
 
         new_training_state = TrainingState(
             env_steps=training_state.env_steps,
             gradient_steps=training_state.gradient_steps + 1,
             actor_state=training_state.actor_state.replace(params=actor_params, opt_state=actor_optimizer_state),
-            critic_state=training_state.critic_state.replace(params=critic_params, opt_state=critic_optimizer_state),
-            value_state=training_state.value_state.replace(params=value_params, opt_state=value_optimizer_state),
+            # critic_state=training_state.critic_state.replace(params=critic_params, opt_state=critic_optimizer_state),
+            # value_state=training_state.value_state.replace(params=value_params, opt_state=value_optimizer_state),
             fb_repr_state=training_state.fb_repr_state.replace(params=fb_repr_params, opt_state=fb_repr_opt_state),
-            target_critic_params=new_target_critic_params,
+            # target_critic_params=new_target_critic_params,
             target_forward_repr_params=new_target_forward_repr_params,
             target_backward_repr_params=new_target_backward_repr_params
         )
@@ -740,16 +742,16 @@ def train(
             if checkpoint_logdir:
                 params = _unpmap((
                     training_state.actor_state.params,
-                    training_state.value_state.params,
-                    training_state.critic_state.params,
+                    # training_state.value_state.params,
+                    # training_state.critic_state.params,
                     training_state.fb_repr_state.params,
-                    training_state.target_critic_params,
+                    # training_state.target_critic_params,
                     training_state.target_forward_repr_params,
                     training_state.target_backward_repr_params
                 ))
                 path = f"{checkpoint_logdir}/step_{current_step}.pkl"
                 # Log all params
-                logging.info(f"Saving checkpoint at {path} with actor, value, critic, fb_repr, and target params.")
+                logging.info(f"Saving checkpoint at {path} with actor, fb_repr, and target params.")
                 brax.io.model.save_params(path, params)
 
             ## Run evals
@@ -767,13 +769,13 @@ def train(
     
     params = _unpmap((
         training_state.actor_state.params,
-        training_state.value_state.params,
-        training_state.critic_state.params,
+        # training_state.value_state.params,
+        # training_state.critic_state.params,
         training_state.fb_repr_state.params,
-        training_state.target_critic_params,
+        # training_state.target_critic_params,
         training_state.target_forward_repr_params,
         training_state.target_backward_repr_params
     ))
     # Log all params at the end as well
-    logging.info("Returning actor, value, critic, fb_repr, and target params.")
+    logging.info("Returning actor, fb_repr, and target params.")
     return (make_policy, params, metrics)
