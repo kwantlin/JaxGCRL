@@ -199,6 +199,8 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
         target = transition.observation[:-1, env.state_dim:]
         noise = transition.extras["state_extras"]["noise"][:-1] if "noise" in transition.extras["state_extras"].keys() else jnp.zeros(1)
         print("state, target, noise", state.shape, target.shape, noise.shape)
+        next_state = transition.observation[1:, :env.state_dim]
+        print("next state", next_state.shape)
         extras = {
             "policy_extras": {},
             "state_extras": {
@@ -210,6 +212,7 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
             "future_state": future_state,
             "future_action": future_action,
             "target": target,
+            "next_state": next_state,
         }
 
         return transition._replace(
