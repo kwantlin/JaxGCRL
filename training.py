@@ -102,6 +102,7 @@ def main(args):
         "training/g_repr_std",
         "training/l_align",
         "training/l_unif",
+        "training/entropy_loss",
         "training/context_info_loss",
         "training/context_mean_norm",
         "training/context_std_mean",

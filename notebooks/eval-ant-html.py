@@ -326,29 +326,32 @@ def collect_trajectory_with_target(rng, target, true_goal):
     def step_fn(carry, _):
         state, rng = carry
         act_rng, next_rng = jax.random.split(rng)
-        obs = jnp.concatenate((state.obs[:env.state_dim], target), axis=-1)
-        act, _ = jit_inference_fn(obs, act_rng)
+        # Construct observation for policy: current state + commanded target
+        obs_for_policy = jnp.concatenate((state.obs[:env.state_dim], target), axis=-1)
+        act, _ = jit_inference_fn(obs_for_policy, act_rng)
         next_state = jit_env_step(state, act)
         
-        # Compute distance-based reward
-        current_pos = next_state.obs[env.goal_indices]
-        dist_to_goal = jnp.linalg.norm(current_pos - true_goal)
+        # Compute distance-based reward based on current achieved position and the true_goal
+        current_achieved_pos = next_state.obs[env.goal_indices]
+        dist_to_goal = jnp.linalg.norm(current_achieved_pos - true_goal)
         reward = jnp.where(dist_to_goal < env.goal_reach_thresh, 1.0, 0.0)
         
-        return (next_state, next_rng), (reward, next_state.pipeline_state)
+        # Return reward and the full observation of the next state
+        return (next_state, next_rng), (reward, next_state.obs)
     
     init_state = jit_env_reset(rng=rng)
-    (final_state, _), (rewards, pipeline_states) = jax.lax.scan(
+    # Accumulate rewards and observations over time
+    (final_state, _), (rewards, obs_over_time) = jax.lax.scan(
         step_fn, 
         (init_state, rng), 
         None, 
         length=NUM_STEPS
     )
-    return rewards, pipeline_states
+    return rewards, obs_over_time
 
 # Collect trajectories using last states as targets
 last_state_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS)
-last_state_rews, last_state_pipeline_states = jax.vmap(collect_trajectory_with_target)(
+last_state_rews, last_state_obs_all_steps = jax.vmap(collect_trajectory_with_target)(
     last_state_rngs,
     last_states,
     goals
@@ -365,7 +368,7 @@ total_rewards_last_state = jnp.sum(last_state_rews, axis=1)  # Sum rewards along
 inferred_goal_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS * NUM_SAMPLES)
 inferred_goal_rngs = inferred_goal_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
 
-inferred_goal_rews, inferred_goal_pipeline_states = jax.vmap(
+inferred_goal_rews, inferred_goal_obs_all_steps = jax.vmap(
     jax.vmap(collect_trajectory_with_target, in_axes=(0, 0, None)),
     in_axes=(0, 0, 0)
 )(
@@ -384,7 +387,7 @@ total_rewards_inferred_goal_std = jnp.std(jnp.sum(inferred_goal_rews, axis=2), a
 mf_inferred_goal_rngs = jax.random.split(jax.random.PRNGKey(2), NUM_ENVS * NUM_SAMPLES)
 mf_inferred_goal_rngs = mf_inferred_goal_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
 
-mf_inferred_goal_rews, mf_inferred_goal_pipeline_states = jax.vmap(
+mf_inferred_goal_rews, mf_inferred_goal_obs_all_steps = jax.vmap(
     jax.vmap(collect_trajectory_with_target, in_axes=(0, 0, None)),
     in_axes=(0, 0, 0)
 )(
@@ -411,12 +414,53 @@ mean_field_inferred_dir = os.path.join(viz_dir, "mean_field_inferred")
 for d in [original_dir, last_state_dir, standard_inferred_dir, mean_field_inferred_dir]:
     os.makedirs(d, exist_ok=True)
 
-# Helper function to convert pipeline states to list
+# Helper function to convert pipeline states to list (still used for original trajectories)
 def pipeline_states_to_list(pipeline_states):
     return [jax.tree_util.tree_map(lambda x: x[i], pipeline_states) for i in range(pipeline_states.x.pos.shape[0])]
 
-# Visualize original trajectories
-print("Rendering original trajectories...")
+# Matplotlib plotting function
+def plot_trajectory_matplotlib(filepath, trajectory_obs_single_rollout, true_goal_single_env, commanded_goal_single_rollout, title):
+    # Ensure data is NumPy array for Matplotlib
+    trajectory_obs_np = np.array(trajectory_obs_single_rollout)
+    true_goal_np = np.array(true_goal_single_env)
+    commanded_goal_np = np.array(commanded_goal_single_rollout)
+
+    plt.figure(figsize=(10, 8))
+    
+    # Extract (x,y) positions from observations using env.goal_indices
+    # These indices point to the relevant part of the observation vector (e.g., ant's current x,y)
+    positions_over_time = trajectory_obs_np[:, env.goal_indices]
+    
+    num_steps_in_rollout = positions_over_time.shape[0]
+    colors = plt.cm.viridis(np.linspace(0, 1, num_steps_in_rollout))
+    
+    # Plot ant's (x,y) position over time
+    plt.scatter(positions_over_time[:, 0], positions_over_time[:, 1], c=colors, label='Ant Position (time gradient)', s=15, alpha=0.7)
+    plt.plot(positions_over_time[:, 0], positions_over_time[:, 1], alpha=0.5, linewidth=0.5) # Connect points
+    
+    # Plot true goal
+    plt.scatter(true_goal_np[0], true_goal_np[1], marker='x', color='red', s=150, label=f'True Goal ({true_goal_np[0]:.2f}, {true_goal_np[1]:.2f})', zorder=5)
+    
+    # Plot commanded goal
+    plt.scatter(commanded_goal_np[0], commanded_goal_np[1], marker='o', color='blue', s=150, label=f'Commanded Goal ({commanded_goal_np[0]:.2f}, {commanded_goal_np[1]:.2f})', facecolors='none', edgecolors='blue', linewidths=1.5, zorder=5)
+    
+    plt.xlabel("X Position")
+    plt.ylabel("Y Position")
+    plt.title(title, fontsize=14)
+    plt.legend(loc='best')
+    plt.axis('equal')
+    plt.grid(True, linestyle='--', alpha=0.7)
+    
+    # Add a colorbar to indicate time progression
+    cbar = plt.colorbar(plt.cm.ScalarMappable(cmap=plt.cm.viridis), ax=plt.gca(), label='Time Progression (normalized)')
+    cbar.set_ticks([0, 0.5, 1])
+    cbar.set_ticklabels(['Start', 'Mid', 'End'])
+
+    plt.savefig(filepath, bbox_inches='tight')
+    plt.close()
+
+# Visualize original trajectories (HTML)
+print("Rendering original trajectories (HTML)...")
 for i in range(NUM_ENVS):
     env_states = pipeline_states_to_list(jax.tree_util.tree_map(lambda x: x[i], pipeline_states))
     html.save(
@@ -425,49 +469,45 @@ for i in range(NUM_ENVS):
         env_states
     )
 
-# Visualize trajectories with last states as targets
-print("Rendering trajectories with last states as targets...")
+# Visualize trajectories with last states as targets (Matplotlib)
+print("Plotting trajectories with last states as targets (Matplotlib)...")
 for i in range(NUM_ENVS):
-    env_states = pipeline_states_to_list(jax.tree_util.tree_map(lambda x: x[i], last_state_pipeline_states))
-    html.save(
-        os.path.join(last_state_dir, f"trajectory_{i}.html"),
-        env.sys.tree_replace({'opt.timestep': env.dt}),
-        env_states
-    )
+    trajectory_obs = last_state_obs_all_steps[i] 
+    true_g = goals[i]
+    commanded_g = last_states[i]
+    filepath = os.path.join(last_state_dir, f"trajectory_{i}.png")
+    title = f"Env {i}: Last State as Target"
+    plot_trajectory_matplotlib(filepath, trajectory_obs, true_g, commanded_g, title)
 
-# Visualize trajectories with standard inferred goals as targets
-print("Rendering trajectories with standard inferred goals as targets...")
+# Visualize trajectories with standard inferred goals as targets (Matplotlib)
+print("Plotting trajectories with standard inferred goals as targets (Matplotlib)...")
 for i in range(NUM_ENVS):
     # For each environment, we have NUM_SAMPLES trajectories
     for j in range(NUM_SAMPLES):
-        # Get the pipeline states for this environment and sample
-        env_sample_states = jax.tree_util.tree_map(lambda x: x[i, j], inferred_goal_pipeline_states)
-        env_states = pipeline_states_to_list(env_sample_states)
-        html.save(
-            os.path.join(standard_inferred_dir, f"trajectory_{i}_sample_{j}.html"),
-            env.sys.tree_replace({'opt.timestep': env.dt}),
-            env_states
-        )
+        trajectory_obs = inferred_goal_obs_all_steps[i, j]
+        true_g = goals[i]
+        commanded_g = inferred_goals[i, j]
+        filepath = os.path.join(standard_inferred_dir, f"trajectory_{i}_sample_{j}.png")
+        title = f"Env {i}, Sample {j}: Standard Inferred Goal"
+        plot_trajectory_matplotlib(filepath, trajectory_obs, true_g, commanded_g, title)
 
-# Visualize trajectories with mean field inferred goals as targets
-print("Rendering trajectories with mean field inferred goals as targets...")
+# Visualize trajectories with mean field inferred goals as targets (Matplotlib)
+print("Plotting trajectories with mean field inferred goals as targets (Matplotlib)...")
 for i in range(NUM_ENVS):
     # For each environment, we have NUM_SAMPLES trajectories
     for j in range(NUM_SAMPLES):
-        # Get the pipeline states for this environment and sample
-        env_sample_states = jax.tree_util.tree_map(lambda x: x[i, j], mf_inferred_goal_pipeline_states)
-        env_states = pipeline_states_to_list(env_sample_states)
-        html.save(
-            os.path.join(mean_field_inferred_dir, f"trajectory_{i}_sample_{j}.html"),
-            env.sys.tree_replace({'opt.timestep': env.dt}),
-            env_states
-        )
+        trajectory_obs = mf_inferred_goal_obs_all_steps[i, j]
+        true_g = goals[i]
+        commanded_g = mf_inferred_goals[i, j]
+        filepath = os.path.join(mean_field_inferred_dir, f"trajectory_{i}_sample_{j}.png")
+        title = f"Env {i}, Sample {j}: Mean Field Inferred Goal"
+        plot_trajectory_matplotlib(filepath, trajectory_obs, true_g, commanded_g, title)
 
 print(f"Visualizations saved in {viz_dir}/")
-print(f"Original trajectories: {original_dir}/")
-print(f"Last state trajectories: {last_state_dir}/")
-print(f"Standard inferred goal trajectories: {standard_inferred_dir}/")
-print(f"Mean field inferred goal trajectories: {mean_field_inferred_dir}/")
+print(f"Original trajectories (HTML): {original_dir}/")
+print(f"Last state trajectories (PNGs): {last_state_dir}/")
+print(f"Standard inferred goal trajectories (PNGs): {standard_inferred_dir}/")
+print(f"Mean field inferred goal trajectories (PNGs): {mean_field_inferred_dir}/")
 
 
 
