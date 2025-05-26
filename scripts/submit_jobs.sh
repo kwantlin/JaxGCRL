@@ -16,7 +16,7 @@ submit_job() {
 #SBATCH -A lips
 #SBATCH --job-name=${env}_${var_post}
 #SBATCH --gres=gpu:1
-#SBATCH -c 16
+#SBATCH -c 8
 #SBATCH --mem=32G
 #SBATCH -t 24:00:00
 
