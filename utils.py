@@ -83,6 +83,8 @@ def create_parser():
     parser.add_argument('--use_her', default=False, action="store_true", help="Whether to use HER for SAC")
     parser.add_argument('--visualization_interval', type=int, default=5, help="Number of evals between each visualization of trajectories")
     parser.add_argument('--saved_ckpt_path', type=str, default=None, help="Path to the saved checkpoint")
+    parser.add_argument('--entropy_alpha', type=float, default=1e-3, help="Coefficient for entropy loss in actor")
+
     # GoalGAN parameters
     parser.add_argument('--generator_lr', type=float, default=3e-4, help="Learning rate for generator network")
     parser.add_argument('--discriminator_lr', type=float, default=3e-4, help="Learning rate for discriminator network")

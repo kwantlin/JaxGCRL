@@ -13,12 +13,12 @@ submit_job() {
     cat > temp_${env}_goalkde_${var_post}.slurm << EOF
 #!/bin/bash
 
-#SBATCH -A lips
+
 #SBATCH --job-name=${env}_goalkde_${var_post}
-#SBATCH --gres=gpu:1
-#SBATCH -c 16
-#SBATCH --mem=32G
-#SBATCH -t 24:00:00
+#SBATCH --gres=gpu:a6000:1
+#SBATCH -c 8
+#SBATCH --mem=16G
+#SBATCH -t 12:00:00
 
 eval "\$(conda shell.bash hook)"
 conda activate jaxgcrl
@@ -44,9 +44,9 @@ EOF
 }
 
 # Submit jobs for each environment
-# env=ant
-# submit_job $env 1 standard 20000000 256 512
-# submit_job $env 1 meanfield 20000000 256 512
+env=ant
+submit_job $env 1 standard 20000000 256 512
+submit_job $env 1 meanfield 20000000 256 512
 
 # env=simple_u_maze
 # submit_job $env 1 standard 20000000 1024 256
@@ -56,9 +56,9 @@ EOF
 # submit_job $env 1 standard 20000000 1024 256
 # submit_job $env 1 meanfield 20000000 1024 256
 
-env=pusher_easy
-submit_job $env 1 standard 60000000 1024 256
-submit_job $env 1 meanfield 60000000 1024 256
+# env=pusher_easy
+# submit_job $env 1 standard 60000000 1024 256
+# submit_job $env 1 meanfield 60000000 1024 256
 
 # Wait for all background processes to complete
 wait

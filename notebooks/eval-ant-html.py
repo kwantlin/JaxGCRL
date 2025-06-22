@@ -182,26 +182,45 @@ def collect_trajectory(rng):
         act_rng, next_rng = jax.random.split(rng)
         act, _ = jit_inference_fn(state.obs, act_rng)
         next_state = jit_env_step(state, act)
-        return (next_state, next_rng), (state, act, state.reward, state.pipeline_state)
+        # Return current state's obs, action, reward, current state's pipeline_state, and next_state's obs
+        return (next_state, next_rng), (state.obs, act, state.reward, state.pipeline_state, next_state.obs)
     
     init_state = jit_env_reset(rng=rng)
-    (final_state, _), (states, actions, rewards, pipeline_states) = jax.lax.scan(
+    # Scan over the steps
+    (final_state, _), (obs_at_step, actions_at_step, rewards_at_step, pipeline_states_at_step, next_obs_at_step) = jax.lax.scan(
         step_fn, 
         (init_state, rng), 
         None, 
         length=NUM_STEPS
     )
-    return states.obs, actions, rewards, pipeline_states
+    # For matplotlib plotting, we want the sequence of achieved observations by the policy
+    # obs_at_step contains the observation *before* the action was taken.
+    # next_obs_at_step contains the observation *after* the action was taken.
+    # We typically want to plot what was achieved, so next_obs_at_step is more relevant for trajectory path.
+    # However, the first observation is from init_state, so we prepend that.
+    achieved_observations = jnp.concatenate([jnp.expand_dims(init_state.obs, axis=0), next_obs_at_step[:-1]], axis=0)
+    return obs_at_step, actions_at_step, rewards_at_step, pipeline_states_at_step, achieved_observations
 
 # Collect trajectories across NUM_ENVS
 episode_rngs = jax.random.split(jax.random.PRNGKey(0), NUM_ENVS)
-observations, actions, rewards, pipeline_states = jax.vmap(collect_trajectory)(episode_rngs)
-print(observations.shape, actions.shape, rewards.shape)
-states = observations[:, :, :env.state_dim]
-goals = observations[:, 0, env.state_dim:]
-print(states.shape, actions.shape, goals.shape)
-last_states = observations[:, -1, env.goal_indices]
-print(last_states.shape)
+# original_observations here are the observations *before* taking an action at each step.
+original_observations, actions, rewards, pipeline_states, original_achieved_observations_all_steps = jax.vmap(collect_trajectory)(episode_rngs)
+
+print("original_observations (before action) shape:", original_observations.shape)
+print("original_achieved_observations_all_steps (for plotting) shape:", original_achieved_observations_all_steps.shape)
+print("actions shape:", actions.shape) 
+print("rewards shape:", rewards.shape)
+print("pipeline_states shape:", jax.tree_util.tree_map(lambda x: x.shape, pipeline_states))
+
+states = original_observations[:, :, :env.state_dim] # This uses obs before action
+goals = original_observations[:, 0, env.state_dim:] # This is the goal part of the initial obs for each env
+print("states shape (from obs before action):", states.shape) 
+print("goals shape (initial goal from obs):", goals.shape)
+
+# last_states are the goal_indices from the *final achieved observation* of the original trajectories
+last_states = original_achieved_observations_all_steps[:, -1, env.goal_indices]
+print("last_states (achieved, for commanding) shape:", last_states.shape)
+
 # Calculate total reward per rollout
 total_rewards = jnp.sum(rewards, axis=1)  # Sum rewards along trajectory dimension
 print("Total rewards per rollout (mean and stderr):", jnp.mean(total_rewards), jnp.std(total_rewards) / jnp.sqrt(NUM_ENVS))
@@ -419,45 +438,64 @@ def pipeline_states_to_list(pipeline_states):
     return [jax.tree_util.tree_map(lambda x: x[i], pipeline_states) for i in range(pipeline_states.x.pos.shape[0])]
 
 # Matplotlib plotting function
-def plot_trajectory_matplotlib(filepath, trajectory_obs_single_rollout, true_goal_single_env, commanded_goal_single_rollout, title):
+def plot_trajectory_matplotlib(filepath, commanded_trajectory_obs_single_rollout, original_expert_obs_single_rollout, true_goal_single_env, commanded_goal_single_rollout, title):
     # Ensure data is NumPy array for Matplotlib
-    trajectory_obs_np = np.array(trajectory_obs_single_rollout)
+    commanded_trajectory_obs_np = np.array(commanded_trajectory_obs_single_rollout)
+    original_expert_obs_np = np.array(original_expert_obs_single_rollout) # Added for original trajectory
     true_goal_np = np.array(true_goal_single_env)
     commanded_goal_np = np.array(commanded_goal_single_rollout)
 
-    plt.figure(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(14, 10))
     
-    # Extract (x,y) positions from observations using env.goal_indices
-    # These indices point to the relevant part of the observation vector (e.g., ant's current x,y)
-    positions_over_time = trajectory_obs_np[:, env.goal_indices]
+    # Extract (x,y) positions for commanded trajectory
+    commanded_positions_over_time = commanded_trajectory_obs_np[:, env.goal_indices]
+    num_steps_commanded = commanded_positions_over_time.shape[0]
+    # Use 'Blues' colormap for commanded policy rollout
+    colors_commanded = plt.cm.Blues(np.linspace(0.3, 1, num_steps_commanded)) # Start from a slightly darker blue
     
-    num_steps_in_rollout = positions_over_time.shape[0]
-    colors = plt.cm.viridis(np.linspace(0, 1, num_steps_in_rollout))
-    
-    # Plot ant's (x,y) position over time
-    plt.scatter(positions_over_time[:, 0], positions_over_time[:, 1], c=colors, label='Ant Position (time gradient)', s=15, alpha=0.7)
-    plt.plot(positions_over_time[:, 0], positions_over_time[:, 1], alpha=0.5, linewidth=0.5) # Connect points
+    # Plot commanded trajectory's (x,y) position over time
+    scatter_commanded = ax.scatter(commanded_positions_over_time[:, 0], commanded_positions_over_time[:, 1], c=colors_commanded, label='Inferred Goal Policy Rollout', s=25, alpha=0.8, zorder=3, cmap='Blues')
+    ax.plot(commanded_positions_over_time[:, 0], commanded_positions_over_time[:, 1], alpha=0.6, linewidth=0.8, color=colors_commanded[0] if num_steps_commanded > 0 else 'blue', zorder=2) # Connect points
+
+    # Extract (x,y) positions for original/expert trajectory
+    original_positions_over_time = original_expert_obs_np[:, env.goal_indices]
+    num_steps_original = original_positions_over_time.shape[0]
+    # Use 'Reds' colormap for original demonstrated trajectory
+    colors_original = plt.cm.Reds(np.linspace(0.3, 1, num_steps_original)) # Start from a slightly darker red
+
+    # Plot original/expert trajectory's (x,y) position over time
+    scatter_original = ax.scatter(original_positions_over_time[:, 0], original_positions_over_time[:, 1], c=colors_original, label='Original Demonstrated Trajectory', s=25, alpha=0.8, marker='^', zorder=3, cmap='Reds')
+    ax.plot(original_positions_over_time[:, 0], original_positions_over_time[:, 1], alpha=0.6, linewidth=0.8, color=colors_original[0] if num_steps_original > 0 else 'red', linestyle='--', zorder=2) # Connect points, dashed
     
     # Plot true goal
-    plt.scatter(true_goal_np[0], true_goal_np[1], marker='x', color='red', s=150, label=f'True Goal ({true_goal_np[0]:.2f}, {true_goal_np[1]:.2f})', zorder=5)
+    ax.scatter(true_goal_np[0], true_goal_np[1], marker='X', color='limegreen', s=300, label=f'True Goal ({true_goal_np[0]:.2f}, {true_goal_np[1]:.2f})', zorder=5, edgecolors='black', linewidth=1)
     
     # Plot commanded goal
-    plt.scatter(commanded_goal_np[0], commanded_goal_np[1], marker='o', color='blue', s=150, label=f'Commanded Goal ({commanded_goal_np[0]:.2f}, {commanded_goal_np[1]:.2f})', facecolors='none', edgecolors='blue', linewidths=1.5, zorder=5)
+    ax.scatter(commanded_goal_np[0], commanded_goal_np[1], marker='P', color='gold', s=300, label=f'Commanded Goal ({commanded_goal_np[0]:.2f}, {commanded_goal_np[1]:.2f})', zorder=5, edgecolors='black', linewidth=1)
     
-    plt.xlabel("X Position")
-    plt.ylabel("Y Position")
-    plt.title(title, fontsize=14)
-    plt.legend(loc='best')
-    plt.axis('equal')
-    plt.grid(True, linestyle='--', alpha=0.7)
+    ax.set_xlabel("X Position", fontsize=12)
+    ax.set_ylabel("Y Position", fontsize=12)
+    ax.set_title(title, fontsize=16)
+    ax.legend(loc='best', fontsize=10)
+    ax.axis('equal')
+    ax.grid(True, linestyle='--', alpha=0.7)
     
-    # Add a colorbar to indicate time progression
-    cbar = plt.colorbar(plt.cm.ScalarMappable(cmap=plt.cm.viridis), ax=plt.gca(), label='Time Progression (normalized)')
-    cbar.set_ticks([0, 0.5, 1])
-    cbar.set_ticklabels(['Start', 'Mid', 'End'])
+    # Add a colorbar for commanded trajectory
+    cbar_commanded = fig.colorbar(plt.cm.ScalarMappable(cmap=plt.cm.Blues, norm=plt.Normalize(vmin=0, vmax=1)), 
+                                ax=ax, fraction=0.040, pad=0.04)
+    cbar_commanded.set_ticks([0, 0.5, 1])
+    cbar_commanded.set_ticklabels(['Start', 'Mid', 'End'])
+    cbar_commanded.set_label('Inferred Goal Policy Rollout Time', labelpad=-40, fontsize=9)
+
+    # Add a colorbar for original trajectory
+    cbar_original = fig.colorbar(plt.cm.ScalarMappable(cmap=plt.cm.Reds, norm=plt.Normalize(vmin=0, vmax=1)), 
+                               ax=ax, fraction=0.040, pad=0.12)
+    cbar_original.set_ticks([0, 0.5, 1])
+    cbar_original.set_ticklabels(['Start', 'Mid', 'End'])
+    cbar_original.set_label('Original Trajectory Time', labelpad=-40, fontsize=9)
 
     plt.savefig(filepath, bbox_inches='tight')
-    plt.close()
+    plt.close(fig)
 
 # Visualize original trajectories (HTML)
 print("Rendering original trajectories (HTML)...")
@@ -472,43 +510,43 @@ for i in range(NUM_ENVS):
 # Visualize trajectories with last states as targets (Matplotlib)
 print("Plotting trajectories with last states as targets (Matplotlib)...")
 for i in range(NUM_ENVS):
-    trajectory_obs = last_state_obs_all_steps[i] 
+    commanded_traj_obs = last_state_obs_all_steps[i] 
+    original_expert_obs = original_achieved_observations_all_steps[i]
     true_g = goals[i]
     commanded_g = last_states[i]
     filepath = os.path.join(last_state_dir, f"trajectory_{i}.png")
-    title = f"Env {i}: Last State as Target"
-    plot_trajectory_matplotlib(filepath, trajectory_obs, true_g, commanded_g, title)
+    title = f"Env {i}: Last State as Target vs Original Trajectory"
+    plot_trajectory_matplotlib(filepath, commanded_traj_obs, original_expert_obs, true_g, commanded_g, title)
 
 # Visualize trajectories with standard inferred goals as targets (Matplotlib)
 print("Plotting trajectories with standard inferred goals as targets (Matplotlib)...")
 for i in range(NUM_ENVS):
-    # For each environment, we have NUM_SAMPLES trajectories
+    original_expert_obs = original_achieved_observations_all_steps[i]
+    true_g = goals[i]
     for j in range(NUM_SAMPLES):
-        trajectory_obs = inferred_goal_obs_all_steps[i, j]
-        true_g = goals[i]
+        commanded_traj_obs = inferred_goal_obs_all_steps[i, j]
         commanded_g = inferred_goals[i, j]
         filepath = os.path.join(standard_inferred_dir, f"trajectory_{i}_sample_{j}.png")
-        title = f"Env {i}, Sample {j}: Standard Inferred Goal"
-        plot_trajectory_matplotlib(filepath, trajectory_obs, true_g, commanded_g, title)
+        title = f"Env {i}, Sample {j}: Standard Inferred Goal vs Original Trajectory"
+        plot_trajectory_matplotlib(filepath, commanded_traj_obs, original_expert_obs, true_g, commanded_g, title)
 
 # Visualize trajectories with mean field inferred goals as targets (Matplotlib)
 print("Plotting trajectories with mean field inferred goals as targets (Matplotlib)...")
 for i in range(NUM_ENVS):
-    # For each environment, we have NUM_SAMPLES trajectories
+    original_expert_obs = original_achieved_observations_all_steps[i]
+    true_g = goals[i]
     for j in range(NUM_SAMPLES):
-        trajectory_obs = mf_inferred_goal_obs_all_steps[i, j]
-        true_g = goals[i]
+        commanded_traj_obs = mf_inferred_goal_obs_all_steps[i, j]
         commanded_g = mf_inferred_goals[i, j]
         filepath = os.path.join(mean_field_inferred_dir, f"trajectory_{i}_sample_{j}.png")
-        title = f"Env {i}, Sample {j}: Mean Field Inferred Goal"
-        plot_trajectory_matplotlib(filepath, trajectory_obs, true_g, commanded_g, title)
+        title = f"Env {i}, Sample {j}: Mean Field Inferred Goal vs Original Trajectory"
+        plot_trajectory_matplotlib(filepath, commanded_traj_obs, original_expert_obs, true_g, commanded_g, title)
 
 print(f"Visualizations saved in {viz_dir}/")
 print(f"Original trajectories (HTML): {original_dir}/")
 print(f"Last state trajectories (PNGs): {last_state_dir}/")
 print(f"Standard inferred goal trajectories (PNGs): {standard_inferred_dir}/")
 print(f"Mean field inferred goal trajectories (PNGs): {mean_field_inferred_dir}/")
-
 
 
 
