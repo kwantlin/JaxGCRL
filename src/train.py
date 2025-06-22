@@ -75,6 +75,7 @@ class TrainingState:
     env_steps: jnp.ndarray
     actor_state: TrainState
     critic_state: TrainState
+    entropy_state: TrainState
     alpha_state: TrainState
     context_state: TrainState
 
@@ -114,12 +115,14 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, entropy_encoder, con
     # Critic
     sa_encoder_params = sa_encoder.init(sa_key, jnp.ones([1, state_dim + action_dim]))
     g_encoder_params = g_encoder.init(g_key, jnp.ones([1, goal_dim]))
-    entropy_encoder_params = entropy_encoder.init(entropy_key, jnp.ones([1, state_dim + action_dim + goal_dim]))
-    critic_params = {"sa_encoder": sa_encoder_params, "g_encoder": g_encoder_params, "entropy_encoder": entropy_encoder_params}
+    critic_params = {"sa_encoder": sa_encoder_params, "g_encoder": g_encoder_params}
     # Trajectory input shape: [batch, episode_length * (obs_dim + action_dim)]
     # No need for goal_dim since that's part of obs_dim already
     critic_state = TrainState.create(apply_fn=None, params=critic_params, tx=optax.adam(learning_rate=critic_lr))
 
+    entropy_encoder_params = entropy_encoder.init(entropy_key, jnp.ones([1, state_dim + action_dim + goal_dim]))
+    entropy_state = TrainState.create(apply_fn=entropy_encoder.apply, params=entropy_encoder_params, tx=optax.adam(learning_rate=critic_lr))
+    
     # Put everything together into TrainingState
     if var_post == "meanfield":
         dummy_input = jnp.ones([1, (state_dim + action_dim)])
@@ -130,7 +133,7 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, entropy_encoder, con
     context_encoder_params = context_encoder.init(context_key, dummy_input)
     context_state = TrainState.create(apply_fn=None, params=context_encoder_params, tx=optax.adam(learning_rate=critic_lr))
     training_state = TrainingState(env_steps=jnp.zeros(()), gradient_steps=jnp.zeros(()), 
-                                   actor_state=actor_state, critic_state=critic_state, alpha_state=alpha_state,
+                                   actor_state=actor_state, critic_state=critic_state, entropy_state=entropy_state, alpha_state=alpha_state,
                                    context_state=context_state)
     training_state = jax.device_put_replicated(training_state, jax.local_devices()[:num_local_devices_to_use])
     return training_state
@@ -276,23 +279,22 @@ def critic_loss_entropy(entropy_params, training_state, entropy_encoder, actor, 
     discount = transitions.discount
     # Compute reward as log probability of next action given next state
     next_action_mean_and_SD = actor.apply(training_state.actor_state.params, jnp.concatenate([next_state, goal], axis=-1))
-    reward = parametric_action_distribution.log_prob(next_action_mean_and_SD, transitions.extras["next_action"])
+    log_prob = parametric_action_distribution.log_prob(next_action_mean_and_SD, transitions.extras["next_action"])
 
     # Temporal difference target
-    td_target = jax.lax.stop_gradient(entropy_next) - jax.lax.stop_gradient(reward)
+    td_target = jax.lax.stop_gradient(entropy_next) - log_prob
     
     # TD error
-    td_error = discount * td_target - entropy_current
+    td_error = entropy_current - discount * td_target
     
     # Mean squared temporal difference loss
     td_loss = jnp.mean(td_error ** 2)
-    
-    return td_loss
+    metrics = {"entropy_loss": td_loss}
+    return td_loss, metrics
     
 def critic_loss(critic_params, training_state, sa_encoder, g_encoder, entropy_encoder, actor, parametric_action_distribution, transitions, state_dim, contrastive_loss_fn_name, energy_fn_name, logsumexp_penalty, l2_penalty, resubs, key):
     sa_encoder_params = critic_params["sa_encoder"]
     g_encoder_params = critic_params["g_encoder"]
-    entropy_encoder_params = critic_params["entropy_encoder"]
 
     # Compute representations
     sa = jnp.concatenate([transitions.observation[:, :state_dim], transitions.action], axis=-1)
@@ -325,15 +327,13 @@ def critic_loss(critic_params, training_state, sa_encoder, g_encoder, entropy_en
         loss += l2_loss
     else:
         l2_loss = 0
-
-    entropy_loss = critic_loss_entropy(entropy_encoder_params, training_state, entropy_encoder, actor, parametric_action_distribution, transitions, state_dim, key)
+        
     # Compute metrics
     metrics = compute_metrics(logits, sa_repr, g_repr, l2_loss, l_align, l_unif)
-    metrics["entropy_loss"] = entropy_loss
-    loss += entropy_loss
+    
     return loss, metrics
     
-def actor_loss(actor_params, training_state, actor, sa_encoder, g_encoder, parametric_action_distribution, alpha, transitions, config, state_dim, goal_indices, energy_fn_name, key):
+def actor_loss(actor_params, training_state, actor, sa_encoder, g_encoder, entropy_encoder, parametric_action_distribution, alpha, transitions, config, state_dim, goal_indices, energy_fn_name, key):
     sample_key, entropy_key, goal_key = jax.random.split(key, 3)
     sa_encoder_params = jax.lax.stop_gradient(training_state.critic_state.params["sa_encoder"])
     g_encoder_params = jax.lax.stop_gradient(training_state.critic_state.params["g_encoder"])
@@ -351,9 +351,10 @@ def actor_loss(actor_params, training_state, actor, sa_encoder, g_encoder, param
     sg = jnp.concatenate([state, goal], axis=1)
 
     # Compute action with policy, given state and goal
-    action_mean_and_SD = actor.apply(actor_params, sg)
+    action_mean_and_SD = actor.apply(actor_params, sg) #TODO: clip stddev to 1 or 2. also log the stddev of the actor over time. 1 is already quite stochastic
     action = parametric_action_distribution.sample_no_postprocessing(action_mean_and_SD, sample_key)
     log_prob = parametric_action_distribution.log_prob(action_mean_and_SD, action)
+    # TODO: clip standard dev of actor
     entropy = parametric_action_distribution.entropy(action_mean_and_SD, entropy_key)
     action = parametric_action_distribution.postprocess(action)
 
@@ -367,6 +368,10 @@ def actor_loss(actor_params, training_state, actor, sa_encoder, g_encoder, param
     actor_loss = -jnp.mean(q)
     print("actor_loss", actor_loss.shape)
     
+    sag = jnp.concatenate([state, action, goal], axis=-1)
+    entropy_loss = entropy_encoder.apply(training_state.entropy_state.params, sag)
+    entropy_loss = jnp.mean(entropy_loss)
+    actor_loss -= config.entropy_alpha * entropy_loss
     
     # Modify loss (actor entropy)
     if not config.disable_entropy_actor:
@@ -897,6 +902,7 @@ def train(
     alpha_update = gradients.gradient_update_fn(alpha_loss, training_state.alpha_state.tx, pmap_axis_name=_PMAP_AXIS_NAME)
     actor_update = gradients.gradient_update_fn(actor_loss, training_state.actor_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     critic_update = gradients.gradient_update_fn(critic_loss, training_state.critic_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+    entropy_update = gradients.gradient_update_fn(critic_loss_entropy, training_state.entropy_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     if var_post == "meanfield":
         context_update = gradients.gradient_update_fn(context_loss_meanfield, training_state.context_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     elif var_post == "meanfield_encoded":
@@ -907,7 +913,7 @@ def train(
     
     def update_step(carry, transitions):
         training_state, key = carry
-        key, key_alpha, key_critic, key_actor = jax.random.split(key, 4)
+        key, key_alpha, key_critic, key_actor, key_entropy = jax.random.split(key, 5)
 
         alpha_loss, alpha_params, alpha_optimizer_state = alpha_update(training_state.alpha_state.params, actor, parametric_action_distribution, training_state, transitions, action_size,
                                                                        key_alpha, optimizer_state=training_state.alpha_state.opt_state)
@@ -916,8 +922,10 @@ def train(
         (critic_loss, metrics_crl), critic_params, critic_optimizer_state = critic_update(training_state.critic_state.params, training_state, sa_encoder, g_encoder, entropy_encoder, actor, parametric_action_distribution, transitions, env.state_dim, 
                                                                                           contrastive_loss_fn, energy_fn, logsumexp_penalty, l2_penalty, 
                                                                                           resubs, key_critic, optimizer_state=training_state.critic_state.opt_state)
+        (entropy_loss, entropy_metrics), entropy_params, entropy_optimizer_state = entropy_update(training_state.entropy_state.params, training_state, entropy_encoder, actor, parametric_action_distribution, transitions, env.state_dim,
+                                                                                                key_entropy, optimizer_state=training_state.entropy_state.opt_state)
         (actor_loss, actor_metrics), actor_params, actor_optimizer_state = actor_update(training_state.actor_state.params, training_state, actor, sa_encoder,
-                                                                                        g_encoder, parametric_action_distribution, alpha, transitions, 
+                                                                                        g_encoder, entropy_encoder, parametric_action_distribution, alpha, transitions, 
                                                                                         config, env.state_dim, env.goal_indices, energy_fn, 
                                                                                         key_actor, optimizer_state=training_state.actor_state.opt_state)
 
@@ -926,15 +934,17 @@ def train(
             "alpha_loss": alpha_loss,
             "alpha": jnp.exp(alpha_params["log_alpha"]),
             "critic_loss": critic_loss,
+            "entropy_loss": entropy_loss,
         }
         metrics.update(metrics_crl)
         metrics.update(actor_metrics)
-
+        metrics.update(entropy_metrics)
         new_training_state = TrainingState(
             env_steps=training_state.env_steps,
             gradient_steps=training_state.gradient_steps + 1,
             actor_state=training_state.actor_state.replace(params=actor_params, opt_state=actor_optimizer_state),
             critic_state=training_state.critic_state.replace(params=critic_params, opt_state=critic_optimizer_state),
+            entropy_state=training_state.entropy_state.replace(params=entropy_params, opt_state=entropy_optimizer_state),
             alpha_state=training_state.alpha_state.replace(params=alpha_params, opt_state=alpha_optimizer_state),
             context_state=training_state.context_state,
         )
@@ -981,6 +991,7 @@ def train(
             gradient_steps=training_state.gradient_steps,
             actor_state=training_state.actor_state,
             critic_state=training_state.critic_state,
+            entropy_state=training_state.entropy_state,
             alpha_state=training_state.alpha_state,
             context_state=training_state.context_state.replace(params=context_params, opt_state=context_optimizer_state),
         )
@@ -1171,8 +1182,18 @@ def train(
         eval_env = environment
     eval_env = TrajectoryIdWrapper(eval_env)
     eval_env = wrap_for_training(eval_env, episode_length=episode_length, action_repeat=action_repeat)
-    evaluator = CrlEvaluator(eval_env, functools.partial(make_policy, deterministic=deterministic_eval), num_eval_envs=num_eval_envs,
-                             episode_length=episode_length, action_repeat=action_repeat, key=eval_key)
+    evaluator = CrlEvaluator(
+        eval_env, 
+        functools.partial(make_policy, deterministic=deterministic_eval), 
+        num_eval_envs=num_eval_envs,
+        episode_length=episode_length, 
+        action_repeat=action_repeat, 
+        key=eval_key,
+        context_encoder=context_encoder,
+        sa_encoder=sa_encoder,
+        g_encoder=g_encoder,
+        config=config,
+    )
 
     ## Run initial eval
     metrics = {}

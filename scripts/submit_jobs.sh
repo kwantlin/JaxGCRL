@@ -16,8 +16,8 @@ submit_job() {
 #SBATCH -A lips
 #SBATCH --job-name=${env}_${var_post}
 #SBATCH --gres=gpu:1
-#SBATCH -c 8
-#SBATCH --mem=32G
+#SBATCH -c 4
+#SBATCH --mem=16G
 #SBATCH -t 24:00:00
 
 eval "\$(conda shell.bash hook)"
@@ -52,9 +52,9 @@ EOF
 # submit_job $env 1 standard 20000000 1024 256
 # submit_job $env 1 meanfield 20000000 1024 256
 
-# env=reacher
-# submit_job $env 1 standard 20000000 1024 256
-# submit_job $env 1 meanfield 20000000 1024 256
+env=reacher
+submit_job $env 1 standard 20000000 1024 256
+submit_job $env 1 meanfield 20000000 1024 256
 
 env=pusher_easy
 submit_job $env 1 standard 60000000 1024 256
