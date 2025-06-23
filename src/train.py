@@ -351,10 +351,9 @@ def actor_loss(actor_params, training_state, actor, sa_encoder, g_encoder, entro
     sg = jnp.concatenate([state, goal], axis=1)
 
     # Compute action with policy, given state and goal
-    action_mean_and_SD = actor.apply(actor_params, sg) #TODO: clip stddev to 1 or 2. also log the stddev of the actor over time. 1 is already quite stochastic
+    action_mean_and_SD = actor.apply(actor_params, sg)
     action = parametric_action_distribution.sample_no_postprocessing(action_mean_and_SD, sample_key)
     log_prob = parametric_action_distribution.log_prob(action_mean_and_SD, action)
-    # TODO: clip standard dev of actor
     entropy = parametric_action_distribution.entropy(action_mean_and_SD, entropy_key)
     action = parametric_action_distribution.postprocess(action)
 
@@ -800,6 +799,8 @@ def train(
             Number of hidden layers. Default is 2.
         repr_dim: int, optional
             Dimension of the representation from the state-action and goal encoders. Default is 64.
+        var_post: str, optional
+            Type of variational posterior. Default is "meanfield_encoded".
         visualization_interval: int, optional
             Number of evals between each visualization of trajectories. Default is 5.
 
@@ -1182,18 +1183,9 @@ def train(
         eval_env = environment
     eval_env = TrajectoryIdWrapper(eval_env)
     eval_env = wrap_for_training(eval_env, episode_length=episode_length, action_repeat=action_repeat)
-    evaluator = CrlEvaluator(
-        eval_env, 
-        functools.partial(make_policy, deterministic=deterministic_eval), 
-        num_eval_envs=num_eval_envs,
-        episode_length=episode_length, 
-        action_repeat=action_repeat, 
-        key=eval_key,
-        context_encoder=context_encoder,
-        sa_encoder=sa_encoder,
-        g_encoder=g_encoder,
-        config=config,
-    )
+    evaluator = CrlEvaluator(eval_env, functools.partial(make_policy, deterministic=deterministic_eval), num_eval_envs=num_eval_envs,
+                             episode_length=episode_length, action_repeat=action_repeat, key=eval_key)
+
 
     ## Run initial eval
     metrics = {}
