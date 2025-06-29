@@ -15,10 +15,10 @@ submit_job() {
 
 
 #SBATCH --job-name=${env}_goalkde_${var_post}
-#SBATCH --gres=gpu:a6000:1
-#SBATCH -c 8
-#SBATCH --mem=16G
-#SBATCH -t 12:00:00
+#SBATCH --gres=gpu:a5000:1
+#SBATCH -t 16:00:00
+#SBATCH --mail-type=BEGIN,END,FAIL
+#SBATCH --mail-user=kw2960@cs.princeton.edu
 
 eval "\$(conda shell.bash hook)"
 conda activate jaxgcrl
