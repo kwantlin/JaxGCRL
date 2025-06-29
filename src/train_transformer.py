@@ -17,6 +17,7 @@ from brax.training.replay_buffers_test import jit_wrap
 from envs.wrappers import TrajectoryIdWrapper
 from src.evaluator import CrlEvaluator
 from src.replay_buffer import ReplayBufferState, Transition, TrajectoryUniformSamplingQueue
+from src.transformer import TransformerContextEncoder
 
 Metrics = types.Metrics
 Env = envs.Env
@@ -79,7 +80,7 @@ class TrainingState:
     alpha_state: TrainState
     context_state: TrainState
 
-def _init_training_state(key, actor, sa_encoder, g_encoder, entropy_encoder, context_encoder, var_post, state_dim, goal_dim, action_dim, repr_dim, episode_length, actor_lr, critic_lr, alpha_lr, num_local_devices_to_use):
+def _init_training_state(key, actor, sa_encoder, g_encoder, entropy_encoder, context_encoder, state_dim, goal_dim, action_dim, repr_dim, episode_length, actor_lr, critic_lr, alpha_lr, num_local_devices_to_use):
     """
     Initializes the training state for a contrastive reinforcement learning model. This function sets up the initial states for various components including the policy
     network, CRL networks, and optimizers. All parameters are initialized and replicated across the specified
@@ -124,14 +125,12 @@ def _init_training_state(key, actor, sa_encoder, g_encoder, entropy_encoder, con
     entropy_state = TrainState.create(apply_fn=entropy_encoder.apply, params=entropy_encoder_params, tx=optax.adam(learning_rate=critic_lr))
     
     # Put everything together into TrainingState
-    if var_post == "meanfield":
-        dummy_input = jnp.ones([1, (state_dim + action_dim)])
-    elif var_post == "meanfield_encoded":
-        dummy_input = jnp.ones([1, (repr_dim)])
-    else:
-        dummy_input = jnp.ones([1, (episode_length - 1) * (state_dim + action_dim)])
-    context_encoder_params = context_encoder.init(context_key, dummy_input)
-    context_state = TrainState.create(apply_fn=None, params=context_encoder_params, tx=optax.adam(learning_rate=critic_lr))
+    # The Transformer context encoder expects a sequence of sa_repr embeddings.
+    # Shape: (batch_size, seq_len, repr_dim).
+    # seq_len is episode_length - 1, as there's no action for the last state.
+    dummy_input = jnp.ones([1, episode_length, repr_dim])
+    context_encoder_params = context_encoder.init(context_key, sa_repr_sequence=dummy_input)
+    context_state = TrainState.create(apply_fn=context_encoder.apply, params=context_encoder_params, tx=optax.adam(learning_rate=critic_lr))
     training_state = TrainingState(env_steps=jnp.zeros(()), gradient_steps=jnp.zeros(()), 
                                    actor_state=actor_state, critic_state=critic_state, entropy_state=entropy_state, alpha_state=alpha_state,
                                    context_state=context_state)
@@ -382,273 +381,66 @@ def actor_loss(actor_params, training_state, actor, sa_encoder, g_encoder, entro
     metrics = {"entropy": entropy.mean()}
     return jnp.mean(actor_loss), metrics
 
-def context_loss(
-    context_encoder_params, context_encoder, transitions, state_dim, goal_indices, 
-    latent_dim=5, beta=0.01, key=None
+def context_loss_transformer(
+    context_encoder_params,
+    training_state,
+    sa_encoder,
+    context_encoder,
+    trajectories,
+    state_dim,
+    key=None
 ):
     """
-    Computes mutual information loss to ensure the context encoder captures meaningful task information.
-    
-    Args:
-        context_encoder_params: Parameters for the context encoder
-        context_encoder: Context encoder network (similar structure to sa_encoder/g_encoder)
-        transitions: Transitions from the replay buffer
-        state_dim: Dimension of the state space
-        goal_indices: Indices that define the goal
-        latent_dim: Dimension of the latent space
-        beta: Coefficient for the information loss
-        key: JAX random key
-    
-    Returns:
-        loss: The mutual information loss
-        metrics: Dictionary of metrics related to the context encoding
+    Computes mutual information loss for the transformer-based context encoder.
     """
-    # Split the random key
-    key, encoder_key, sampling_key = jax.random.split(key, 3)
+    # sa_encoder params are part of critic_state, and we don't want to train them here.
+    sa_encoder_params = jax.lax.stop_gradient(training_state.critic_state.params["sa_encoder"])
+
+    # trajectories.observation has shape (batch, seq_len+1, obs_dim)
+    # trajectories.action has shape (batch, seq_len, action_dim)
+    # We use observations up to the second to last, as we need an action for each state.
+    states = trajectories.observation[:, :, :state_dim] # -> (batch, seq_len, state_dim)
+    actions = trajectories.action # -> (batch, seq_len, action_dim)
     
-    print("transitions", transitions.observation.shape, transitions.reward.shape)
-    # Extract states, actions, and goals from transitions
-    states = transitions.observation[:, :, :state_dim]
-    goals = transitions.observation[:, :, state_dim:]
-    actions = transitions.action
+    # The target goal is contained in the final observation of the trajectory.
+    targets = trajectories.observation[:, -1, state_dim:] # -> (batch_size, goal_dim)
+
+    # Prepare sa_repr sequence for the transformer
+    sa_pairs = jnp.concatenate([states, actions], axis=-1)
+    batch_size, seq_len, sa_dim = sa_pairs.shape
+    sa_pairs_flat = sa_pairs.reshape(batch_size * seq_len, sa_dim)
     
-    # Get the targets from the extras
-    targets = goals[:, -1, :]
-    print("targets", targets.shape)
+    sa_repr_flat = sa_encoder.apply(sa_encoder_params, sa_pairs_flat)
     
-    # Concatenate state-action to form trajectory representation
-    trajectories = jnp.reshape(jnp.concatenate([states, actions], axis=-1), (-1, states.shape[-2] * (states.shape[-1] + actions.shape[-1])))
-    
-    print("trajectories", trajectories.shape)
-    # Context encoder outputs a vector of size 2*latent_dim (first half is mean, second half is log_std)
-    context_output = context_encoder.apply(context_encoder_params, trajectories)
-    print("context output shape", context_output.shape)
-    
-    # Split the output into mean and log_std
+    repr_dim = sa_repr_flat.shape[-1]
+    sa_repr_sequence = sa_repr_flat.reshape(batch_size, seq_len, repr_dim)
+
+    # Get goal distribution from transformer
+    context_output = context_encoder.apply(context_encoder_params, sa_repr_sequence)
     context_mean, context_log_std = jnp.split(context_output, 2, axis=-1)
-    
-    # Compute standard deviation from log_std, adding small epsilon for numerical stability
+
+    # Compute negative log-likelihood loss
     epsilon = 1e-8
     std = jnp.exp(context_log_std) + epsilon
-    
-    # Compute log likelihood of targets under Gaussian distribution with predicted mean and std
-    # Log likelihood = -0.5 * (log(2π) + log(σ²) + (x-μ)²/σ²)
     log_2pi = jnp.log(2 * jnp.pi)
-    log_var = 2 * context_log_std  # log(σ²) = 2*log(σ)
+    log_var = 2 * context_log_std
     squared_mahalanobis = jnp.square(targets - context_mean) / jnp.square(std)
     
     log_likelihood = -0.5 * jnp.sum(
         log_2pi + log_var + squared_mahalanobis,
         axis=-1
-    )  # Sum over dimensions, shape: [batch_size]
-    
-    # Maximize likelihood by minimizing negative log likelihood
-    info_loss = -jnp.mean(log_likelihood)  # Average over batch
-    
-    # Collect metrics for monitoring
-    metrics = {
-        "context_info_loss": info_loss,
-        "context_mean_norm": jnp.mean(jnp.sqrt(jnp.sum(jnp.square(context_mean), axis=-1))),
-        "context_std_mean": jnp.mean(std),
-    }
-    
-    return info_loss, metrics
-
-def context_loss_meanfield(
-    context_encoder_params, context_encoder, transitions, state_dim, goal_indices, 
-    latent_dim=5, beta=0.01, key=None
-):
-    """
-    Computes mutual information loss to ensure the context encoder captures meaningful task information.
-    This version assumes the context encoder takes in state-action pairs rather than full trajectories.
-    
-    Args:
-        context_encoder_params: Parameters for the context encoder
-        context_encoder: Context encoder network (similar structure to sa_encoder/g_encoder)
-        transitions: Transitions from the replay buffer
-        state_dim: Dimension of the state space
-        goal_indices: Indices that define the goal
-        latent_dim: Dimension of the latent space
-        beta: Coefficient for the information loss
-        key: JAX random key
-    
-    Returns:
-        loss: The mutual information loss
-        metrics: Dictionary of metrics related to the context encoding
-    """
-    # Split the random key
-    key, encoder_key, sampling_key = jax.random.split(key, 3)
-    
-    print("transitions", transitions.observation.shape, transitions.reward.shape)
-    # Extract states, actions, and goals from transitions
-    states = transitions.observation[:, :, :state_dim]
-    goals = transitions.observation[:, :, state_dim:]
-    actions = transitions.action
-    
-    # Get the targets from the extras
-    targets = goals[:, -1, :]
-    print("targets", targets.shape)
-    # Create state-action pairs
-    sa_pairs = jnp.concatenate([states, actions], axis=-1)
-    batch_size, seq_len, sa_dim = sa_pairs.shape
-    
-    # Reshape to process each state-action pair individually
-    sa_pairs_flat = sa_pairs.reshape(-1, sa_dim)  # Shape: [batch_size * seq_len, sa_dim]
-    
-    print("sa_pairs_flat", sa_pairs_flat.shape)
-    # Context encoder outputs a vector of size 2*latent_dim for each state-action pair
-    # (first half is mean, second half is log_std)
-    context_output_flat = context_encoder.apply(context_encoder_params, sa_pairs_flat)
-    print("context output shape", context_output_flat.shape)
-    
-    # Reshape back to batch structure
-    context_output = context_output_flat.reshape(batch_size, seq_len, -1)
-    print("context output shape", context_output.shape)
-    
-    # Split the output into mean and log_std for each state-action pair
-    context_mean, context_log_std = jnp.split(context_output, 2, axis=-1)
-    print("context mean shape", context_mean.shape)
-    print("context log_std shape", context_log_std.shape)
-    # Compute standard deviation from log_std, adding small epsilon for numerical stability
-    epsilon = 1e-8
-    std = jnp.exp(context_log_std) + epsilon
-    
-    # Compute log likelihood of targets under Gaussian distribution with predicted mean and std
-    # for each state-action pair
-    log_2pi = jnp.log(2 * jnp.pi)
-    log_var = 2 * context_log_std  # log(σ²) = 2*log(σ)
-    
-    # Expand targets to match the shape of context_mean for broadcasting
-    # targets shape: [batch_size, latent_dim]
-    # context_mean shape: [batch_size, seq_len, latent_dim]
-    targets_expanded = jnp.expand_dims(targets, axis=1)  # Shape: [batch_size, 1, latent_dim]
-    
-    squared_mahalanobis = jnp.square(targets_expanded - context_mean) / jnp.square(std)
-    
-    # Compute log likelihood for each state-action pair
-    # Shape: [batch_size, seq_len]
-    pair_log_likelihood = -0.5 * jnp.sum(
-        log_2pi + log_var + squared_mahalanobis,
-        axis=-1
     )
-    print("pair_log_likelihood shape", pair_log_likelihood.shape)
     
-    # Sum log likelihoods across the sequence to get the total log likelihood
-    # This is equivalent to computing the product of probabilities
-    # Shape: [batch_size]
-    log_likelihood = jnp.sum(pair_log_likelihood, axis=1)
-    print("log_likelihood shape", log_likelihood.shape)
-    # Maximize likelihood by minimizing negative log likelihood
-    info_loss = -jnp.mean(log_likelihood)  # Average over batch
-    
-    # Collect metrics for monitoring
+    info_loss = -jnp.mean(log_likelihood)
+
     metrics = {
         "context_info_loss": info_loss,
-        "context_mean_norm": jnp.mean(jnp.sqrt(jnp.sum(jnp.square(context_mean), axis=-1))),
+        "context_mean_norm": jnp.mean(jnp.linalg.norm(context_mean, axis=-1)),
         "context_std_mean": jnp.mean(std),
     }
     
     return info_loss, metrics
 
-
-def context_loss_meanfield_encoded(
-    context_encoder_params, context_encoder, sa_encoder, training_state, transitions, state_dim, goal_indices, 
-    latent_dim=5, beta=0.01, key=None
-):
-    """
-    Computes mutual information loss to ensure the context encoder captures meaningful task information.
-    This version assumes the context encoder takes in state-action pairs rather than full trajectories.
-    
-    Args:
-        context_encoder_params: Parameters for the context encoder
-        context_encoder: Context encoder network (similar structure to sa_encoder/g_encoder)
-        transitions: Transitions from the replay buffer
-        state_dim: Dimension of the state space
-        goal_indices: Indices that define the goal
-        latent_dim: Dimension of the latent space
-        beta: Coefficient for the information loss
-        key: JAX random key
-    
-    Returns:
-        loss: The mutual information loss
-        metrics: Dictionary of metrics related to the context encoding
-    """
-    key, encoder_key, sampling_key = jax.random.split(key, 3)
-    
-    print("transitions", transitions.observation.shape, transitions.reward.shape)
-    # Extract states, actions, and goals from transitions
-    states = transitions.observation[:, :, :state_dim]
-    goals = transitions.observation[:, :, state_dim:]
-    actions = transitions.action
-    
-    # Get the targets from the extras
-    targets = goals[:, -1, :]
-    print("targets", targets.shape)
-    
-    # Create state-action pairs
-    sa_pairs = jnp.concatenate([states, actions], axis=-1)
-    batch_size, seq_len, sa_dim = sa_pairs.shape
-    
-    # Reshape to process each state-action pair individually
-    sa_pairs_flat = sa_pairs.reshape(-1, sa_dim)  # Shape: [batch_size * seq_len, sa_dim]
-    
-    print("sa_pairs_flat", sa_pairs_flat.shape)
-    # Context encoder outputs a vector of size 2*latent_dim for each state-action pair
-    # (first half is mean, second half is log_std)
-    sa_repr = sa_encoder.apply(sa_encoder_params, sa_pairs_flat)
-    print("sa_repr shape", sa_repr.shape)
-    context_output_flat = context_encoder.apply(context_encoder_params, sa_repr)
-    
-    print("context output shape", context_output_flat.shape)
-    
-    # Reshape back to batch structure
-    context_output = context_output_flat.reshape(batch_size, seq_len, -1)
-    print("context output shape", context_output.shape)
-    
-    # Split the output into mean and log_std for each state-action pair
-    context_mean, context_log_std = jnp.split(context_output, 2, axis=-1)
-    print("context mean shape", context_mean.shape)
-    print("context log_std shape", context_log_std.shape)
-    # Compute standard deviation from log_std, adding small epsilon for numerical stability
-    epsilon = 1e-8
-    std = jnp.exp(context_log_std) + epsilon
-    
-    # Compute log likelihood of targets under Gaussian distribution with predicted mean and std
-    # for each state-action pair
-    log_2pi = jnp.log(2 * jnp.pi)
-    log_var = 2 * context_log_std  # log(σ²) = 2*log(σ)
-    
-    # Expand targets to match the shape of context_mean for broadcasting
-    # targets shape: [batch_size, latent_dim]
-    # context_mean shape: [batch_size, seq_len, latent_dim]
-    targets_expanded = jnp.expand_dims(targets, axis=1)  # Shape: [batch_size, 1, latent_dim]
-    
-    squared_mahalanobis = jnp.square(targets_expanded - context_mean) / jnp.square(std)
-    
-    # Compute log likelihood for each state-action pair
-    # Shape: [batch_size, seq_len]
-    pair_log_likelihood = -0.5 * jnp.sum(
-        log_2pi + log_var + squared_mahalanobis,
-        axis=-1
-    )
-    print("pair_log_likelihood shape", pair_log_likelihood.shape)
-    
-    # Sum log likelihoods across the sequence to get the total log likelihood
-    # This is equivalent to computing the product of probabilities
-    # Shape: [batch_size]
-    log_likelihood = jnp.sum(pair_log_likelihood, axis=1)
-    print("log_likelihood shape", log_likelihood.shape)
-    # Maximize likelihood by minimizing negative log likelihood
-    info_loss = -jnp.mean(log_likelihood)  # Average over batch
-    
-    # Collect metrics for monitoring
-    metrics = {
-        "context_info_loss": info_loss,
-        "context_mean_norm": jnp.mean(jnp.sqrt(jnp.sum(jnp.square(context_mean), axis=-1))),
-        "context_std_mean": jnp.mean(std),
-    }
-    
-    return info_loss, metrics
 
 def actor_step(env, env_state, actor, parametric_action_distribution, actor_params, key, extra_fields=()):
     """
@@ -727,7 +519,6 @@ def train(
     h_dim: int = 256,
     n_hidden: int = 2,
     repr_dim: int = 64,
-    var_post: str = "meanfield_encoded",
     visualization_interval: int = 5,
 ):
     """
@@ -799,8 +590,6 @@ def train(
             Number of hidden layers. Default is 2.
         repr_dim: int, optional
             Dimension of the representation from the state-action and goal encoders. Default is 64.
-        var_post: str, optional
-            Type of variational posterior. Default is "meanfield_encoded".
         visualization_interval: int, optional
             Number of evals between each visualization of trajectories. Default is 5.
 
@@ -890,13 +679,13 @@ def train(
     sa_encoder = Net(repr_dim, h_dim, num_blocks, block_size, use_ln)
     g_encoder = Net(repr_dim, h_dim, num_blocks, block_size, use_ln)
     entropy_encoder = Net(1, h_dim, num_blocks, block_size, use_ln)
-    context_encoder = Net(goal_size * 2, h_dim, num_blocks, block_size, use_ln)
+    context_encoder = TransformerContextEncoder(output_size=goal_size * 2, d_model=repr_dim)
     parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size) # Would like to replace this but it's annoying to.
 
     # Initialize training state (not sure if it makes sense to split and fold local_key here)
     global_key, local_key = jax.random.split(rng)
     local_key = jax.random.fold_in(local_key, process_id)    
-    training_state = _init_training_state(global_key, actor, sa_encoder, g_encoder, entropy_encoder, context_encoder, var_post, env.state_dim, len(env.goal_indices), env.action_size, repr_dim, episode_length, policy_lr, critic_lr, alpha_lr, num_local_devices_to_use)
+    training_state = _init_training_state(global_key, actor, sa_encoder, g_encoder, entropy_encoder, context_encoder, env.state_dim, len(env.goal_indices), env.action_size, repr_dim, episode_length, policy_lr, critic_lr, alpha_lr, num_local_devices_to_use)
     del global_key
     
     # Update functions (may replace later: brax makes it opaque)
@@ -904,12 +693,7 @@ def train(
     actor_update = gradients.gradient_update_fn(actor_loss, training_state.actor_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     critic_update = gradients.gradient_update_fn(critic_loss, training_state.critic_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     entropy_update = gradients.gradient_update_fn(critic_loss_entropy, training_state.entropy_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    if var_post == "meanfield":
-        context_update = gradients.gradient_update_fn(context_loss_meanfield, training_state.context_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    elif var_post == "meanfield_encoded":
-        context_update = gradients.gradient_update_fn(context_loss_meanfield_encoded, training_state.context_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    else:
-        context_update = gradients.gradient_update_fn(context_loss, training_state.context_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+    context_update = gradients.gradient_update_fn(context_loss_transformer, training_state.context_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     
     
     def update_step(carry, transitions):
@@ -955,32 +739,16 @@ def train(
         training_state, key = carry
         key, key_context = jax.random.split(key, 2)
         # print("trajectories shape in update context", trajectories.observation.shape)
-        if var_post == "meanfield_encoded":
-            (context_loss_val, context_metrics), context_params, context_optimizer_state = context_update(
-                training_state.context_state.params, 
-                context_encoder, 
-                sa_encoder,
-                training_state,
-                trajectories, 
-                env.state_dim, 
-                env.goal_indices,
-                repr_dim,  # Use same dimension as other representations
-                0.01,  # Hyperparameter for KL regularization
-                key_context, 
-                optimizer_state=training_state.context_state.opt_state
-            )
-        else:
-            (context_loss_val, context_metrics), context_params, context_optimizer_state = context_update(
+        (context_loss_val, context_metrics), context_params, context_optimizer_state = context_update(
             training_state.context_state.params, 
+            training_state,
+            sa_encoder,
             context_encoder, 
             trajectories, 
             env.state_dim, 
-            env.goal_indices,
-            repr_dim,  # Use same dimension as other representations
-            0.01,  # Hyperparameter for KL regularization
             key_context, 
             optimizer_state=training_state.context_state.opt_state
-            )
+        )
 
         metrics = {
             "context_loss": context_loss_val,
