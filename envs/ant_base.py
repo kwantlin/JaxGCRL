@@ -151,7 +151,7 @@ class Ant(PipelineEnv):
       contact_cost_weight=5e-4,
       healthy_reward=1.0,
       terminate_when_unhealthy=True,
-      healthy_z_range=(0.2, 2.0),
+      healthy_z_range=(0.2, 2.5),
       contact_force_range=(-1.0, 1.0),
       reset_noise_scale=0.1,
       exclude_current_positions_from_observation=True,
@@ -329,11 +329,11 @@ class AntForward(Ant):
 
 
 class AntJump(Ant):
-  """An ant that is rewarded for jumping."""
+  """An ant that is rewarded for jumping to a specific height."""
 
-  def __init__(self, min_jump_height: float = 1.0, **kwargs):
+  def __init__(self, target_jump_height: float = 1.3, **kwargs):
     super().__init__(**kwargs)
-    self._min_jump_height = min_jump_height
+    self._target_jump_height = target_jump_height
 
   def reset(self, rng: jax.Array) -> State:
     """Resets the environment to an initial state."""
@@ -370,8 +370,13 @@ class AntJump(Ant):
     pipeline_state = self.pipeline_step(pipeline_state0, action)
 
     z_position = pipeline_state.x.pos[0, 2]
-    jump_reward = jp.where(z_position > self._min_jump_height, z_position, 0.0)
-
+    jump_reward = jp.where(z_position > self._target_jump_height, z_position, 0.0)
+    # Alternative:Gaussian reward for being close to the target height
+    # jump_reward = jp.exp(
+    #     -((z_position - self._target_jump_height) ** 2)
+    #     / (2 * self._jump_height_tolerance**2)
+    # )
+    
     min_z, max_z = self._healthy_z_range
     is_healthy = jp.where(pipeline_state.x.pos[0, 2] < min_z, 0.0, 1.0)
     is_healthy = jp.where(pipeline_state.x.pos[0, 2] > max_z, 0.0, is_healthy)

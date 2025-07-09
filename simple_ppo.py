@@ -27,8 +27,24 @@ envs.register_environment('walkerjump', WalkerJump)
 def main(args):
   """Main training function."""
   # Environment
-  env = envs.get_environment(args.env)
+  if args.env == 'antforward':
+    env = AntForward(min_forward_velocity=args.min_forward_velocity)
+  elif args.env == 'antjump':
+    env = AntJump(target_jump_height=args.target_jump_height)
+  elif args.env == 'walkerforward':
+    env = WalkerForward(min_forward_velocity=args.min_forward_velocity)
+  elif args.env == 'walkerjump':
+    env = WalkerJump(min_jump_height=args.target_jump_height)
 
+  print(args.env)
+  # Create a string for filenames based on parameters
+  param_str = ''
+  if 'forward' in args.env:
+    param_str = f'_vel{args.min_forward_velocity}'
+  elif 'jump' in args.env:
+    param_str = f'_h{args.target_jump_height}'
+
+  print(param_str)
   # PPO network factory
   network_factory = ppo_networks.make_ppo_networks
 
@@ -64,8 +80,9 @@ def main(args):
   )
   print('Training finished.')
 
+  
   # Save model
-  model_path = f'ppo_{args.env}_model.pkl'
+  model_path = f'ppo_{args.env}{param_str}_model.pkl'
   model.save_params(model_path, params)
   print(f'Model saved to {model_path}')
 
@@ -93,8 +110,8 @@ def main(args):
       if state.done.all():
         break
 
-    html_path = f'ppo_{args.env}_video_{i}.html'
-    html.save(html_path, env.sys.tree_replace({'opt.timestep': env.dt}), rollout) 
+    html_path = f'ppo_{args.env}{param_str}_video_{i}.html'
+    html.save(html_path, env.sys.tree_replace({'opt.timestep': env.dt}), rollout)
     print(f'Video saved to {html_path}')
 
 
@@ -120,7 +137,7 @@ if __name__ == '__main__':
   parser.add_argument(
       '--num_envs',
       type=int,
-      default=4096,
+      default=2048,
       help='Number of parallel environments.',
   )
   parser.add_argument('--lr', type=float, default=3e-4, help='Learning rate.')
@@ -139,13 +156,13 @@ if __name__ == '__main__':
   parser.add_argument(
       '--batch_size',
       type=int,
-      default=2048,
+      default=1024,
       help='Batch size for PPO updates.',
   )
   parser.add_argument(
       '--num_minibatches',
       type=int,
-      default=32,
+      default=8,
       help='Number of minibatches for PPO updates.',
   )
   parser.add_argument(
@@ -166,6 +183,18 @@ if __name__ == '__main__':
       type=int,
       default=5,
       help='Number of episodes for final evaluation and visualization.',
+  )
+  parser.add_argument(
+      '--min_forward_velocity',
+      type=float,
+      default=0.5,
+      help='Minimum forward velocity for forward environments.',
+  )
+  parser.add_argument(
+      '--target_jump_height',
+      type=float,
+      default=1.0,
+      help='Target jump height for jump environments.',
   )
 
   args = parser.parse_args()
