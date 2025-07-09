@@ -21,7 +21,7 @@ class Ant3D(PipelineEnv):
         contact_cost_weight=5e-4,
         healthy_reward=1.0,
         terminate_when_unhealthy=True,
-        healthy_z_range=(0.2, 2.0),
+        healthy_z_range=(0.2, 3.0),
         contact_force_range=(-1.0, 1.0),
         reset_noise_scale=0.1,
         exclude_current_positions_from_observation=False,
@@ -239,6 +239,6 @@ class Ant3D(PipelineEnv):
         target_x = self.goal_distance * jnp.cos(ang)
         target_y = self.goal_distance * jnp.sin(ang)
         target_z = jax.random.uniform(
-            rng1, minval=self._healthy_z_range[0], maxval=0.8*self._healthy_z_range[1]
+            rng1, minval=1.2*self._healthy_z_range[0], maxval=0.7 * self._healthy_z_range[1]
         )
         return rng, jnp.array([target_x, target_y, target_z])

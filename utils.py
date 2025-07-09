@@ -115,7 +115,7 @@ def create_env(env_name: str, backend: str = None, **kwargs) -> object:
     elif env_name == "ant":
         env = Ant(backend=backend or "spring")
     elif env_name == "ant_3d":
-        env = Ant3D(backend=backend or "spring")
+        env = Ant3D(backend=backend or "spring", dense_reward=kwargs.get("use_dense_reward", False))
     elif env_name == "ant_random_start":
         env = Ant(backend=backend or "spring", randomize_start=True)
     elif env_name == "ant_ball":
