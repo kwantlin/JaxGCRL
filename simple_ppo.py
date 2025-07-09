@@ -156,12 +156,12 @@ if __name__ == '__main__':
       '--discounting', type=float, default=0.97, help='Discounting factor.'
   )
   parser.add_argument(
-      '--unroll_length', type=int, default=10, help='Unroll length for PPO.'
+      '--unroll_length', type=int, default=20, help='Unroll length for PPO.'
   )
   parser.add_argument(
       '--batch_size',
       type=int,
-      default=1024,
+      default=2048,
       help='Batch size for PPO updates.',
   )
   parser.add_argument(
