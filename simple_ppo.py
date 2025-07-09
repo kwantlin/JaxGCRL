@@ -6,7 +6,7 @@ import sys
 # Add the project root to the Python path
 sys.path.insert(0, os.getcwd())
 
-from envs.ant_base import AntForward, AntJump
+from envs.ant_base import AntForward, AntJump, AntFlip
 from envs.walker2d import WalkerForward, WalkerJump
 
 import brax
@@ -21,6 +21,7 @@ import jax
 # Register custom environments
 envs.register_environment('antforward', AntForward)
 envs.register_environment('antjump', AntJump)
+envs.register_environment('antflip', AntFlip)
 envs.register_environment('walkerforward', WalkerForward)
 envs.register_environment('walkerjump', WalkerJump)
 
@@ -35,6 +36,8 @@ def main(args):
     env = WalkerForward(min_forward_velocity=args.min_forward_velocity)
   elif args.env == 'walkerjump':
     env = WalkerJump(min_jump_height=args.target_jump_height)
+  elif args.env == 'antflip':
+    env = AntFlip(min_flip_velocity=args.min_flip_velocity)
 
   print(args.env)
   # Create a string for filenames based on parameters
@@ -43,6 +46,8 @@ def main(args):
     param_str = f'_vel{args.min_forward_velocity}'
   elif 'jump' in args.env:
     param_str = f'_h{args.target_jump_height}'
+  elif 'flip' in args.env:
+    param_str = f'_flipvel{args.min_flip_velocity}'
 
   print(param_str)
   # PPO network factory
@@ -121,8 +126,8 @@ if __name__ == '__main__':
   parser.add_argument(
       '--env',
       type=str,
-      default='antjump',
-      choices=['antforward', 'antjump', 'walkerforward', 'walkerjump'],
+      default='antflip',
+      choices=['antforward', 'antjump', 'walkerforward', 'walkerjump', 'antflip'],
       help='Environment to train.',
   )
   parser.add_argument(
@@ -195,6 +200,12 @@ if __name__ == '__main__':
       type=float,
       default=1.0,
       help='Target jump height for jump environments.',
+  )
+  parser.add_argument(
+      '--min_flip_velocity',
+      type=float,
+      default=1.0,
+      help='Minimum angular velocity for flip environments.',
   )
 
   args = parser.parse_args()
