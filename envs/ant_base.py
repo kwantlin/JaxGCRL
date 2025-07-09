@@ -409,3 +409,93 @@ class AntJump(Ant):
     return state.replace(
         pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
     )
+
+
+class AntFlip(Ant):
+  """An ant that is rewarded for flipping."""
+
+  def __init__(self, min_flip_velocity: float = 2.5, **kwargs):
+    super().__init__(**kwargs)
+    self._min_flip_velocity = min_flip_velocity
+
+  def reset(self, rng: jax.Array) -> State:
+    """Resets the environment to an initial state."""
+    rng, rng1, rng2 = jax.random.split(rng, 3)
+
+    low, hi = -self._reset_noise_scale, self._reset_noise_scale
+    q = self.sys.init_q + jax.random.uniform(
+        rng1, (self.sys.q_size(),), minval=low, maxval=hi
+    )
+    qd = hi * jax.random.normal(rng2, (self.sys.qd_size(),))
+
+    pipeline_state = self.pipeline_init(q, qd)
+    obs = self._get_obs(pipeline_state)
+
+    reward, done, zero = jp.zeros(3)
+    metrics = {
+        'reward_flip': zero,
+        'reward_ctrl': zero,
+        'reward_contact': zero,
+        'x_position': zero,
+        'y_position': zero,
+        'z_position': zero,
+        'distance_from_origin': zero,
+        'x_velocity': zero,
+        'y_velocity': zero,
+        'angular_velocity_x': zero,
+        'angular_velocity_y': zero,
+        'angular_velocity_z': zero,
+    }
+    return State(pipeline_state, obs, reward, done, metrics)
+
+  def step(self, state: State, action: jax.Array) -> State:
+    """Run one timestep of the environment's dynamics."""
+    pipeline_state0 = state.pipeline_state
+    assert pipeline_state0 is not None
+    pipeline_state = self.pipeline_step(pipeline_state0, action)
+
+    # Calculate flip reward from angular velocity of the torso
+    angular_velocity = pipeline_state.qd[3:6]
+    # Isolate the angular velocity around the x-axis (forward flips)
+    # and use its absolute value to reward both forward and backward flips
+    flip_speed_x = angular_velocity[0]
+
+    # Reward is given for flipping faster than the minimum speed
+    flip_reward = jp.where(
+        flip_speed_x > self._min_flip_velocity, flip_speed_x, 0.0
+    )
+
+    ctrl_cost = self._ctrl_cost_weight * jp.sum(jp.square(action))
+    contact_cost = 0.0
+
+    obs = self._get_obs(pipeline_state)
+    reward = flip_reward - ctrl_cost - contact_cost
+
+    # An ant that is flipping should not terminate for being unhealthy,
+    # but it should terminate if the simulation becomes unstable.
+    is_finite = jp.all(jp.isfinite(pipeline_state.q)) & jp.all(
+        jp.isfinite(pipeline_state.qd)
+    )
+    done = 1.0 - is_finite
+
+    # Also calculate linear velocity for metrics
+    velocity = (pipeline_state.x.pos[0] - pipeline_state0.x.pos[0]) / self.dt
+    z_position = pipeline_state.x.pos[0, 2]
+
+    state.metrics.update(
+        reward_flip=flip_reward,
+        reward_ctrl=-ctrl_cost,
+        reward_contact=-contact_cost,
+        x_position=pipeline_state.x.pos[0, 0],
+        y_position=pipeline_state.x.pos[0, 1],
+        z_position=z_position,
+        distance_from_origin=math.safe_norm(pipeline_state.x.pos[0]),
+        x_velocity=velocity[0],
+        y_velocity=velocity[1],
+        angular_velocity_x=angular_velocity[0],
+        angular_velocity_y=angular_velocity[1],
+        angular_velocity_z=angular_velocity[2],
+    )
+    return state.replace(
+        pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
+    )
