@@ -414,9 +414,12 @@ class AntJump(Ant):
 class AntFlip(Ant):
   """An ant that is rewarded for flipping."""
 
-  def __init__(self, min_flip_velocity: float = 2.5, **kwargs):
+  def __init__(self, min_flip_velocity: float = 5.0, **kwargs):
     super().__init__(**kwargs)
-    self._min_flip_velocity = min_flip_velocity
+    self._stand_height = 0.7  # Hardcoded stand height
+    self._spin_speed = min_flip_velocity
+    # Override the healthy_z_range from the base class for flipping
+    self._healthy_z_range = (0.1, 3.0)
 
   def reset(self, rng: jax.Array) -> State:
     """Resets the environment to an initial state."""
@@ -433,7 +436,8 @@ class AntFlip(Ant):
 
     reward, done, zero = jp.zeros(3)
     metrics = {
-        'reward_flip': zero,
+        'reward_stand': zero,
+        'reward_move': zero,
         'reward_ctrl': zero,
         'reward_contact': zero,
         'x_position': zero,
@@ -454,36 +458,46 @@ class AntFlip(Ant):
     assert pipeline_state0 is not None
     pipeline_state = self.pipeline_step(pipeline_state0, action)
 
-    # Calculate flip reward from angular velocity of the torso
-    angular_velocity = pipeline_state.qd[3:6]
-    # Isolate the angular velocity around the x-axis (forward flips)
-    # and use its absolute value to reward both forward and backward flips
-    flip_speed_x = angular_velocity[0]
+    # Calculate stand reward
+    torso_height = pipeline_state.x.pos[0, 2]
+    torso_quat = pipeline_state.q[3:7]  # Torso orientation quaternion
+    torso_rot = math.quat_to_3x3(torso_quat)
+    upright = torso_rot[2, 2]  # Projection of torso z-axis on world z-axis
 
-    # Reward is given for flipping faster than the minimum speed
-    flip_reward = jp.where(
-        flip_speed_x > self._min_flip_velocity, flip_speed_x, 0.0
-    )
+    standing = jp.where(torso_height > self._stand_height, 1.0, 0.0)
+    stand_reward = (standing * 3 + upright) / 4
+
+    # Calculate move reward (for flipping)
+    angular_velocity = pipeline_state.qd[3:6]
+    # Use angular velocity around y-axis for forward/backward flips (pitch)
+    flip_speed_y = angular_velocity[1]
+    # Dense reward for flipping
+    move_reward = jp.clip(flip_speed_y / self._spin_speed, 0.0, 1.0)
 
     ctrl_cost = self._ctrl_cost_weight * jp.sum(jp.square(action))
     contact_cost = 0.0
 
     obs = self._get_obs(pipeline_state)
-    reward = flip_reward - ctrl_cost - contact_cost
+    reward = stand_reward * (5 * move_reward + 1) / 6 - ctrl_cost
 
     # An ant that is flipping should not terminate for being unhealthy,
     # but it should terminate if the simulation becomes unstable.
+    min_z, max_z = self._healthy_z_range
+    is_healthy = (pipeline_state.x.pos[0, 2] > min_z) & (
+        pipeline_state.x.pos[0, 2] < max_z
+    )
     is_finite = jp.all(jp.isfinite(pipeline_state.q)) & jp.all(
         jp.isfinite(pipeline_state.qd)
     )
-    done = 1.0 - is_finite
+    done = 1.0 - (is_healthy & is_finite)
 
     # Also calculate linear velocity for metrics
     velocity = (pipeline_state.x.pos[0] - pipeline_state0.x.pos[0]) / self.dt
     z_position = pipeline_state.x.pos[0, 2]
 
     state.metrics.update(
-        reward_flip=flip_reward,
+        reward_stand=stand_reward,
+        reward_move=move_reward,
         reward_ctrl=-ctrl_cost,
         reward_contact=-contact_cost,
         x_position=pipeline_state.x.pos[0, 0],
