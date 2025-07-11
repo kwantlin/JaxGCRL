@@ -21,7 +21,7 @@ class AntFullObs(PipelineEnv):
         contact_cost_weight=5e-4,
         healthy_reward=1.0,
         terminate_when_unhealthy=True,
-        healthy_z_range=(0.2, 5.0),
+        healthy_z_range=(0.0, 4.0),
         contact_force_range=(-1.0, 1.0),
         reset_noise_scale=0.1,
         exclude_current_positions_from_observation=False,
@@ -39,8 +39,8 @@ class AntFullObs(PipelineEnv):
         # rot_reach_thresh=0.2,
         vel_reach_thresh=0.15,
         ang_vel_reach_thresh=0.15,
-        target_vel_range=(-3.0, 3.0),
-        target_ang_vel_range=(-1.2, 1.2),
+        target_vel_range=(-1.0, 1.0),
+        target_ang_vel_range=(-1.0, 1.0),
         **kwargs,
     ):
         path = os.path.join(
@@ -253,7 +253,7 @@ class AntFullObs(PipelineEnv):
 
         # Random z position within the healthy range
         target_z = jax.random.uniform(
-            rng_z, minval=self._healthy_z_range[0], maxval=self._healthy_z_range[1]
+            rng_z, minval=self._healthy_z_range[0]+0.2, maxval=0.5*self._healthy_z_range[1]
         )
         target_pos = jnp.array([target_x, target_y, target_z])
 
