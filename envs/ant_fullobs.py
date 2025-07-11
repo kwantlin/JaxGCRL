@@ -233,7 +233,7 @@ class AntFullObs(PipelineEnv):
             qpos = qpos[3:]  # remove x,y,z from observation
 
         target_obs = jnp.concatenate(
-            [target["pos"], target["rot"], target["vel"], target["ang_vel"]]
+            [target["pos"], target["vel"], target["ang_vel"]]
         )
 
         return jnp.concatenate([qpos, qvel, target_obs])
