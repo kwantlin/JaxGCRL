@@ -7,7 +7,7 @@ import sys
 sys.path.insert(0, os.getcwd())
 
 from envs.ant_base import AntForward, AntJump, AntFlip
-from envs.walker2d import WalkerForward, WalkerJump
+from envs.walker2d import WalkerForward, WalkerJump, WalkerFlip
 
 import brax
 from brax import envs
@@ -24,6 +24,7 @@ envs.register_environment('antjump', AntJump)
 envs.register_environment('antflip', AntFlip)
 envs.register_environment('walkerforward', WalkerForward)
 envs.register_environment('walkerjump', WalkerJump)
+envs.register_environment('walkerflip', WalkerFlip)
 
 def main(args):
   """Main training function."""
@@ -36,6 +37,8 @@ def main(args):
     env = WalkerForward(min_forward_velocity=args.min_forward_velocity)
   elif args.env == 'walkerjump':
     env = WalkerJump(min_jump_height=args.target_jump_height)
+  elif args.env == 'walkerflip':
+    env = WalkerFlip(min_flip_velocity=args.min_flip_velocity)
   elif args.env == 'antflip':
     env = AntFlip(min_flip_velocity=args.min_flip_velocity)
 
@@ -126,8 +129,8 @@ if __name__ == '__main__':
   parser.add_argument(
       '--env',
       type=str,
-      default='antflip',
-      choices=['antforward', 'antjump', 'walkerforward', 'walkerjump', 'antflip'],
+      default='walkerflip',
+      choices=['antforward', 'antjump', 'walkerforward', 'walkerjump', 'walkerflip', 'antflip'],
       help='Environment to train.',
   )
   parser.add_argument(
@@ -198,7 +201,7 @@ if __name__ == '__main__':
   parser.add_argument(
       '--target_jump_height',
       type=float,
-      default=1.0,
+      default=1.5,
       help='Target jump height for jump environments.',
   )
   parser.add_argument(
