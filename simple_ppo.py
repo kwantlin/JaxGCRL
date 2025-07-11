@@ -201,7 +201,7 @@ if __name__ == '__main__':
   parser.add_argument(
       '--target_jump_height',
       type=float,
-      default=1.5,
+      default=1.0,
       help='Target jump height for jump environments.',
   )
   parser.add_argument(

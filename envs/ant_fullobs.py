@@ -40,7 +40,7 @@ class AntFullObs(PipelineEnv):
         vel_reach_thresh=0.15,
         ang_vel_reach_thresh=0.15,
         target_vel_range=(-1.0, 1.0),
-        target_ang_vel_range=(-1.0, 1.0),
+        target_ang_vel_range=(-1.5, 1.5),
         **kwargs,
     ):
         path = os.path.join(
