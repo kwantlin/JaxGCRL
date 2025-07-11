@@ -31,12 +31,12 @@ class AntFullObs(PipelineEnv):
         goal_distance=10,
         # New reward weights for full observation task
         pos_reward_weight=3.0,
-        rot_reward_weight=0.5,
+        # rot_reward_weight=0.5,
         vel_reward_weight=0.1,
         ang_reward_weight=0.05,
         # New success thresholds
         pos_reach_thresh=0.5,
-        rot_reach_thresh=0.2,
+        # rot_reach_thresh=0.2,
         vel_reach_thresh=0.15,
         ang_vel_reach_thresh=0.15,
         target_vel_range=(-3.0, 3.0),
@@ -82,17 +82,17 @@ class AntFullObs(PipelineEnv):
         self._reset_noise_scale = reset_noise_scale
         self._exclude_current_positions_from_observation = exclude_current_positions_from_observation
         self.dense_reward = dense_reward
-        self.goal_indices = jnp.array([0, 1, 2, 3, 4, 5, 6, 15, 16, 17, 18, 19, 20])
+        self.goal_indices = jnp.array([0, 1, 2, 15, 16, 17, 18, 19, 20])
         self.goal_reach_thresh = 5
         self.goal_distance = goal_distance
         self.randomize_start = randomize_start
         self.pos_reward_weight = pos_reward_weight
-        self.rot_reward_weight = rot_reward_weight
+        # self.rot_reward_weight = rot_reward_weight
         self.vel_reward_weight = vel_reward_weight
         self.ang_reward_weight = ang_reward_weight
         self.state_dim = 29  # 3 pos, 4 rot, 3 lin_vel, 3 ang_vel, 8 joints, 8 joint_vel
         self.pos_reach_thresh = pos_reach_thresh
-        self.rot_reach_thresh = rot_reach_thresh
+        # self.rot_reach_thresh = rot_reach_thresh
         self.vel_reach_thresh = vel_reach_thresh
         self.ang_vel_reach_thresh = ang_vel_reach_thresh
         self.target_vel_range = target_vel_range
@@ -114,12 +114,12 @@ class AntFullObs(PipelineEnv):
         pipeline_state = self.pipeline_init(q, qd)
 
         # Generate and store a random target.
-        rng, target_pos, target_rot, target_vel, target_ang_vel = self._random_target(
+        rng, target_pos, target_vel, target_ang_vel = self._random_target(
             rng_target
         )
         target = {
             "pos": target_pos,
-            "rot": target_rot,
+            # "rot": target_rot,
             "vel": target_vel,
             "ang_vel": target_ang_vel,
         }
@@ -128,7 +128,7 @@ class AntFullObs(PipelineEnv):
         reward, done, zero = jnp.zeros(3)
         metrics = {
             "reward_pos": zero,
-            "reward_rot": zero,
+            # "reward_rot": zero,
             "reward_vel": zero,
             "reward_ang": zero,
             "reward_ctrl": zero,
@@ -138,7 +138,7 @@ class AntFullObs(PipelineEnv):
             "success": zero,
             "success_easy": zero,
             "success_pos": zero,
-            "success_rot": zero,
+            # "success_rot": zero,
             "success_vel": zero,
             "success_ang": zero,
         }
@@ -155,33 +155,33 @@ class AntFullObs(PipelineEnv):
 
         def calculate_dist(p_state: base.State):
             torso_pos = p_state.q[:3]
-            torso_rot = p_state.q[3:7]
+            # torso_rot = p_state.q[3:7]
             torso_vel = p_state.qd[:3]
             torso_ang_vel = p_state.qd[3:6]
 
             pos_error = jnp.linalg.norm(torso_pos - target["pos"])
-            rot_error_quat = math.quat_mul(target["rot"], math.quat_inv(torso_rot))
-            rot_error_angle = 2 * jnp.arccos(jnp.clip(rot_error_quat[0], -1.0, 1.0))
+            # rot_error_quat = math.quat_mul(target["rot"], math.quat_inv(torso_rot))
+            # rot_error_angle = 2 * jnp.arccos(jnp.clip(rot_error_quat[0], -1.0, 1.0))
             vel_error = jnp.linalg.norm(torso_vel - target["vel"])
             ang_vel_error = jnp.linalg.norm(torso_ang_vel - target["ang_vel"])
 
             dist = (
                 self.pos_reward_weight * pos_error
-                + self.rot_reward_weight * rot_error_angle
+                # + self.rot_reward_weight * rot_error_angle
                 + self.vel_reward_weight * vel_error
                 + self.ang_reward_weight * ang_vel_error
             )
-            return dist, pos_error, rot_error_angle, vel_error, ang_vel_error
+            return dist, pos_error, vel_error, ang_vel_error
 
-        dist, pos_err, rot_err, vel_err, ang_err = calculate_dist(pipeline_state)
-        old_dist, _, _, _, _ = calculate_dist(pipeline_state0)
+        dist, pos_err,  vel_err, ang_err = calculate_dist(pipeline_state)
+        old_dist, _, _, _ = calculate_dist(pipeline_state0)
 
         vel_to_target = (old_dist - dist) / self.dt
         success = jnp.array(dist < self.goal_reach_thresh, dtype=float)
         success_easy = jnp.array(dist < 2.0 * self.goal_reach_thresh, dtype=float)
 
         success_pos = jnp.array(pos_err < self.pos_reach_thresh, dtype=float)
-        success_rot = jnp.array(rot_err < self.rot_reach_thresh, dtype=float)
+        # success_rot = jnp.array(rot_err < self.rot_reach_thresh, dtype=float)
         success_vel = jnp.array(vel_err < self.vel_reach_thresh, dtype=float)
         success_ang = jnp.array(ang_err < self.ang_vel_reach_thresh, dtype=float)
 
@@ -206,7 +206,7 @@ class AntFullObs(PipelineEnv):
 
         state.metrics.update(
             reward_pos=-pos_err,
-            reward_rot=-rot_err,
+            # reward_rot=-rot_err,
             reward_vel=-vel_err,
             reward_ang=-ang_err,
             reward_ctrl=-ctrl_cost,
@@ -216,7 +216,7 @@ class AntFullObs(PipelineEnv):
             success=success,
             success_easy=success_easy,
             success_pos=success_pos,
-            success_rot=success_rot,
+            # success_rot=success_rot,
             success_vel=success_vel,
             success_ang=success_ang,
         )
@@ -258,8 +258,8 @@ class AntFullObs(PipelineEnv):
         target_pos = jnp.array([target_x, target_y, target_z])
 
         # Random rotation
-        target_rot = jax.random.normal(rng_rot, (4,))
-        target_rot /= jnp.linalg.norm(target_rot)
+        # target_rot = jax.random.normal(rng_rot, (4,))
+        # target_rot /= jnp.linalg.norm(target_rot)
 
         # Random linear velocity
         min_vel, max_vel = self.target_vel_range
@@ -271,4 +271,4 @@ class AntFullObs(PipelineEnv):
             rng_ang_vel, (3,), minval=min_ang_vel, maxval=max_ang_vel
         )
 
-        return rng, target_pos, target_rot, target_vel, target_ang_vel
+        return rng, target_pos, target_vel, target_ang_vel
