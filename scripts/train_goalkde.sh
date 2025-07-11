@@ -97,7 +97,7 @@ conda activate jaxgcrl
 #     --train_step_multiplier 1 --log_wandb --var_post meanfield
 #   done
 
-env=ant_3d
+# env=ant_3d
 
 # for seed in 1 ; do
 #   XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training_goalkde.py \
@@ -109,14 +109,27 @@ env=ant_3d
 #     --train_step_multiplier 1 --log_wandb --var_post standard
 #   done
 
+# for seed in 1 ; do
+#   XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training_goalkde.py \
+#     --project_name test --group_name first_run --exp_name ${env}-goalkde-meanfield --num_evals 50 \
+#     --seed ${seed} --num_timesteps 120000000 --batch_size 1024 --num_envs 2048 \
+#     --discounting 0.99 --action_repeat 1 --env_name ${env} \
+#     --episode_length 1025 --unroll_length 62  --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 \
+#     --contrastive_loss_fn infonce_backward --energy_fn l2 \
+#     --train_step_multiplier 1 --log_wandb --var_post meanfield
+#   done
+
+env=ant_fullobs
+
 for seed in 1 ; do
   XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training_goalkde.py \
     --project_name test --group_name first_run --exp_name ${env}-goalkde-meanfield --num_evals 50 \
-    --seed ${seed} --num_timesteps 120000000 --batch_size 1024 --num_envs 2048 \
+    --seed ${seed} --num_timesteps 1200000000 --batch_size 1024 --num_envs 1024 \
     --discounting 0.99 --action_repeat 1 --env_name ${env} \
     --episode_length 1025 --unroll_length 62  --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 \
     --contrastive_loss_fn infonce_backward --energy_fn l2 \
     --train_step_multiplier 1 --log_wandb --var_post meanfield
   done
+
 
 # echo "All runs have finished."

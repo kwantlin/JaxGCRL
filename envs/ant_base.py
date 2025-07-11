@@ -419,7 +419,7 @@ class AntFlip(Ant):
     self._stand_height = 0.7  # Hardcoded stand height
     self._spin_speed = min_flip_velocity
     # Override the healthy_z_range from the base class for flipping
-    self._healthy_z_range = (0.1, 3.0)
+    self._healthy_z_range = (0.0, 5.0)
 
   def reset(self, rng: jax.Array) -> State:
     """Resets the environment to an initial state."""

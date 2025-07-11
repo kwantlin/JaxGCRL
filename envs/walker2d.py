@@ -132,7 +132,7 @@ class Walker2d(PipelineEnv):
       ctrl_cost_weight: float = 1e-3,
       healthy_reward: float = 1.0,
       terminate_when_unhealthy: bool = True,
-      healthy_z_range: Tuple[float, float] = (0.8, 2.0),
+      healthy_z_range: Tuple[float, float] = (0.8, 5.0),
       healthy_angle_range=(-1.0, 1.0),
       reset_noise_scale=5e-3,
       exclude_current_positions_from_observation=True,
@@ -374,6 +374,87 @@ class WalkerJump(Walker2d):
         x_position=pipeline_state.x.pos[0, 0],
         z_position=z_position,
         x_velocity=x_velocity,
+    )
+
+    return state.replace(
+        pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
+    )
+
+
+class WalkerFlip(Walker2d):
+  """A walker that is rewarded for flipping."""
+
+  def __init__(self, min_flip_velocity: float = 5.0, **kwargs):
+    # Loosen the angle constraint to allow for flips
+    kwargs['healthy_angle_range'] = (-10.0, 10.0)
+    super().__init__(**kwargs)
+    self._spin_speed = min_flip_velocity
+    self._stand_height = 0.8  # Height from default healthy_z_range
+
+  def reset(self, rng: jax.Array) -> State:
+    """Resets the environment to an initial state."""
+    state = super().reset(rng)
+    # The default reset from Walker2d doesn't have all our metrics, so we
+    # need to manually ensure they are present.
+    state.metrics['reward_stand'] = 0.0
+    state.metrics['reward_move'] = 0.0
+    state.metrics['angular_velocity_y'] = 0.0
+    state.metrics['z_position'] = 0.0
+    return state
+
+  def step(self, state: State, action: jax.Array) -> State:
+    """Runs one timestep of the environment's dynamics."""
+    pipeline_state0 = state.pipeline_state
+    assert pipeline_state0 is not None
+    pipeline_state = self.pipeline_step(pipeline_state0, action)
+
+    # Calculate stand reward
+    torso_height = pipeline_state.x.pos[0, 2]
+    torso_angle = pipeline_state.q[2]
+    upright = jp.cos(torso_angle)
+
+    standing = jp.where(torso_height > self._stand_height, 1.0, 0.0)
+    stand_reward = (3 * standing + upright) / 4
+
+    # Calculate move reward (for flipping)
+    # For the 2d walker, qd[2] is the angular velocity around the y-axis
+    angular_velocity_y = pipeline_state.qd[2]
+    move_reward = jp.clip(angular_velocity_y / self._spin_speed, -1.0, 0.0)
+
+    # Standard costs
+    ctrl_cost = self._ctrl_cost_weight * jp.sum(jp.square(action))
+
+    obs = self._get_obs(pipeline_state)
+    reward = stand_reward * (5 * move_reward + 1) / 6 - ctrl_cost
+
+    # Termination conditions
+    min_z, max_z = self._healthy_z_range
+    min_angle, max_angle = self._healthy_angle_range
+    is_healthy = (
+        (torso_height > min_z)
+        & (torso_height < max_z)
+        & (torso_angle > min_angle)
+        & (torso_angle < max_angle)
+    )
+    is_finite = jp.all(jp.isfinite(pipeline_state.q)) & jp.all(
+        jp.isfinite(pipeline_state.qd)
+    )
+    done = 1.0 - (is_healthy & is_finite)
+
+    # Also calculate linear velocity for metrics
+    x_velocity = (
+        pipeline_state.x.pos[0, 0] - pipeline_state0.x.pos[0, 0]
+    ) / self.dt
+
+    state.metrics.update(
+        reward_stand=stand_reward,
+        reward_move=move_reward,
+        reward_healthy=0.0,  # This task doesn't use the default healthy reward
+        reward_ctrl=-ctrl_cost,
+        x_position=pipeline_state.x.pos[0, 0],
+        z_position=torso_height,
+        x_velocity=x_velocity,
+        angular_velocity_y=angular_velocity_y,
     )
 
     return state.replace(
