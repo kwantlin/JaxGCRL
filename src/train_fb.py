@@ -88,7 +88,7 @@ def _init_training_state(key, actor, forward_repr, backward_repr, state_dim, goa
     actor_key, critic_key, value_key, forward_key, backward_key = jax.random.split(key, 5)
     
     # Actor
-    actor_params = actor.init(actor_key, jnp.ones([1, state_dim + goal_dim]))
+    actor_params = actor.init(actor_key, jnp.ones([1, state_dim + repr_dim]))
     actor_state = TrainState.create(apply_fn=actor.apply, params=actor_params, tx=optax.adam(learning_rate=actor_lr))
 
     # Critic and Value
@@ -98,8 +98,8 @@ def _init_training_state(key, actor, forward_repr, backward_repr, state_dim, goa
     # value_state = TrainState.create(apply_fn=value.apply, params=value_params, tx=optax.adam(learning_rate=critic_lr))
 
     # Forward and backward representation networks
-    forward_repr_params = forward_repr.init(forward_key, jnp.ones([1, state_dim + action_dim + goal_dim]))
-    backward_repr_params = backward_repr.init(backward_key, jnp.ones([1, state_dim]))
+    forward_repr_params = forward_repr.init(forward_key, jnp.ones([1, state_dim + action_dim + repr_dim]))
+    backward_repr_params = backward_repr.init(backward_key, jnp.ones([1, goal_dim]))
     
     # Single optimizer for both forward and backward repr networks
     repr_optimizer = optax.adam(learning_rate=repr_lr)
@@ -127,7 +127,7 @@ def _init_training_state(key, actor, forward_repr, backward_repr, state_dim, goa
 
 
 def forward_backward_repr_loss(
-    forward_params, backward_params, forward_repr, backward_repr, transitions, state_dim, goal_dim, repr_dim, key,
+    forward_params, backward_params, forward_repr, backward_repr, transitions, state_dim, goal_dim, goal_indices, repr_dim, key,
     training_state, actor,const_std=True, repr_agg='mean', orthonorm_coef=1.0, discount=0.99
 ):
     """
@@ -138,7 +138,7 @@ def forward_backward_repr_loss(
     next_states = transitions.extras["future_state"][:, :state_dim]
     goals = transitions.observation[:, state_dim:]
     batch_size = states.shape[0]
-    latent_dim = goal_dim
+    latent_dim = repr_dim
 
     # Sample latents - we already did this in the actor step
     latents = goals
@@ -156,9 +156,9 @@ def forward_backward_repr_loss(
     else:
         next_forward_reprs = forward_repr.apply(forward_params, jnp.concatenate([next_states, next_actions, latents], axis=-1))
     if training_state.target_backward_repr_params is not None:
-        next_backward_reprs = backward_repr.apply(training_state.target_backward_repr_params, next_states)
+        next_backward_reprs = backward_repr.apply(training_state.target_backward_repr_params, next_states[:, goal_indices])
     else:
-        next_backward_reprs = backward_repr.apply(backward_params, next_states)
+        next_backward_reprs = backward_repr.apply(backward_params, next_states[:, goal_indices])
     next_backward_reprs = next_backward_reprs / jnp.linalg.norm(next_backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
     target_occ_measures = jnp.einsum('bd,td->bt', next_forward_reprs, next_backward_reprs)
 
@@ -170,7 +170,7 @@ def forward_backward_repr_loss(
 
     # Compute current forward and backward representations
     forward_reprs = forward_repr.apply(forward_params, jnp.concatenate([states, actions, latents], axis=-1))
-    backward_reprs = backward_repr.apply(backward_params, next_states)
+    backward_reprs = backward_repr.apply(backward_params, next_states[:, goal_indices])
     backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
     occ_measures = jnp.einsum('bd,td->bt', forward_reprs, backward_reprs)
 
@@ -359,12 +359,12 @@ def sample_latents(batch_size, latent_dim, key):
     return latents
 
 def fb_repr_loss_fn(
-    params, forward_repr, backward_repr, transitions, state_dim, goal_dim, repr_dim, key,
+    params, forward_repr, backward_repr, transitions, state_dim, goal_dim, goal_indices, repr_dim, key,
     training_state, actor, const_std, repr_agg, orthonorm_coef, discount
 ):
     forward_params, backward_params = params
     loss, metrics = forward_backward_repr_loss(
-        forward_params, backward_params, forward_repr, backward_repr, transitions, state_dim, goal_dim, repr_dim, key, 
+        forward_params, backward_params, forward_repr, backward_repr, transitions, state_dim, goal_dim, goal_indices, repr_dim, key, 
         training_state, actor=actor,
         const_std=const_std,
         repr_agg=repr_agg,
@@ -470,8 +470,8 @@ def train(
     actor = Net(action_size * 2, h_dim, num_blocks, block_size, use_ln)
     # critic = Net(1, h_dim, num_blocks, block_size, use_ln)  # Outputs a single Q-value
     # value = Net(1, h_dim, num_blocks, block_size, use_ln)   # Outputs a single V-value
-    forward_repr = Net(goal_dim, h_dim, num_blocks, block_size, use_ln)
-    backward_repr = Net(goal_dim, h_dim, num_blocks, block_size, use_ln)
+    forward_repr = Net(repr_dim, h_dim, num_blocks, block_size, use_ln)
+    backward_repr = Net(repr_dim, h_dim, num_blocks, block_size, use_ln)
     parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size)
 
     # Initialize training state
@@ -500,6 +500,7 @@ def train(
             transitions,
             env.state_dim,
             len(env.goal_indices),
+            env.goal_indices,
             repr_dim,
             key_fb,
             training_state,
@@ -609,15 +610,15 @@ def train(
         def f(carry, unused_t):
             env_state, current_key = carry
             current_key, next_key = jax.random.split(current_key)
-            env_state, transition = actor_step_latent(env, env_state, actor, parametric_action_distribution, actor_params, exploration_goals, current_key, extra_fields=("truncation", "traj_id"))
+            env_state, transition = actor_step_latent(env, env_state, actor, parametric_action_distribution, actor_params, backward_reprs_goals, current_key, extra_fields=("truncation", "traj_id"))
             return (env_state, next_key), transition
         
        # Split the key to create a batch of keys matching env_state.obs.shape[0]
         print("fb: env_state.obs.shape", env_state.obs.shape)
         batch_size = env_state.obs.shape[0]
         subkey, sampling_key = jax.random.split(key)
-        exploration_goals = sample_latents(batch_size, goal_dim, sampling_key)
-        print("fb: exploration_goals shape", exploration_goals.shape)
+        backward_reprs_goals = jax.lax.stop_gradient(backward_repr.apply(training_state.fb_repr_state.params[1], env_state.obs[:, state_dim:]))
+        print("fb: backward_reprs_goal shape", backward_reprs_goals.shape)
         (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=episode_length)
         buffer_state = replay_buffer.insert(buffer_state, data)
         return env_state, buffer_state
