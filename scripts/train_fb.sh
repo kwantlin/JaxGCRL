@@ -9,16 +9,16 @@ eval "$(conda shell.bash hook)"
 conda activate jaxgcrl
 
 
-env=ant
+# env=ant
 
-for seed in 1 ; do
-  XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training_fb.py \
-    --project_name test --group_name first_run --exp_name ${env}-fb --num_evals 50 \
-    --seed ${seed} --num_timesteps 40000000 --batch_size 512 --num_envs 1024 \
-    --discounting 0.99 --action_repeat 1 --env_name ${env} \
-    --episode_length 1025 --unroll_length 62  --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 \
-    --train_step_multiplier 1 --log_wandb
-  done
+# for seed in 1 ; do
+#   XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training_fb.py \
+#     --project_name test --group_name first_run --exp_name ${env}-fb-july18 --num_evals 50 \
+#     --seed ${seed} --num_timesteps 40000000 --batch_size 512 --num_envs 1024 \
+#     --discounting 0.99 --action_repeat 1 --env_name ${env} \
+#     --episode_length 1025 --unroll_length 62  --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 \
+#     --train_step_multiplier 1 --log_wandb
+#   done
 
 
 # env=reacher
@@ -118,5 +118,16 @@ for seed in 1 ; do
 #     --contrastive_loss_fn infonce_backward --energy_fn l2 \
 #     --train_step_multiplier 1 --log_wandb --var_post meanfield
 #   done
+
+env=ant
+
+for seed in 1 ; do
+  XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training_fb.py \
+    --project_name test --group_name first_run --exp_name ${env}-fb-della_${seed}_test_60000000_1024_1024_50 --num_evals 50 \
+    --seed ${seed} --num_timesteps 60000000 --batch_size 1024 --num_envs 1024 \
+    --discounting 0.99 --action_repeat 1 --env_name ${env} \
+    --episode_length 1025 --unroll_length 62  --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 \
+    --train_step_multiplier 1 --log_wandb
+  done
 
 # echo "All runs have finished."
