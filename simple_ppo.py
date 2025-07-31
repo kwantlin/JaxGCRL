@@ -129,7 +129,7 @@ if __name__ == '__main__':
   parser.add_argument(
       '--env',
       type=str,
-      default='walkerflip',
+      default='antjump',
       choices=['antforward', 'antjump', 'walkerforward', 'walkerjump', 'walkerflip', 'antflip'],
       help='Environment to train.',
   )
