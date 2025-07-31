@@ -15,8 +15,10 @@ submit_job() {
 
 
 #SBATCH --job-name=${env}_goalkde_${var_post}
-#SBATCH --gres=gpu:a5000:1
-#SBATCH -t 16:00:00
+#SBATCH --gres=gpu:a6000:1
+#SBATCH -c 8
+#SBATCH --mem=8G
+#SBATCH -t 30:00:00
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=kw2960@cs.princeton.edu
 
@@ -31,7 +33,7 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 export TF_CPP_MIN_LOG_LEVEL=2
 
 python training_goalkde.py \
-    --project_name test --group_name first_run --exp_name ${env}-goalkde${var_post:+-$var_post} --num_evals 50 \
+    --project_name test --group_name first_run --exp_name ${env}-goalkde${var_post:+-$var_post}-maxent-gaussianmlp --num_evals 50 \
     --seed ${seed} --num_timesteps ${num_timesteps} --batch_size ${batch_size} --num_envs ${num_envs} \
     --discounting 0.99 --action_repeat 1 --env_name ${env} \
     --episode_length 1025 --unroll_length 62 --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 \
@@ -45,20 +47,20 @@ EOF
 
 # Submit jobs for each environment
 env=ant
-submit_job $env 1 standard 20000000 256 512
-submit_job $env 1 meanfield 20000000 256 512
+submit_job $env 1 standard 30000000 256 512
+submit_job $env 1 meanfield 30000000 256 512
 
 # env=simple_u_maze
 # submit_job $env 1 standard 20000000 1024 256
 # submit_job $env 1 meanfield 20000000 1024 256
 
-# env=reacher
-# submit_job $env 1 standard 20000000 1024 256
-# submit_job $env 1 meanfield 20000000 1024 256
+env=reacher
+submit_job $env 1 standard 20000000 1024 256
+submit_job $env 1 meanfield 20000000 1024 256
 
-# env=pusher_easy
-# submit_job $env 1 standard 60000000 1024 256
-# submit_job $env 1 meanfield 60000000 1024 256
+env=pusher_easy
+submit_job $env 1 standard 60000000 1024 256
+submit_job $env 1 meanfield 60000000 1024 256
 
 # Wait for all background processes to complete
 wait
