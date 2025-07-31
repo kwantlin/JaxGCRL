@@ -13,12 +13,11 @@ submit_job() {
     cat > temp_${env}_${var_post}.slurm << EOF
 #!/bin/bash
 
-#SBATCH -A lips
 #SBATCH --job-name=${env}_${var_post}
-#SBATCH --gres=gpu:1
-#SBATCH -c 4
-#SBATCH --mem=4G
-#SBATCH -t 26:00:00
+#SBATCH --gres=gpu:a6000:1
+#SBATCH -c 8
+#SBATCH --mem=8G
+#SBATCH -t 30:00:00
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=kw2960@cs.princeton.edu
 
@@ -28,7 +27,7 @@ conda activate jaxgcrl
 
 
 python training.py \
-    --project_name test --group_name first_run --exp_name ${env}-main${var_post:+-$var_post} --num_evals 50 \
+    --project_name test --group_name first_run --exp_name ${env}-main${var_post:+-$var_post}-maxent-gaussianmlp --num_evals 50 \
     --seed ${seed} --num_timesteps ${num_timesteps} --batch_size ${batch_size} --num_envs ${num_envs} \
     --discounting 0.99 --action_repeat 1 --env_name ${env} \
     --episode_length 1025 --unroll_length 62 --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 \
@@ -42,12 +41,12 @@ EOF
 
 # Submit jobs for each environment
 env=ant
-submit_job $env 1 standard 20000000 256 512
-submit_job $env 1 meanfield 20000000 256 512
+submit_job $env 1 standard 30000000 256 512
+submit_job $env 1 meanfield 30000000 256 512
 
-env=simple_u_maze
-submit_job $env 1 standard 20000000 1024 256
-submit_job $env 1 meanfield 20000000 1024 256
+# env=simple_u_maze
+# submit_job $env 1 standard 20000000 1024 256
+# submit_job $env 1 meanfield 20000000 1024 256
 
 env=reacher
 submit_job $env 1 standard 20000000 1024 256
