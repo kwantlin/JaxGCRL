@@ -1,4 +1,5 @@
 import sys
+import os
 sys.path.append('../')
 
 import jax
@@ -28,14 +29,14 @@ from functools import partial
 
 env_name = 'ant'
 # Load standard CRL checkpoint. For expert demos!
-RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-main-standard_s_1'
-CKPT_NAME = '/step_11427840.pkl'
+RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-main-standard-della-maxent-gaussianmlp_s_1'
+CKPT_NAME = '/best.pkl'
 params = model.load_params(RUN_FOLDER_PATH + '/ckpt' + CKPT_NAME)
 policy_params, encoders_params, context_params = params
 
 # CRL Mean field checkpoint
-MEAN_FIELD_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-main-meanfield_s_1'
-MEAN_FIELD_CKPT_NAME = '/step_11427840.pkl'
+MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-main-meanfield-della-maxent-gaussianmlp_s_1'
+MEAN_FIELD_CKPT_NAME = '/best.pkl'
 mean_field_params = model.load_params(MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + MEAN_FIELD_CKPT_NAME)
 _, _, mean_field_context_params = mean_field_params
 
@@ -47,33 +48,33 @@ _, _, mean_field_context_params = mean_field_params
 # mean_field_encoded_sa_encoder_params, _ = mean_field_encoded_encoder_params['sa_encoder'], mean_field_encoded_encoder_params['g_encoder']
 
 # GoalKDE + CRL
-GOALKDE_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-goalkde-standard_s_1'
-GOALKDE_CKPT_NAME = '/step_15808512.pkl'
+GOALKDE_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-goalkde-standard-della-maxent-gaussianmlp_s_1'
+GOALKDE_CKPT_NAME = '/best.pkl'
 goalkde_params = model.load_params(GOALKDE_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_CKPT_NAME)
 goalkde_policy_params, goalkde_encoder_params, goalkde_context_params = goalkde_params
 
 # GoalKDE + CRL Mean field
-GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-goalkde-meanfield_s_1'
-GOALKDE_MEAN_FIELD_CKPT_NAME = '/step_15808512.pkl'
+GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-goalkde-meanfield-della-maxent-gaussianmlp_s_1'
+GOALKDE_MEAN_FIELD_CKPT_NAME = '/best.pkl'
 goalkde_mean_field_params = model.load_params(GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_MEAN_FIELD_CKPT_NAME)
 _, _, goalkde_mean_field_context_params = goalkde_mean_field_params
 
 # FB
-FB_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-fb_s_1'
-FB_CKPT_NAME = '/step_41521152.pkl'
+FB_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-fb-della_s_1'
+FB_CKPT_NAME = '/best.pkl'
 fb_params = model.load_params(FB_RUN_FOLDER_PATH + '/ckpt' + FB_CKPT_NAME)
 fb_policy_params, fb_repr_params, fb_target_forward_params, fb_target_backward_params = fb_params
 
 # BC
-BC_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-bc-standard_s_1'
-BC_CKPT_NAME = '/step_11427840.pkl'
+BC_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-bc-standard-30000000-512-1024-50_s_1'
+BC_CKPT_NAME = '/best.pkl'
 bc_params = model.load_params(BC_RUN_FOLDER_PATH + '/ckpt' + BC_CKPT_NAME)
 bc_policy_params, bc_context_params = bc_params
 
 
 # BC MEAN FIELD
-BC_MEAN_FIELD_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-bc-meanfield_s_1'
-BC_MEAN_FIELD_CKPT_NAME = '/step_11427840.pkl'
+BC_MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-bc-meanfield-30000000-512-1024-50_s_1'
+BC_MEAN_FIELD_CKPT_NAME = '/best.pkl'
 bc_mean_field_params = model.load_params(BC_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + BC_MEAN_FIELD_CKPT_NAME)
 _, bc_mean_field_context_params = bc_mean_field_params
 
@@ -143,7 +144,7 @@ actor = Net(action_size * 2, args.h_dim, num_blocks, block_size, args.use_ln)
 # sa_net = Net(args.repr_dim, args.h_dim, num_blocks, block_size, args.use_ln)
 # g_net = Net(args.repr_dim, args.h_dim, num_blocks, block_size, args.use_ln)
 context_net = Net(goal_size * 2, args.h_dim, num_blocks, block_size, args.use_ln)
-backward_repr = Net(goal_size, args.h_dim, num_blocks, block_size, args.use_ln)
+backward_repr = Net(args.repr_dim, args.h_dim, num_blocks, block_size, args.use_ln)
 
 parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size) # Would like to replace this but it's annoying to.
 
@@ -438,16 +439,33 @@ reward_diff_inferred = total_rewards - total_rewards_inferred_goal_mean
 reward_diff_inferred_mean = jnp.mean(reward_diff_inferred)
 reward_diff_inferred_stderror = jnp.std(reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
 
+print("total_rewards shape:", total_rewards.shape)
+print("total_rewards_inferred_goal_mean shape:", total_rewards_inferred_goal_mean.shape)
+epsilon = 1e-8
+reward_diff_inferred_pct = total_rewards_inferred_goal_mean / (total_rewards + epsilon)
+reward_diff_inferred_pct_mean = jnp.mean(reward_diff_inferred_pct)
+reward_diff_inferred_pct_stderror = jnp.std(reward_diff_inferred_pct) / jnp.sqrt(NUM_ENVS)
+
 print("Mean difference between total rewards and inferred goal rewards (standard):", reward_diff_inferred_mean)
 print("Standard error of difference between total rewards and inferred goal rewards (standard):", reward_diff_inferred_stderror)
+
+print("Mean difference between total rewards and inferred goal rewards (standard) (percentage):", reward_diff_inferred_pct_mean)
+print("Standard error of difference between total rewards and inferred goal rewards (standard) (percentage):", reward_diff_inferred_pct_stderror)
 
 # Compute differences and their statistics for total rewards vs mean field inferred goal rewards
 mf_reward_diff_inferred = total_rewards - mf_total_rewards_inferred_goal_mean
 mf_reward_diff_inferred_mean = jnp.mean(mf_reward_diff_inferred)
 mf_reward_diff_inferred_stderror = jnp.std(mf_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
 
+mf_reward_diff_inferred_pct = mf_total_rewards_inferred_goal_mean / (total_rewards + epsilon)
+mf_reward_diff_inferred_pct_mean = jnp.mean(mf_reward_diff_inferred_pct)
+mf_reward_diff_inferred_pct_stderror = jnp.std(mf_reward_diff_inferred_pct) / jnp.sqrt(NUM_ENVS)
+
 print("Mean difference between total rewards and inferred goal rewards (mean field):", mf_reward_diff_inferred_mean)
 print("Standard error of difference between total rewards and inferred goal rewards (mean field):", mf_reward_diff_inferred_stderror)
+
+print("Mean difference between total rewards and inferred goal rewards (mean field) (percentage):", mf_reward_diff_inferred_pct_mean)
+print("Standard error of difference between total rewards and inferred goal rewards (mean field) (percentage):", mf_reward_diff_inferred_pct_stderror)
 
 # # Compute differences and their statistics for total rewards vs mean field encoded inferred goal rewards
 # mf_encoded_reward_diff_inferred = mf_encoded_total_rewards_inferred_goal_mean - total_rewards
@@ -509,6 +527,10 @@ nn_expert_reward_diff = total_rewards - nn_total_rewards
 nn_expert_reward_diff_mean = jnp.mean(nn_expert_reward_diff)
 nn_expert_reward_diff_stderror = jnp.std(nn_expert_reward_diff) / jnp.sqrt(NUM_ENVS)
 
+nn_expert_reward_diff_pct = nn_total_rewards / (total_rewards + epsilon)
+nn_expert_reward_diff_pct_mean = jnp.mean(nn_expert_reward_diff_pct)
+nn_expert_reward_diff_pct_stderror = jnp.std(nn_expert_reward_diff_pct) / jnp.sqrt(NUM_ENVS)
+
 print("Mean difference between nearest neighbor and expert policy rewards:", nn_expert_reward_diff_mean)
 print("Standard error of difference between nearest neighbor and expert policy rewards:", nn_expert_reward_diff_stderror)
 
@@ -518,45 +540,61 @@ print("Standard error of difference between nearest neighbor and expert policy r
 
 
 def fb_infer_latent(backward_repr, backward_params, states):
-    backward_reprs = backward_repr.apply(backward_params, states)
+    goal_portion_of_state = states[:, env.goal_indices]
+    backward_reprs = backward_repr.apply(backward_params, goal_portion_of_state)
     backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(goal_size)
     avg_backward_repr = jnp.mean(backward_reprs, axis=0)
     latent = avg_backward_repr / jnp.linalg.norm(avg_backward_repr) * jnp.sqrt(goal_size)
     return latent
 
+def fb_infer_latent_from_last_state(backward_repr, backward_params, states):
+    goal_portion_of_state = states[:, env.goal_indices]
+    backward_reprs = backward_repr.apply(backward_params, goal_portion_of_state)
+    backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(goal_size)
+    latent = backward_reprs[-1]
+    return latent
+
 fb_infer_latent = jax.jit(fb_infer_latent, static_argnums=0)
+fb_infer_latent_from_last_state = jax.jit(fb_infer_latent_from_last_state, static_argnums=0)
 
 # Sample NUM_SAMPLES times from each episode's context distribution
 sample_rng = jax.random.PRNGKey(0)
 sample_rngs = jax.random.split(sample_rng, NUM_ENVS)
 
 fb_infer_latent_partial = partial(fb_infer_latent, backward_repr)
+fb_infer_latent_from_last_state_partial = partial(fb_infer_latent_from_last_state, backward_repr)
 fb_inferred_goals = jax.vmap(fb_infer_latent_partial, in_axes=(None, 0))(fb_target_backward_params, states)
+fb_inferred_goals_from_last_state = jax.vmap(fb_infer_latent_from_last_state_partial, in_axes=(None, 0))(fb_target_backward_params, states)
 
 print("FB inferred goals shape:", fb_inferred_goals.shape)
+print("FB inferred goals from last state shape:", fb_inferred_goals_from_last_state.shape)
+
 # Add an extra dimension at axis 1 to fb_inferred_goals
 # This transforms the shape from [NUM_ENVS, goal_size] to [NUM_ENVS, 1, goal_size]
 fb_inferred_goals = fb_inferred_goals[:, None, :]
+fb_inferred_goals_from_last_state = fb_inferred_goals_from_last_state[:, None, :]
 print("FB inferred goals shape after adding dimension:", fb_inferred_goals.shape)
+print("FB inferred goals from last state shape after adding dimension:", fb_inferred_goals_from_last_state.shape)
+
 
 # # Remove the extra dimension for comparison
 # fb_inferred_goals_flat = jnp.squeeze(fb_inferred_goals, axis=1)  # shape: [NUM_ENVS, goal_size]
 
 # Check if all elements are (almost) equal
-are_equal = jnp.allclose(fb_inferred_goals, last_states, atol=1e-5)
-print("Are FB inferred goals the same as last states?", are_equal)
+# are_equal = jnp.allclose(fb_inferred_goals, last_states, atol=1e-5)
+# print("Are FB inferred goals the same as last states?", are_equal)
 
 # Optionally, print the mean absolute difference
-mean_abs_diff = jnp.mean(jnp.abs(fb_inferred_goals - last_states))
-print("Mean absolute difference between FB inferred goals and last states:", mean_abs_diff)
+# mean_abs_diff = jnp.mean(jnp.abs(fb_inferred_goals - last_states))
+# print("Mean absolute difference between FB inferred goals and last states:", mean_abs_diff)
 
 # Calculate distances between true goals and inferred latents
-goal_to_fb_inferred_goal_distances = jnp.linalg.norm(goals - fb_inferred_goals, axis=1)
-print("Mean goal to FB inferred goal distance:", jnp.mean(goal_to_fb_inferred_goal_distances))
+# goal_to_fb_inferred_goal_distances = jnp.linalg.norm(goals - fb_inferred_goals, axis=1)
+# print("Mean goal to FB inferred goal distance:", jnp.mean(goal_to_fb_inferred_goal_distances))
 
-print("FB inferred goals shape:", fb_inferred_goals.shape)
-print("last states shape:", last_states.shape)
-print("true goals shape:", goals.shape)
+# print("FB inferred goals shape:", fb_inferred_goals.shape)
+# print("last states shape:", last_states.shape)
+# print("true goals shape:", goals.shape)
 
 def fb_collect_trajectory_with_target(rng, target, true_goal):
     def step_fn(carry, _):
@@ -622,10 +660,21 @@ fb_inferred_goal_rews = jax.vmap(
     goals
 )
 
+fb_inferred_goal_rews_from_last_state = jax.vmap(
+    jax.vmap(fb_collect_trajectory_with_target, in_axes=(0, 0, None)),
+    in_axes=(0, 0, 0)
+)(
+    fb_inferred_goal_rngs,
+    fb_inferred_goals_from_last_state,
+    goals
+)
+
 print("fb inferred_goal_rews shape:", fb_inferred_goal_rews.shape)
+print("fb inferred_goal_rews_from_last_state shape:", fb_inferred_goal_rews_from_last_state.shape)
 fb_total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(fb_inferred_goal_rews, axis=2), axis=1)
 fb_total_rewards_inferred_goal_std = jnp.std(jnp.sum(fb_inferred_goal_rews, axis=2), axis=1)
-
+fb_total_rewards_inferred_goal_from_last_state_mean = jnp.mean(jnp.sum(fb_inferred_goal_rews_from_last_state, axis=2), axis=1)
+fb_total_rewards_inferred_goal_from_last_state_std = jnp.std(jnp.sum(fb_inferred_goal_rews_from_last_state, axis=2), axis=1)
 
 # # Compute differences and their statistics for total rewards vs true goal rewards
 # fb_reward_diff_true_goal = total_rewards - fb_total_rewards_true_goal
@@ -636,6 +685,15 @@ fb_total_rewards_inferred_goal_std = jnp.std(jnp.sum(fb_inferred_goal_rews, axis
 fb_reward_diff_inferred = total_rewards - fb_total_rewards_inferred_goal_mean
 fb_reward_diff_inferred_mean = jnp.mean(fb_reward_diff_inferred)
 fb_reward_diff_inferred_stderror = jnp.std(fb_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
+
+fb_reward_diff_inferred_from_last_state = total_rewards - fb_total_rewards_inferred_goal_from_last_state_mean
+fb_reward_diff_inferred_from_last_state_mean = jnp.mean(fb_reward_diff_inferred_from_last_state)
+fb_reward_diff_inferred_from_last_state_stderror = jnp.std(fb_reward_diff_inferred_from_last_state) / jnp.sqrt(NUM_ENVS)
+
+
+fb_reward_diff_inferred_pct = fb_total_rewards_inferred_goal_mean / (total_rewards + epsilon)
+fb_reward_diff_inferred_pct_mean = jnp.mean(fb_reward_diff_inferred_pct)
+fb_reward_diff_inferred_pct_stderror = jnp.std(fb_reward_diff_inferred_pct) / jnp.sqrt(NUM_ENVS)
 
 print("Mean difference between total rewards and FB inferred goal rewards (standard):", fb_reward_diff_inferred_mean)
 print("Standard error of difference between total rewards and FB inferred goal rewards (standard):", fb_reward_diff_inferred_stderror)
@@ -717,6 +775,7 @@ def goalkde_collect_trajectory_with_target(rng, target, true_goal):
     )
     return rewards
 
+
 # Collect trajectories using true goals as targets
 last_state_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS)
 goalkde_true_goal_rews = jax.vmap(goalkde_collect_trajectory_with_target)(
@@ -743,6 +802,7 @@ print(goalkde_last_state_rews.shape)
 goalkde_total_rewards_true_goal = jnp.sum(goalkde_true_goal_rews, axis=1)
 
 goalkde_total_rewards_last_state = jnp.sum(goalkde_last_state_rews, axis=1)  # Sum rewards along trajectory dimension
+
 
 # Collect trajectories using inferred goals as targets from standard context encoder
 goalkde_inferred_goal_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS * NUM_SAMPLES)
@@ -783,10 +843,18 @@ goalkde_reward_diff_true_goal = total_rewards - goalkde_total_rewards_true_goal
 goalkde_reward_diff_true_goal_mean = jnp.mean(goalkde_reward_diff_true_goal)
 goalkde_reward_diff_true_goal_stderror = jnp.std(goalkde_reward_diff_true_goal) / jnp.sqrt(NUM_ENVS)
 
+goalkde_reward_diff_true_goal_pct = goalkde_total_rewards_true_goal / (total_rewards + epsilon)
+goalkde_reward_diff_true_goal_pct_mean = jnp.mean(goalkde_reward_diff_true_goal_pct)
+goalkde_reward_diff_true_goal_pct_stderror = jnp.std(goalkde_reward_diff_true_goal_pct) / jnp.sqrt(NUM_ENVS)
+
 # Compute differences and their statistics for total rewards vs last state rewards
 goalkde_reward_diff_last_state = total_rewards - goalkde_total_rewards_last_state
 goalkde_reward_diff_last_state_mean = jnp.mean(goalkde_reward_diff_last_state)
 goalkde_reward_diff_last_state_stderror = jnp.std(goalkde_reward_diff_last_state) / jnp.sqrt(NUM_ENVS)
+
+goalkde_reward_diff_last_state_pct = goalkde_total_rewards_last_state / (total_rewards + epsilon)
+goalkde_reward_diff_last_state_pct_mean = jnp.mean(goalkde_reward_diff_last_state_pct)
+goalkde_reward_diff_last_state_pct_stderror = jnp.std(goalkde_reward_diff_last_state_pct) / jnp.sqrt(NUM_ENVS)
 
 print("Mean difference between total rewards and GoalKDE last state rewards:", goalkde_reward_diff_last_state_mean)
 print("Standard error of difference between total rewards and GoalKDE last state rewards:", goalkde_reward_diff_last_state_stderror)
@@ -796,6 +864,10 @@ goalkde_reward_diff_inferred = total_rewards - goalkde_total_rewards_inferred_go
 goalkde_reward_diff_inferred_mean = jnp.mean(goalkde_reward_diff_inferred)
 goalkde_reward_diff_inferred_stderror = jnp.std(goalkde_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
 
+goalkde_reward_diff_inferred_pct = goalkde_total_rewards_inferred_goal_mean / (total_rewards + epsilon)
+goalkde_reward_diff_inferred_pct_mean = jnp.mean(goalkde_reward_diff_inferred_pct)
+goalkde_reward_diff_inferred_pct_stderror = jnp.std(goalkde_reward_diff_inferred_pct) / jnp.sqrt(NUM_ENVS)
+
 print("Mean difference between total rewards and GoalKDE inferred goal rewards (standard):", goalkde_reward_diff_inferred_mean)
 print("Standard error of difference between total rewards and GoalKDE inferred goal rewards (standard):", goalkde_reward_diff_inferred_stderror)
 
@@ -803,6 +875,10 @@ print("Standard error of difference between total rewards and GoalKDE inferred g
 goalkde_mf_reward_diff_inferred = total_rewards - goalkde_mf_total_rewards_inferred_goal_mean
 goalkde_mf_reward_diff_inferred_mean = jnp.mean(goalkde_mf_reward_diff_inferred)
 goalkde_mf_reward_diff_inferred_stderror = jnp.std(goalkde_mf_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
+
+goalkde_mf_reward_diff_inferred_pct = goalkde_mf_total_rewards_inferred_goal_mean / (total_rewards + epsilon)
+goalkde_mf_reward_diff_inferred_pct_mean = jnp.mean(goalkde_mf_reward_diff_inferred_pct)
+goalkde_mf_reward_diff_inferred_pct_stderror = jnp.std(goalkde_mf_reward_diff_inferred_pct) / jnp.sqrt(NUM_ENVS)
 
 print("Mean difference between total rewards and GoalKDE inferred goal rewards (mean field):", goalkde_mf_reward_diff_inferred_mean)
 print("Standard error of difference between total rewards and GoalKDE inferred goal rewards (mean field):", goalkde_mf_reward_diff_inferred_stderror)
@@ -947,10 +1023,18 @@ bc_reward_diff_true_goal = total_rewards - bc_total_rewards_true_goal
 bc_reward_diff_true_goal_mean = jnp.mean(bc_reward_diff_true_goal)
 bc_reward_diff_true_goal_stderror = jnp.std(bc_reward_diff_true_goal) / jnp.sqrt(NUM_ENVS)
 
+bc_reward_diff_true_goal_pct = bc_total_rewards_true_goal / (total_rewards + epsilon)
+bc_reward_diff_true_goal_pct_mean = jnp.mean(bc_reward_diff_true_goal_pct)
+bc_reward_diff_true_goal_pct_stderror = jnp.std(bc_reward_diff_true_goal_pct) / jnp.sqrt(NUM_ENVS)
+
 # Compute differences and their statistics for total rewards vs last state rewards
 bc_reward_diff_last_state = total_rewards - bc_total_rewards_last_state
 bc_reward_diff_last_state_mean = jnp.mean(bc_reward_diff_last_state)
 bc_reward_diff_last_state_stderror = jnp.std(bc_reward_diff_last_state) / jnp.sqrt(NUM_ENVS)
+
+bc_reward_diff_last_state_pct = bc_total_rewards_last_state / (total_rewards + epsilon)
+bc_reward_diff_last_state_pct_mean = jnp.mean(bc_reward_diff_last_state_pct)
+bc_reward_diff_last_state_pct_stderror = jnp.std(bc_reward_diff_last_state_pct) / jnp.sqrt(NUM_ENVS)
 
 print("Mean difference between total rewards and BC last state rewards:", bc_reward_diff_last_state_mean)
 print("Standard error of difference between total rewards and BC last state rewards:", bc_reward_diff_last_state_stderror)
@@ -960,6 +1044,10 @@ bc_reward_diff_inferred = total_rewards - bc_total_rewards_inferred_goal_mean
 bc_reward_diff_inferred_mean = jnp.mean(bc_reward_diff_inferred)
 bc_reward_diff_inferred_stderror = jnp.std(bc_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
 
+bc_reward_diff_inferred_pct = bc_total_rewards_inferred_goal_mean / (total_rewards + epsilon)
+bc_reward_diff_inferred_pct_mean = jnp.mean(bc_reward_diff_inferred_pct)
+bc_reward_diff_inferred_pct_stderror = jnp.std(bc_reward_diff_inferred_pct) / jnp.sqrt(NUM_ENVS)
+
 print("Mean difference between total rewards and BC inferred goal rewards (standard):", bc_reward_diff_inferred_mean)
 print("Standard error of difference between total rewards and BC inferred goal rewards (standard):", bc_reward_diff_inferred_stderror)
 
@@ -968,18 +1056,26 @@ bc_mf_reward_diff_inferred = total_rewards - bc_mf_total_rewards_inferred_goal_m
 bc_mf_reward_diff_inferred_mean = jnp.mean(bc_mf_reward_diff_inferred)
 bc_mf_reward_diff_inferred_stderror = jnp.std(bc_mf_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
 
+bc_mf_reward_diff_inferred_pct = bc_mf_total_rewards_inferred_goal_mean / (total_rewards + epsilon)
+bc_mf_reward_diff_inferred_pct_mean = jnp.mean(bc_mf_reward_diff_inferred_pct)
+bc_mf_reward_diff_inferred_pct_stderror = jnp.std(bc_mf_reward_diff_inferred_pct) / jnp.sqrt(NUM_ENVS)
+
 print("Mean difference between total rewards and BC inferred goal rewards (mean field):", bc_mf_reward_diff_inferred_mean)
 print("Standard error of difference between total rewards and BC inferred goal rewards (mean field):", bc_mf_reward_diff_inferred_stderror)
 
 
+# Create a new directory for the environment's results
+output_dir = f"results_{env_name}"
+os.makedirs(output_dir, exist_ok=True)
+
 # Create a visualization of the performance differences
 # Prepare data for plotting
 methods = [
-    'CRL Last State', 'CRL Inferred Goal', 'CRL Mean Field',
-    'GoalKDE True Goal', 'GoalKDE Last State', 'GoalKDE Inferred Goal', 'GoalKDE Mean Field',
+    'CRL + Oracle + Last State', 'CRL + Oracle + Full Tau', 'CRL + Oracle + Mean Field',
+    'CRL + GoalKDE + True Goal', 'CRL + GoalKDE + Last State', 'CRL + GoalKDE + Full Tau', 'CRL + GoalKDE + Mean Field',
     'Nearest Neighbor',
-    'FB Inferred Goal',
-    'BC True Goal', 'BC Last State', 'BC Inferred Goal', 'BC Mean Field',
+    'FB',
+    'GCBC + True Goal', 'GCBC + Last State', 'GCBC + Full Tau', 'GCBC + Mean Field',
     
 ]
 
@@ -1034,7 +1130,7 @@ ax = sns.barplot(
     y='Mean Difference', 
     hue='Method Type',
     data=df,
-    palette=['#1f77b4', '#ff7f0e', 'purple', '#2ca02c', '#d62728']  # Blue for CRL, Orange for GoalKDE, Purple for NN, Green for BC, Red for FB
+    palette=['#1f77b4', '#ff7f0e', 'purple', '#2ca02c', '#d62728']  # Blue for CRL, Orange for GoalKDE, Purple for NN, Green for FB, Red for BC
 )
 
 # Add error bars
@@ -1074,12 +1170,16 @@ plt.tight_layout()
 #             ha='center', fontsize=10)
 
 # Save the figure
-plt.savefig(f'performance_comparison_{env_name}.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'{output_dir}/performance_comparison_{env_name}.png', dpi=300, bbox_inches='tight')
 
 # Save the performance comparison data to CSV
 performance_df = df
-performance_df.to_csv(f'performance_comparison_{env_name}.csv', index=False)
-print(f"Performance comparison data saved to performance_comparison_{env_name}.csv")
+performance_df.to_csv(f'{output_dir}/performance_comparison_{env_name}.csv', index=False)
+print(f"Performance comparison data saved to {output_dir}/performance_comparison_{env_name}.csv")
+
+
+
+
 
 # Create a new figure for goal distance comparison
 plt.figure(figsize=(12, 6))
@@ -1088,9 +1188,9 @@ plt.figure(figsize=(12, 6))
 distance_data = {
     'Method': [
         'Last State', 
-        'CRL Inferred Goal', 'CRL MF Inferred Goal',
-        'GoalKDE Inferred Goal', 'GoalKDE MF Inferred Goal',
-        'BC Inferred Goal', 'BC MF Inferred Goal',
+        'CRL + Oracle + Full Tau', 'CRL + Oracle + Mean Field',
+        'CRL + GoalKDE + Full Tau', 'CRL + GoalKDE + Mean Field',
+        'GCBC + Full Tau', 'GCBC + Mean Field',
     ],
     'Mean Distance': [
         float(jnp.mean(goal_to_last_state_distances)),
@@ -1153,11 +1253,276 @@ handles, labels = ax.get_legend_handles_labels()
 ax.legend(handles=handles, labels=labels, loc='best')
 
 # Save the figure
-plt.savefig(f'goal_distance_comparison_{env_name}.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'{output_dir}/goal_distance_comparison_{env_name}.png', dpi=300, bbox_inches='tight')
 
 # Save the goal distance comparison data to CSV
-distance_df.to_csv(f'goal_distance_comparison_{env_name}.csv', index=False)
-print(f"Goal distance comparison data saved to goal_distance_comparison_{env_name}.csv")
+distance_df.to_csv(f'{output_dir}/goal_distance_comparison_{env_name}.csv', index=False)
+print(f"Goal distance comparison data saved to {output_dir}/goal_distance_comparison_{env_name}.csv")
 
 # Show the plot
-plt.show()
+# plt.show()
+
+
+
+# Create a new figure for showing whether time matters for inferring behavior (full trajectory vs. mean field), using percentages
+methods = [
+    'CRL + Oracle + Full Tau', 'CRL + Oracle + Mean Field',
+    'CRL + GoalKDE + Full Tau', 'CRL + GoalKDE + Mean Field',
+    'GCBC + Full Tau', 'GCBC + Mean Field',
+    
+]
+
+mean_diffs = [
+    
+    float(1.0 - reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - goalkde_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - goalkde_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - bc_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - bc_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+]
+
+std_errors = [
+    float(reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(goalkde_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(goalkde_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(bc_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(bc_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    
+]
+
+method_types = ['CRL']*2 + ['GoalKDE']*2 + ['BC']*2 
+
+df = pd.DataFrame({
+    'Method': methods,
+    'Mean Difference': mean_diffs,
+    'Std Error': std_errors,
+    'Method Type': method_types
+})
+
+# Set up the figure
+plt.figure(figsize=(14, 8))
+
+# Create the bar plot with error bars
+ax = sns.barplot(
+    x='Method', 
+    y='Mean Difference', 
+    hue='Method Type',
+    data=df,
+    palette=['#1f77b4', '#ff7f0e', '#d62728']  # Blue for CRL, Orange for GoalKDE, Purple for NN, Green for BC, Red for FB
+)
+
+# Add error bars
+for i, (_, row) in enumerate(df.iterrows()):
+    ax.errorbar(
+        i, row['Mean Difference'], 
+        yerr=row['Std Error'], 
+        fmt='none', 
+        color='black', 
+        capsize=5
+    )
+
+# Add a horizontal line at y=avg rew for reference (zero regret = matching expert performance)
+# plt.axhline(y=jnp.mean(total_rewards), color='green', linestyle='-', alpha=0.7, label=f'Mean Expert Reward: {float(jnp.mean(total_rewards)):.3f}')
+
+# Add horizontal lines for standard error bands
+# expert_stderr = float(jnp.std(total_rewards) / jnp.sqrt(NUM_ENVS))
+# plt.axhline(y=jnp.mean(total_rewards)+expert_stderr, color='green', linestyle=':', alpha=0.5, label=f'+1 StdErr: {expert_stderr:.3f}')
+# plt.axhline(y=jnp.mean(total_rewards)-expert_stderr, color='green', linestyle=':', alpha=0.5, label=f'-1 StdErr: {-expert_stderr:.3f}')
+
+# Add a note about expert performance in the legend
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(handles=handles, labels=labels, loc='best')
+
+# Customize the plot
+plt.title(f'Imitation Score ({env_name})', fontsize=16)
+plt.ylabel('Imitation Score (%)', fontsize=14)
+plt.xlabel('Method', fontsize=14)
+plt.xticks(rotation=45, ha='right')
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+
+# Add a note explaining the interpretation
+# plt.figtext(0.5, 0.01, 
+#             "Note: Higher values indicate better performance compared to expert demonstrations.\n"
+#             "Error bars represent standard error of the mean.", 
+#             ha='center', fontsize=10)
+
+# Save the figure
+plt.savefig(f'{output_dir}/full_trajectory_vs_mean_field_{env_name}.png', dpi=300, bbox_inches='tight')
+
+# Save the performance comparison data to CSV
+performance_df = df
+performance_df.to_csv(f'{output_dir}/full_trajectory_vs_mean_field_{env_name}.csv', index=False)
+print(f"Performance comparison data saved to {output_dir}/full_trajectory_vs_mean_field_{env_name}.csv")
+
+
+
+
+# Create a new figure for showing value of pretraining
+plt.figure(figsize=(14,8))
+
+# Prepare data for plotting
+methods = [
+    'GCBC + Mean Field',
+    'Nearest Neighbor',
+    'FB',
+    'CRL + Oracle + Mean Field',
+    'CRL + GoalKDE + Mean Field',
+    
+]
+
+mean_diffs = [
+    float(1.0 - bc_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - nn_expert_reward_diff_mean/jnp.mean(total_rewards)),
+    float(1.0 - fb_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - goalkde_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+]
+
+std_errors = [
+    float(bc_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(nn_expert_reward_diff_stderror/jnp.mean(total_rewards)),
+    float(fb_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(bc_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(bc_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    
+]
+
+method_types = ['BC']*1 + ['NN']*1 + ['FB']*1 + ['CRL']*1 + ['GoalKDE']*1 
+
+df = pd.DataFrame({
+    'Method': methods,
+    'Mean Difference': mean_diffs,
+    'Std Error': std_errors,
+    'Method Type': method_types
+})
+
+# Create the bar plot with error bars
+ax = sns.barplot(
+    x='Method', 
+    y='Mean Difference', 
+    hue='Method Type',
+    data=df,
+    palette=['#d62728', 'purple', '#2ca02c', '#1f77b4', '#ff7f0e']
+)
+
+# Add error bars
+for i, (_, row) in enumerate(df.iterrows()):
+    ax.errorbar(
+        i, row['Mean Difference'], 
+        yerr=row['Std Error'], 
+        fmt='none', 
+        color='black', 
+        capsize=5
+    )
+
+
+# Add horizontal lines for standard error bands
+# expert_stderr = float(jnp.std(total_rewards) / jnp.sqrt(NUM_ENVS))
+# plt.axhline(y=jnp.mean(total_rewards)+expert_stderr, color='green', linestyle=':', alpha=0.5, label=f'+1 StdErr: {expert_stderr:.3f}')
+# plt.axhline(y=jnp.mean(total_rewards)-expert_stderr, color='green', linestyle=':', alpha=0.5, label=f'-1 StdErr: {-expert_stderr:.3f}')
+
+# Add a note about expert performance in the legend
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(handles=handles, labels=labels, loc='best')
+
+# Customize the plot
+plt.title(f'Imitation Score ({env_name})', fontsize=16)
+plt.ylabel('Imitation Score (%)', fontsize=14)
+plt.xlabel('Method', fontsize=14)
+plt.xticks(rotation=45, ha='right')
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+
+# Add a note explaining the interpretation
+# plt.figtext(0.5, 0.01, 
+#             "Note: Higher values indicate better performance compared to expert demonstrations.\n"
+#             "Error bars represent standard error of the mean.", 
+#             ha='center', fontsize=10)
+
+# Save the figure
+plt.savefig(f'{output_dir}/value_of_pretraining_{env_name}.png', dpi=300, bbox_inches='tight')
+
+# Save the performance comparison data to CSV
+performance_df = df
+performance_df.to_csv(f'{output_dir}/value_of_pretraining_{env_name}.csv', index=False)
+print(f"Performance comparison data saved to {output_dir}/value_of_pretraining_{env_name}.csv")
+
+
+
+
+# Create a visualization of fb with last state vs crl+goalkde+last state
+plt.figure(figsize=(8,6))
+# Prepare data for plotting
+methods = [
+    'FB + Last State',
+    'CRL + GoalKDE + Last State',
+]
+
+mean_diffs = [
+    float(1.0 - fb_reward_diff_inferred_from_last_state_mean/jnp.mean(total_rewards)),
+    float(1.0 - goalkde_reward_diff_last_state_mean/jnp.mean(total_rewards)),
+]
+
+std_errors = [
+    float(fb_reward_diff_inferred_from_last_state_stderror/jnp.mean(total_rewards)),
+    float(goalkde_reward_diff_last_state_stderror/jnp.mean(total_rewards)),
+    
+]
+
+method_types = ['FB']*1 + ['GoalKDE']*1 
+
+df = pd.DataFrame({
+    'Method': methods,
+    'Mean Difference': mean_diffs,
+    'Std Error': std_errors,
+    'Method Type': method_types
+})
+
+# Create the bar plot with error bars
+ax = sns.barplot(
+    x='Method', 
+    y='Mean Difference', 
+    hue='Method Type',
+    data=df,
+    palette=['#d62728', '#ff7f0e']  # Blue for CRL, Orange for GoalKDE, Purple for NN, Green for BC, Red for FB
+)
+
+# Add error bars
+for i, (_, row) in enumerate(df.iterrows()):
+    ax.errorbar(
+        i, row['Mean Difference'], 
+        yerr=row['Std Error'], 
+        fmt='none', 
+        color='black', 
+        capsize=5
+    )
+
+
+# Add a note about expert performance in the legend
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(handles=handles, labels=labels, loc='best')
+
+# Customize the plot
+plt.title(f'Imitation Score ({env_name})', fontsize=16)
+plt.ylabel('Imitation Score (%)', fontsize=14)
+plt.xlabel('Method', fontsize=14)
+plt.xticks(rotation=45, ha='right')
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+
+# Add a note explaining the interpretation
+# plt.figtext(0.5, 0.01, 
+#             "Note: Higher values indicate better performance compared to expert demonstrations.\n"
+#             "Error bars represent standard error of the mean.", 
+#             ha='center', fontsize=10)
+
+# Save the figure
+plt.savefig(f'{output_dir}/fb_vs_goalkde_last_state_{env_name}.png', dpi=300, bbox_inches='tight')
+
+# Save the performance comparison data to CSV
+performance_df = df
+performance_df.to_csv(f'{output_dir}/fb_vs_goalkde_last_state_{env_name}.csv', index=False)
+print(f"Performance comparison data saved to {output_dir}/fb_vs_goalkde_last_state_{env_name}.csv")

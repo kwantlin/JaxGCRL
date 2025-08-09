@@ -36,8 +36,8 @@ def main(args):
     config = get_env_config(args)
 
 
-    os.makedirs('./runs', exist_ok=True)
-    run_dir = './runs/run_{name}_s_{seed}'.format(name=args.exp_name, seed=args.seed)
+    os.makedirs('/scratch/gpfs/kw2960/JaxGCRL/runs', exist_ok=True)
+    run_dir = '/scratch/gpfs/kw2960/JaxGCRL/runs/run_{name}_s_{seed}'.format(name=args.exp_name, seed=args.seed)
     ckpt_dir = run_dir + '/ckpt'
     os.makedirs(run_dir, exist_ok=True)
     os.makedirs(ckpt_dir, exist_ok=True)
@@ -141,7 +141,7 @@ if __name__ == "__main__":
         group=args.group_name,
         name=args.exp_name,
         config=vars(args),
-        mode="online" if args.log_wandb else "disabled",
+        mode="offline" if args.log_wandb else "disabled",
     )
 
     with Profiler(interval=0.1) as profiler:
