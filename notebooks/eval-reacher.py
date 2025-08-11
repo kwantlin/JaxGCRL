@@ -1,4 +1,5 @@
 import sys
+import os
 sys.path.append('../')
 
 import jax
@@ -28,14 +29,14 @@ from functools import partial
 
 env_name = 'reacher'
 # Load standard CRL checkpoint. For expert demos!
-RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-main-standard_s_1'
-CKPT_NAME = '/step_20490752.pkl'
+RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-main-standard-della-maxent-gaussianmlp_s_1'
+CKPT_NAME = '/best.pkl'
 params = model.load_params(RUN_FOLDER_PATH + '/ckpt' + CKPT_NAME)
 policy_params, encoders_params, context_params = params
 
 # CRL Mean field checkpoint
-MEAN_FIELD_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-main-meanfield_s_1'
-MEAN_FIELD_CKPT_NAME = '/step_20490752.pkl'
+MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-main-meanfield-della-maxent-gaussianmlp_s_1'
+MEAN_FIELD_CKPT_NAME = '/best.pkl'
 mean_field_params = model.load_params(MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + MEAN_FIELD_CKPT_NAME)
 _, _, mean_field_context_params = mean_field_params
 
@@ -47,33 +48,33 @@ _, _, mean_field_context_params = mean_field_params
 # mean_field_encoded_sa_encoder_params, _ = mean_field_encoded_encoder_params['sa_encoder'], mean_field_encoded_encoder_params['g_encoder']
 
 # GoalKDE + CRL
-GOALKDE_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-goalkde-standard_s_1'
-GOALKDE_CKPT_NAME = '/step_20490752.pkl'
+GOALKDE_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-goalkde-standard-della-maxent-gaussianmlp_s_1'
+GOALKDE_CKPT_NAME = '/best.pkl'
 goalkde_params = model.load_params(GOALKDE_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_CKPT_NAME)
 goalkde_policy_params, goalkde_encoder_params, goalkde_context_params = goalkde_params
 
 # GoalKDE + CRL Mean field
-GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-goalkde-meanfield_s_1'
-GOALKDE_MEAN_FIELD_CKPT_NAME = '/step_20490752.pkl'
+GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-goalkde-meanfield-della-maxent-gaussianmlp_s_1'
+GOALKDE_MEAN_FIELD_CKPT_NAME = '/best.pkl'
 goalkde_mean_field_params = model.load_params(GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_MEAN_FIELD_CKPT_NAME)
 _, _, goalkde_mean_field_context_params = goalkde_mean_field_params
 
 # FB
-FB_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-fb_s_1'
-FB_CKPT_NAME = '/step_20490752.pkl'
+FB_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-fb-della_s_1'
+FB_CKPT_NAME = '/best.pkl'
 fb_params = model.load_params(FB_RUN_FOLDER_PATH + '/ckpt' + FB_CKPT_NAME)
 fb_policy_params, fb_repr_params, fb_target_forward_params, fb_target_backward_params = fb_params
 
 # BC
-BC_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-bc-standard_s_1'
-BC_CKPT_NAME = '/step_20490752.pkl'
+BC_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-bc-standard-20000000-1024-256-50_s_1'
+BC_CKPT_NAME = '/best.pkl'
 bc_params = model.load_params(BC_RUN_FOLDER_PATH + '/ckpt' + BC_CKPT_NAME)
 bc_policy_params, bc_context_params = bc_params
 
 
 # BC MEAN FIELD
-BC_MEAN_FIELD_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-bc-meanfield_s_1'
-BC_MEAN_FIELD_CKPT_NAME = '/step_20490752.pkl'
+BC_MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-bc-meanfield-20000000-1024-256-50_s_1'
+BC_MEAN_FIELD_CKPT_NAME = '/best.pkl'
 bc_mean_field_params = model.load_params(BC_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + BC_MEAN_FIELD_CKPT_NAME)
 _, bc_mean_field_context_params = bc_mean_field_params
 
@@ -143,7 +144,7 @@ actor = Net(action_size * 2, args.h_dim, num_blocks, block_size, args.use_ln)
 # sa_net = Net(args.repr_dim, args.h_dim, num_blocks, block_size, args.use_ln)
 # g_net = Net(args.repr_dim, args.h_dim, num_blocks, block_size, args.use_ln)
 context_net = Net(goal_size * 2, args.h_dim, num_blocks, block_size, args.use_ln)
-backward_repr = Net(goal_size, args.h_dim, num_blocks, block_size, args.use_ln)
+backward_repr = Net(args.repr_dim, args.h_dim, num_blocks, block_size, args.use_ln)
 
 parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size) # Would like to replace this but it's annoying to.
 
@@ -518,7 +519,8 @@ print("Standard error of difference between nearest neighbor and expert policy r
 
 
 def fb_infer_latent(backward_repr, backward_params, states):
-    backward_reprs = backward_repr.apply(backward_params, states)
+    goal_portion_of_state = states[:, env.goal_indices]
+    backward_reprs = backward_repr.apply(backward_params, goal_portion_of_state)
     backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(goal_size)
     avg_backward_repr = jnp.mean(backward_reprs, axis=0)
     latent = avg_backward_repr / jnp.linalg.norm(avg_backward_repr) * jnp.sqrt(goal_size)
@@ -543,20 +545,20 @@ print("FB inferred goals shape after adding dimension:", fb_inferred_goals.shape
 # fb_inferred_goals_flat = jnp.squeeze(fb_inferred_goals, axis=1)  # shape: [NUM_ENVS, goal_size]
 
 # Check if all elements are (almost) equal
-are_equal = jnp.allclose(fb_inferred_goals, last_states, atol=1e-5)
-print("Are FB inferred goals the same as last states?", are_equal)
+# are_equal = jnp.allclose(fb_inferred_goals, last_states, atol=1e-5)
+# print("Are FB inferred goals the same as last states?", are_equal)
 
 # Optionally, print the mean absolute difference
-mean_abs_diff = jnp.mean(jnp.abs(fb_inferred_goals - last_states))
-print("Mean absolute difference between FB inferred goals and last states:", mean_abs_diff)
+# mean_abs_diff = jnp.mean(jnp.abs(fb_inferred_goals - last_states))
+# print("Mean absolute difference between FB inferred goals and last states:", mean_abs_diff)
 
 # Calculate distances between true goals and inferred latents
-goal_to_fb_inferred_goal_distances = jnp.linalg.norm(goals - fb_inferred_goals, axis=1)
-print("Mean goal to FB inferred goal distance:", jnp.mean(goal_to_fb_inferred_goal_distances))
+# goal_to_fb_inferred_goal_distances = jnp.linalg.norm(goals - fb_inferred_goals, axis=1)
+# print("Mean goal to FB inferred goal distance:", jnp.mean(goal_to_fb_inferred_goal_distances))
 
-print("FB inferred goals shape:", fb_inferred_goals.shape)
-print("last states shape:", last_states.shape)
-print("true goals shape:", goals.shape)
+# print("FB inferred goals shape:", fb_inferred_goals.shape)
+# print("last states shape:", last_states.shape)
+# print("true goals shape:", goals.shape)
 
 def fb_collect_trajectory_with_target(rng, target, true_goal):
     def step_fn(carry, _):
@@ -972,6 +974,10 @@ print("Mean difference between total rewards and BC inferred goal rewards (mean 
 print("Standard error of difference between total rewards and BC inferred goal rewards (mean field):", bc_mf_reward_diff_inferred_stderror)
 
 
+# Create a new directory for the environment's results
+output_dir = f"results_{env_name}"
+os.makedirs(output_dir, exist_ok=True)
+
 # Create a visualization of the performance differences
 # Prepare data for plotting
 methods = [
@@ -1074,12 +1080,12 @@ plt.tight_layout()
 #             ha='center', fontsize=10)
 
 # Save the figure
-plt.savefig(f'performance_comparison_{env_name}.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'{output_dir}/performance_comparison_{env_name}.png', dpi=300, bbox_inches='tight')
 
 # Save the performance comparison data to CSV
 performance_df = df
-performance_df.to_csv(f'performance_comparison_{env_name}.csv', index=False)
-print(f"Performance comparison data saved to performance_comparison_{env_name}.csv")
+performance_df.to_csv(f'{output_dir}/performance_comparison_{env_name}.csv', index=False)
+print(f"Performance comparison data saved to {output_dir}/performance_comparison_{env_name}.csv")
 
 # Create a new figure for goal distance comparison
 plt.figure(figsize=(12, 6))
@@ -1153,11 +1159,11 @@ handles, labels = ax.get_legend_handles_labels()
 ax.legend(handles=handles, labels=labels, loc='best')
 
 # Save the figure
-plt.savefig(f'goal_distance_comparison_{env_name}.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'{output_dir}/goal_distance_comparison_{env_name}.png', dpi=300, bbox_inches='tight')
 
 # Save the goal distance comparison data to CSV
-distance_df.to_csv(f'goal_distance_comparison_{env_name}.csv', index=False)
-print(f"Goal distance comparison data saved to goal_distance_comparison_{env_name}.csv")
+distance_df.to_csv(f'{output_dir}/goal_distance_comparison_{env_name}.csv', index=False)
+print(f"Goal distance comparison data saved to {output_dir}/goal_distance_comparison_{env_name}.csv")
 
 # Show the plot
 plt.show()

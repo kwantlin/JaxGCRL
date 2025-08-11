@@ -14,6 +14,7 @@ import wandb
 from envs.ant import Ant
 from envs.ant_3d import Ant3D
 from envs.ant_fullobs import AntFullObs
+from envs.ant_posvel import AntPosVel
 from envs.half_cheetah import Halfcheetah
 from envs.reacher import Reacher
 from envs.pusher import Pusher, PusherReacher
@@ -84,14 +85,14 @@ def create_parser():
     parser.add_argument('--use_her', default=False, action="store_true", help="Whether to use HER for SAC")
     parser.add_argument('--visualization_interval', type=int, default=5, help="Number of evals between each visualization of trajectories")
     parser.add_argument('--saved_ckpt_path', type=str, default=None, help="Path to the saved checkpoint")
-    parser.add_argument('--entropy_alpha', type=float, default=1e-5, help="Coefficient for entropy loss in actor")
+    parser.add_argument('--entropy_alpha', type=float, default=1e-6, help="Coefficient for entropy loss in actor")
 
     # GoalGAN parameters
     parser.add_argument('--generator_lr', type=float, default=3e-4, help="Learning rate for generator network")
     parser.add_argument('--discriminator_lr', type=float, default=3e-4, help="Learning rate for discriminator network")
     parser.add_argument('--noise_dim', type=int, default=4, help="Dimension of the noise input for the generator")
     parser.add_argument('--use_generator_for_targets', default=False, action="store_true", help="Whether to use the generator for targets during training")
-    parser.add_argument('--var_post', type=str, default="meanfield_encoded", help="Context encoder inference method")
+    parser.add_argument('--var_post', type=str, default="meanfield", help="Context encoder inference method")
     return parser
 
 
@@ -118,6 +119,8 @@ def create_env(env_name: str, backend: str = None, **kwargs) -> object:
         env = Ant3D(backend=backend or "spring", dense_reward=kwargs.get("use_dense_reward", False))
     elif env_name == "ant_fullobs":
         env = AntFullObs(backend=backend or "spring", dense_reward=kwargs.get("use_dense_reward", False))
+    elif env_name == "ant_posvel":
+        env = AntPosVel(backend=backend or "spring", dense_reward=kwargs.get("use_dense_reward", False))
     elif env_name == "ant_random_start":
         env = Ant(backend=backend or "spring", randomize_start=True)
     elif env_name == "ant_ball":
@@ -214,7 +217,7 @@ def get_env_config(args: argparse.Namespace):
         contain the word 'maze'.
     """
     legal_envs = ["reacher", "cheetah", "pusher_easy", "pusher_hard", "pusher_reacher", "pusher2",
-                  "ant", "ant_3d", "ant_fullobs", "ant_push", "ant_ball", "humanoid", "arm_reach", "arm_grasp",
+                  "ant", "ant_3d", "ant_fullobs", "ant_posvel", "ant_push", "ant_ball", "humanoid", "arm_reach", "arm_grasp",
                   "arm_push_easy", "arm_push_hard", "arm_binpick_easy", "arm_binpick_hard"]
     if args.env_name not in legal_envs and "maze" not in args.env_name:
         raise ValueError(f"Unknown environment: {args.env_name}")

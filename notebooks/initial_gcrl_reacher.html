@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+
+  <head>
+    <title>Brax visualizer</title>
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico">
+  </head>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+    }
+
+    #brax-viewer {
+      height: 480px;
+      margin: 0;
+      padding: 0;
+    }
+  </style>
+  <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.150.1/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.150.1/examples/jsm/",
+        "lilgui": "https://cdn.jsdelivr.net/npm/lil-gui@0.18.0/+esm",
+        "viewer": "https://cdn.jsdelivr.net/gh/google/brax@v0.10.5/brax/visualizer/js/viewer.js"
+      }
+    }
+  </script>
+
+  <script src="https://unpkg.com/pako@2.1.0/dist/pako.min.js"></script>
+
+  <script type="application/javascript">
+  var system = "eJztVlFv0zAQ/itVntfqzmefbV75ASCNt6pC2RpGRZpESSY2qv53zkm6psXZGEwIxBLJsn2X83ef7S+3S8qqTd7Mdkm72WZNm1UygAWAuZglRbrNZJi8q9pNWSR7mco3xZePYb4RwzK5Ktf3kMh86GDotGl9k7XJavT55b3E3QbjTVZum261r2Wdr0OI3YPb+zwtsuSwxmZ9J5NzlHFVdosJqovZoQnx6zIgX+J4/mi8uUofrCdNsDabb9mZNXwnGR7xvE2r5jZ/EtEcFgTdg+gVeOU8dyjA94+1rJ0yTo0ww8KCRWDLHpz2BHpAP5+wjFOChe4XBOMZNGsTXKhHgYRIoNB1k8r0GMSLlGGnf2BAYuMA1Bjl2SB3K8Zzej5D8Ti/SNA0af8uQTAd7PUEzZaT1+v1CMV08TFCeIGKFGnFyouJfDZHO8hfTDpfnIMDOA3kDRkTRzyQsBr+KnD6l4jzASd0mAG21QaMAz5L7y+8QHESonkcmcGfYQb/J2bGF+ey+pzVj7IRP4/PKy/+TLqjjR/qq5Odj6aqfrdyevHUXO/EKC7egT9JLRSXTZu2WV8f3nXtgH/5tMYFjyCvzoKIGzq2ZHtVB+Wkz5osEStgraeDdP7sQCtNKMFEti0dwlhmCtDl1aLgaiLMakRwAC5GUXYxW9F+7ceEh7gowEAukgnK7BEDjLN96ZYH0lrkmz2SAo2eIo6BydW48v5Qp0Xzqay3Xe1+XRZteh2AFbd5vt9/B19Zu0Y=";
+  // decode base64 (convert ascii to binary)
+  system = atob(system);
+  // convert binary string to character-number array
+  system = system.split('').map(function(x){return x.charCodeAt(0);});
+  // decompress
+  system = pako.inflate(system);
+  // convert gunzipped byteArray back to ascii string
+  system = new TextDecoder("utf-8").decode(system);
+  // and load json
+  system = JSON.parse(system);
+  </script>
+
+  <body>
+
+    <div id="brax-viewer"></div>
+
+    <script type="module">
+      import {Viewer} from 'viewer';
+      const domElement = document.getElementById("brax-viewer");
+      var viewer = new Viewer(domElement, system);
+    </script>
+
+  </body>
+
+</html>

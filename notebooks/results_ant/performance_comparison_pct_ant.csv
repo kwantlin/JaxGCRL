@@ -1,0 +1,7 @@
+Method,Mean Difference (%),Std Error (%),Method Type
+CRL Inferred Goal,103150000.0,54275296.0,CRL (Full Tau)
+CRL Mean Field,130500008.0,56077712.0,CRL (MF)
+GoalKDE Inferred Goal,76050008.0,40595520.0,GoalKDE (Full Tau)
+GoalKDE Mean Field,127300000.0,45901064.0,GoalKDE (MF)
+BC Inferred Goal,128350008.0,64036364.0,BC (Full Tau)
+BC Mean Field,42600004.0,42589352.0,BC (MF)

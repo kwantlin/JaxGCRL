@@ -9,7 +9,7 @@ eval "$(conda shell.bash hook)"
 conda activate jaxgcrl
 
 
-# env=ant
+env=ant
 
 # for seed in 1 ; do
 #   XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training_goalkde.py \
@@ -30,6 +30,16 @@ conda activate jaxgcrl
 #     --contrastive_loss_fn infonce_backward --energy_fn l2 \
 #     --train_step_multiplier 1 --log_wandb --var_post meanfield
 #   done
+
+for seed in 1 ; do
+  XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training_goalkde.py \
+    --project_name test --group_name first_run --exp_name ${env}-goalkde-meanfield-encoded --num_evals 50 \
+    --seed ${seed} --num_timesteps 20000000 --batch_size 256 --num_envs 512 \
+    --discounting 0.99 --action_repeat 1 --env_name ${env} \
+    --episode_length 1025 --unroll_length 62  --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 \
+    --contrastive_loss_fn infonce_backward --energy_fn l2 \
+    --train_step_multiplier 1 --log_wandb --var_post meanfield_encoded
+  done
 
 # env=simple_u_maze
 
@@ -119,17 +129,17 @@ conda activate jaxgcrl
 #     --train_step_multiplier 1 --log_wandb --var_post meanfield
 #   done
 
-env=ant_fullobs
+# env=ant_fullobs
 
-for seed in 1 ; do
-  XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training_goalkde.py \
-    --project_name test --group_name first_run --exp_name ${env}-goalkde-meanfield --num_evals 50 \
-    --seed ${seed} --num_timesteps 1200000000 --batch_size 1024 --num_envs 1024 \
-    --discounting 0.99 --action_repeat 1 --env_name ${env} \
-    --episode_length 1025 --unroll_length 62  --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 \
-    --contrastive_loss_fn infonce_backward --energy_fn l2 \
-    --train_step_multiplier 1 --log_wandb --var_post meanfield
-  done
+# for seed in 1 ; do
+#   XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training_goalkde.py \
+#     --project_name test --group_name first_run --exp_name ${env}-goalkde-meanfield-della-48h-nonan --num_evals 2000 \
+#     --seed ${seed} --num_timesteps 12000000000 --batch_size 512 --num_envs 2048 \
+#     --discounting 0.99 --action_repeat 1 --env_name ${env} \
+#     --episode_length 1025 --unroll_length 62  --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 \
+#     --contrastive_loss_fn infonce_backward --energy_fn l2 \
+#     --train_step_multiplier 1 --log_wandb --var_post meanfield
+#   done
 
 
 # echo "All runs have finished."
