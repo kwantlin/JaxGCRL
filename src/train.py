@@ -595,7 +595,7 @@ def context_loss_meanfield_encoded(
     print("sa_pairs_flat", sa_pairs_flat.shape)
     # Context encoder outputs a vector of size 2*latent_dim for each state-action pair
     # (first half is mean, second half is log_std)
-    sa_repr = sa_encoder.apply(sa_encoder_params, sa_pairs_flat)
+    sa_repr = jax.lax.stop_gradient(sa_encoder.apply(training_state.critic_state.params["sa_encoder"], sa_pairs_flat))
     print("sa_repr shape", sa_repr.shape)
     context_output_flat = context_encoder.apply(context_encoder_params, sa_repr)
     

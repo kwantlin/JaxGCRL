@@ -54,11 +54,13 @@ class Net(nn.Module):
         return x
 
 # The brax version of this does not take in the actor and action_distribution arguments; before we pass it to brax evaluator or return it from train(), we do a partial application.
-def make_policy(actor, parametric_action_distribution, params, deterministic=False):
+def make_policy(actor, parametric_action_distribution, backward_repr, actor_params, backward_repr_params, state_dim, deterministic=False):
     def policy(obs, key_sample):
-        print("obs shape", obs.shape)
-        logits = actor.apply(params, obs)
-        print("LOGITS", logits.shape)
+        state = obs[:, :state_dim]
+        goal = obs[:, state_dim:]
+        goal_repr = backward_repr.apply(backward_repr_params, goal)
+        policy_obs = jnp.concatenate([state, goal_repr], axis=-1)
+        logits = actor.apply(actor_params, policy_obs)
         if deterministic:
             action = parametric_action_distribution.mode(logits)
         else:
@@ -128,7 +130,7 @@ def _init_training_state(key, actor, forward_repr, backward_repr, state_dim, goa
 
 def forward_backward_repr_loss(
     forward_params, backward_params, forward_repr, backward_repr, transitions, state_dim, goal_dim, goal_indices, repr_dim, key,
-    training_state, actor,const_std=True, repr_agg='mean', orthonorm_coef=1.0, discount=0.99
+    training_state, actor, parametric_action_distribution, repr_agg='mean', orthonorm_coef=1.0, discount=0.99
 ):
     """
     Compute the forward-backward representation loss, following the structure of ogbench/impls/agents/fb_repr.py.
@@ -136,19 +138,33 @@ def forward_backward_repr_loss(
     states = transitions.observation[:, :state_dim]
     actions = transitions.action
     next_states = transitions.extras["future_state"][:, :state_dim]
+    print("fb: next_states shape", next_states.shape)
+    print("fb: next_states[:, goal_indices] shape", next_states[:, goal_indices].shape)
     goals = transitions.observation[:, state_dim:]
+    print("fb: goals shape", goals.shape)
+    batch_size = states.shape[0]
+    key, key_sample = jax.random.split(key)
+    gaussian_latents = sample_latents(batch_size, repr_dim, key_sample)
+    future_latents = backward_repr.apply(jax.lax.stop_gradient(training_state.fb_repr_state.params[1]), goals)
+    # Generate random coin flips for each batch element
+    key, key_flip = jax.random.split(key)
+    coin_flips = jax.random.bernoulli(key_flip, shape=(batch_size,), p=0.5)
+    
+    # Use coin flips to select between gaussian and future latents
+    latents = jnp.where(
+        coin_flips[:, None],  # Expand dims to match latent shape
+        gaussian_latents,     # If True (p=0.5)
+        future_latents        # If False (p=0.5) 
+    )
+    print("fb: latents shape", latents.shape)
+    
     batch_size = states.shape[0]
     latent_dim = repr_dim
 
-    # Sample latents - we already did this in the actor step
-    latents = goals
-
     # Compute next actions using the actor
     next_dist = actor.apply(jax.lax.stop_gradient(training_state.actor_state.params), jnp.concatenate([next_states, latents], axis=-1))
-    if const_std:
-        next_actions = jnp.clip(next_dist[..., :next_dist.shape[-1] // 2], -1, 1)  # mode
-    else:
-        next_actions = jnp.clip(next_dist[..., :next_dist.shape[-1] // 2], -1, 1)  # fallback to mode if sampling not available
+    key, subkey = jax.random.split(key)
+    next_actions = parametric_action_distribution.sample(next_dist, subkey)
 
     # Compute target forward and backward representations using target params
     if training_state.target_forward_repr_params is not None:
@@ -210,11 +226,14 @@ def forward_backward_repr_loss(
 
     return total_loss, metrics
 
-def actor_loss(actor_params, training_state, actor, forward_repr, parametric_action_distribution, transitions, state_dim, goal_dim, repr_dim, key, entropy_coef=0.1):
+def actor_loss(actor_params, training_state, actor, forward_repr, backward_repr, parametric_action_distribution, transitions, state_dim, goal_dim, repr_dim, key, entropy_coef=0.1):
     """Compute the FB-style actor loss (not IQL)."""
     states = transitions.observation[:, :state_dim]
     goals = transitions.observation[:, state_dim:]
+    print("fb: goals before backward repr", goals.shape)
 
+    goals = jax.lax.stop_gradient(backward_repr.apply(training_state.fb_repr_state.params[1], goals))
+    print("fb: goals after backward repr", goals.shape)
     # Sample actions from the actor
     action_mean_and_SD = actor.apply(actor_params, jnp.concatenate([states, goals], axis=-1))
     actions = parametric_action_distribution.sample(action_mean_and_SD, key)
@@ -330,17 +349,14 @@ def actor_step_latent(env, env_state, actor, parametric_action_distribution, act
         encompassing observation, action, reward, discount, and extra information.
 
     """
-    new_state = jnp.concatenate([env_state.obs[:, :env.state_dim], explore_goal], axis=1)
-    action_mean_and_SD = actor.apply(actor_params, new_state)
+    policy_obs = jnp.concatenate([env_state.obs[:, :env.state_dim], explore_goal], axis=1)
+    action_mean_and_SD = actor.apply(actor_params, policy_obs)
     action = parametric_action_distribution.sample(action_mean_and_SD, key)
-    # env_state.obs = new_state  # This doesn't work with JAX immutability
-    env_state = env_state.replace(obs=new_state)
     nstate = env.step(env_state, action)
-    # print(f"state.pipeline_state shape: {jax.tree_map(lambda x: x.shape, env_state.pipeline_state)}")
-    # print(f"action shape: {jax.tree_map(lambda x: x.shape, action)}")
     state_extras = {x: nstate.info[x] for x in extra_fields}
+    print("fb: policy_obs shape", policy_obs.shape)
     return nstate, Transition(
-        observation=new_state,
+        observation=policy_obs,
         action=action,
         reward=nstate.reward,
         discount=1 - nstate.done,
@@ -360,13 +376,13 @@ def sample_latents(batch_size, latent_dim, key):
 
 def fb_repr_loss_fn(
     params, forward_repr, backward_repr, transitions, state_dim, goal_dim, goal_indices, repr_dim, key,
-    training_state, actor, const_std, repr_agg, orthonorm_coef, discount
+    training_state, actor, parametric_action_distribution, repr_agg, orthonorm_coef, discount
 ):
     forward_params, backward_params = params
     loss, metrics = forward_backward_repr_loss(
         forward_params, backward_params, forward_repr, backward_repr, transitions, state_dim, goal_dim, goal_indices, repr_dim, key, 
         training_state, actor=actor,
-        const_std=const_std,
+        parametric_action_distribution=parametric_action_distribution,
         repr_agg=repr_agg,
         orthonorm_coef=orthonorm_coef,
         discount=discount
@@ -450,7 +466,7 @@ def train(
     state_dim = env.state_dim
     goal_dim = obs_size - state_dim
     
-    dummy_obs = jnp.zeros((obs_size,))
+    dummy_obs = jnp.zeros((state_dim + repr_dim,))
     dummy_action = jnp.zeros((action_size,))
     dummy_extras = {"state_extras": {"truncation": 0.0, "traj_id": 0.0}, "policy_extras": {}}
     dummy_transition = Transition(observation=dummy_obs, action=dummy_action, reward=0.0, discount=0.0, extras=dummy_extras)
@@ -480,6 +496,10 @@ def train(
     training_state = _init_training_state(global_key, actor, forward_repr, backward_repr, state_dim, len(env.goal_indices), env.action_size, repr_dim, episode_length, policy_lr, repr_lr, num_local_devices_to_use)
     del global_key
     
+    # Print backward_repr parameter shapes
+    backward_params = _unpmap(training_state.fb_repr_state.params)[1]
+    print("Backward network parameter shapes:", jax.tree_util.tree_map(lambda x: x.shape, backward_params))
+    
     # Update functions
     
     actor_update = gradients.gradient_update_fn(actor_loss, training_state.actor_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
@@ -505,7 +525,7 @@ def train(
             key_fb,
             training_state,
             actor,
-            True,
+            parametric_action_distribution,
             'mean',
             1.0,
             0.99,
@@ -553,6 +573,7 @@ def train(
             training_state,
             actor,
             forward_repr,
+            backward_repr,
             parametric_action_distribution,
             transitions,
             env.state_dim,
@@ -605,7 +626,7 @@ def train(
         
         return (new_training_state, key), metrics
 
-    def get_experience(actor_params, env_state, buffer_state, key):
+    def get_experience(actor_params, backward_repr_params, env_state, buffer_state, key):
         @jax.jit
         def f(carry, unused_t):
             env_state, current_key = carry
@@ -617,7 +638,8 @@ def train(
         print("fb: env_state.obs.shape", env_state.obs.shape)
         batch_size = env_state.obs.shape[0]
         subkey, sampling_key = jax.random.split(key)
-        backward_reprs_goals = jax.lax.stop_gradient(backward_repr.apply(training_state.fb_repr_state.params[1], env_state.obs[:, state_dim:]))
+        print("fb: goal shape", env_state.obs[:, state_dim:].shape)
+        backward_reprs_goals = jax.lax.stop_gradient(backward_repr.apply(backward_repr_params, env_state.obs[:, state_dim:]))
         print("fb: backward_reprs_goal shape", backward_reprs_goals.shape)
         (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=episode_length)
         buffer_state = replay_buffer.insert(buffer_state, data)
@@ -626,7 +648,7 @@ def train(
     def training_step(training_state, env_state, buffer_state, key):
         # Collect experience
         experience_key, training_key = jax.random.split(key, 2)
-        env_state, buffer_state = get_experience(training_state.actor_state.params, env_state, buffer_state, experience_key)
+        env_state, buffer_state = get_experience(training_state.actor_state.params, training_state.fb_repr_state.params[1], env_state, buffer_state, experience_key)
         training_state = training_state.replace(env_steps=training_state.env_steps + env_steps_per_actor_step)
         
         # Train
@@ -637,7 +659,7 @@ def train(
         def f(carry, unused):
             training_state, env_state, buffer_state, key = carry
             key, new_key = jax.random.split(key)
-            env_state, buffer_state = get_experience(training_state.actor_state.params, env_state, buffer_state, key)
+            env_state, buffer_state = get_experience(training_state.actor_state.params, training_state.fb_repr_state.params[1], env_state, buffer_state, key)
             new_training_state = training_state.replace(env_steps=training_state.env_steps + env_steps_per_actor_step)
             return (new_training_state, env_state, buffer_state, new_key), ()
         return jax.lax.scan(f, (training_state, env_state, buffer_state, key), (), length=num_prefill_actor_steps)[0]
@@ -712,19 +734,21 @@ def train(
 
     # Eval init
     global make_policy
-    make_policy = functools.partial(make_policy, actor, parametric_action_distribution)
-    if not eval_env:
-        eval_env = environment
-    eval_env = wrap_for_training(eval_env, episode_length=episode_length, action_repeat=action_repeat)
-    evaluator = CrlEvaluator(eval_env, functools.partial(make_policy, deterministic=deterministic_eval), num_eval_envs=num_eval_envs,
+    make_policy = functools.partial(make_policy, actor, parametric_action_distribution, backward_repr)
+    evaluator = CrlEvaluator(eval_env, 
+                             functools.partial(make_policy,
+                                               deterministic=deterministic_eval),
+                             num_eval_envs=num_eval_envs,
                              episode_length=episode_length, action_repeat=action_repeat, key=eval_key)
 
     # Run initial eval
     metrics = {}
-    if process_id == 0 and num_evals > 1:
-        metrics = evaluator.run_evaluation(_unpmap(training_state.actor_state.params), training_metrics={})
-        logging.info(metrics)
-        progress_fn(0, metrics, make_policy, _unpmap(training_state.actor_state.params), unwrapped_env)
+    # if process_id == 0 and num_evals > 1:
+    #     # We pass in the actor and backward_repr params to the evaluator
+    #     eval_params = _unpmap((training_state.actor_state.params, training_state.fb_repr_state.params[1]))
+    #     metrics = evaluator.run_evaluation(eval_params, training_metrics={})
+    #     logging.info(metrics)
+    #     progress_fn(0, metrics, make_policy, _unpmap(training_state.actor_state.params), unwrapped_env)
 
     # Collect/train/eval loop
     current_step = 0
@@ -756,9 +780,10 @@ def train(
                 brax.io.model.save_params(path, params)
 
             ## Run evals
-            metrics = evaluator.run_evaluation(_unpmap(training_state.actor_state.params), training_metrics)
-            logging.info(metrics)
-            progress_fn(current_step, metrics, make_policy, _unpmap(training_state.actor_state.params), unwrapped_env)
+            # eval_params = _unpmap((training_state.actor_state.params, training_state.fb_repr_state.params[1]))
+            # metrics = evaluator.run_evaluation(eval_params, training_metrics)
+            # logging.info(metrics)
+            # progress_fn(current_step, metrics, make_policy, _unpmap(training_state.actor_state.params), unwrapped_env)
 
     # Final validity checks
     total_steps = current_step
