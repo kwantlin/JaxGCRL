@@ -29,13 +29,13 @@ from functools import partial
 
 env_name = 'arm_reach'
 # Load standard CRL checkpoint. For expert demos!
-RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-main-standard-numenvs2048-numtimesteps60000000-batchsize1024-della-maxent-gaussianmlp-_s_1'
+RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_arm_reach-main-standard-numenvs2048-numtimesteps12000000000-batchsize1024-16-della-maxent-gaussianmlp-_s_1'
 CKPT_NAME = '/best.pkl'
 params = model.load_params(RUN_FOLDER_PATH + '/ckpt' + CKPT_NAME)
 policy_params, encoders_params, context_params = params
 
 # CRL Mean field checkpoint
-MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-main-meanfield-numenvs2048-numtimesteps60000000-batchsize1024-della-maxent-gaussianmlp-_s_1'
+MEAN_FIELD_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_arm_reach-main-meanfield-numenvs2048-numtimesteps12000000000-batchsize1024-16-della-maxent-gaussianmlp-_s_1'
 MEAN_FIELD_CKPT_NAME = '/best.pkl'
 mean_field_params = model.load_params(MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + MEAN_FIELD_CKPT_NAME)
 _, _, mean_field_context_params = mean_field_params
@@ -48,13 +48,13 @@ _, _, mean_field_context_params = mean_field_params
 # mean_field_encoded_sa_encoder_params, _ = mean_field_encoded_encoder_params['sa_encoder'], mean_field_encoded_encoder_params['g_encoder']
 
 # GoalKDE + CRL
-GOALKDE_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-goalkde-standard-della-maxent-gaussianmlp-_s_1'
+GOALKDE_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_arm_reach-goalkde-standard-16x-della-maxent-gaussianmlp-_s_1'
 GOALKDE_CKPT_NAME = '/best.pkl'
 goalkde_params = model.load_params(GOALKDE_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_CKPT_NAME)
 goalkde_policy_params, goalkde_encoder_params, goalkde_context_params = goalkde_params
 
 # GoalKDE + CRL Mean field
-GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-goalkde-meanfield-della-maxent-gaussianmlp-_s_1'
+GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_arm_reach-goalkde-meanfield-16x-della-maxent-gaussianmlp-_s_1'
 GOALKDE_MEAN_FIELD_CKPT_NAME = '/best.pkl'
 goalkde_mean_field_params = model.load_params(GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_MEAN_FIELD_CKPT_NAME)
 _, _, goalkde_mean_field_context_params = goalkde_mean_field_params
@@ -1377,7 +1377,7 @@ mean_diffs = [
     float(1.0 - bc_reward_diff_inferred_mean/jnp.mean(total_rewards)),
     float(1.0 - nn_expert_reward_diff_mean/jnp.mean(total_rewards)),
     float(1.0 - fb_reward_diff_inferred_mean/jnp.mean(total_rewards)),
-    float(1.0 - mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - reward_diff_inferred_mean/jnp.mean(total_rewards)),
     float(1.0 - goalkde_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
 ]
 
@@ -1385,8 +1385,8 @@ std_errors = [
     float(bc_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     float(nn_expert_reward_diff_stderror/jnp.mean(total_rewards)),
     float(fb_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
-    float(mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
-    float(goalkde_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(bc_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(bc_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     
 ]
 
