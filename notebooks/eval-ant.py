@@ -1377,7 +1377,7 @@ mean_diffs = [
     float(1.0 - bc_reward_diff_inferred_mean/jnp.mean(total_rewards)),
     float(1.0 - nn_expert_reward_diff_mean/jnp.mean(total_rewards)),
     float(1.0 - fb_reward_diff_inferred_mean/jnp.mean(total_rewards)),
-    float(1.0 - reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
     float(1.0 - goalkde_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
 ]
 
@@ -1385,8 +1385,8 @@ std_errors = [
     float(bc_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     float(nn_expert_reward_diff_stderror/jnp.mean(total_rewards)),
     float(fb_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
-    float(bc_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
-    float(bc_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(goalkde_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     
 ]
 

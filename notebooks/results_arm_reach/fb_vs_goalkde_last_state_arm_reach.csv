@@ -1,0 +1,3 @@
+Method,Mean Difference,Std Error,Method Type
+FB + Last State,0.0,0.034585632383823395,FB
+CRL + GoalKDE + Last State,0.24733686447143555,0.028078395873308182,GoalKDE
