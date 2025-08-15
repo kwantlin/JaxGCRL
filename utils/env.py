@@ -354,9 +354,13 @@ def render(make_policy, params, env, exp_dir, exp_name, num_steps):
             env.sys.tree_replace({"opt.timestep": env.dt}), rollout, height=1024
         )
     else:
-        # For non-physics environments, skip rendering
-        logging.info("Skipping rendering for non-physics environment")
-        return
+        # For Sudoku environment, create custom visualization
+        if hasattr(env, 'board_size') and env.board_size == 9:
+            url = create_sudoku_visualization(rollout, env)
+        else:
+            # For other non-physics environments, skip rendering
+            logging.info("Skipping rendering for non-physics environment")
+            return
     with open(os.path.join(exp_dir, f"{exp_name}_{num_steps}.html"), "w") as file:
         file.write(url)
     wandb.log({"render": wandb.Html(url)})
@@ -390,10 +394,296 @@ def render_policy(params, save_path, env, actor, eval_env, vis_length):
     if hasattr(env, 'sys'):
         html_string = html.render(env.sys, rollout_states)
     else:
-        # For non-physics environments, skip rendering
-        logging.info("Skipping policy rendering for non-physics environment")
-        return
+        # For Sudoku environment, create custom visualization
+        if hasattr(env, 'board_size') and env.board_size == 9:
+            html_string = create_sudoku_visualization(rollout_states, env)
+        else:
+            # For other non-physics environments, skip rendering
+            logging.info("Skipping policy rendering for non-physics environment")
+            return
     render_path = f"{save_path}/vis.html"
     with open(render_path, "w") as f:
         f.write(html_string)
     wandb.log({"vis": wandb.Html(html_string)})
+
+
+def create_sudoku_visualization(rollout, env):
+    """Create an HTML visualization for Sudoku puzzle solving."""
+    
+    # Extract board states from rollout
+    board_states = []
+    for state in rollout:
+        # Extract board from pipeline_state.q (first 81 dimensions of 108-dim state)
+        full_state = state.q
+        if len(full_state.shape) == 2:  # If batched
+            full_state = full_state[0]  # Take first batch
+        board_flat = full_state[:81]  # Extract board portion (first 81 dimensions)
+        board = board_flat.reshape(9, 9)
+        board_states.append(board)
+    
+    # Convert board states to JavaScript arrays - properly extract data
+    board_states_js = []
+    for board in board_states:
+        board_js = []
+        for row in range(9):
+            row_js = []
+            for col in range(9):
+                # Convert JAX array to regular Python int
+                row_js.append(int(board[row, col]))
+            board_js.append(row_js)
+        board_states_js.append(board_js)
+    
+    # Create HTML visualization with working styling and functionality
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Sudoku Puzzle Solving Visualization</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .controls { margin: 20px 0; text-align: center; }
+            .controls button { 
+                margin: 0 10px; 
+                padding: 10px 20px; 
+                font-size: 16px; 
+                background: #007bff; 
+                color: white; 
+                border: none; 
+                border-radius: 5px; 
+                cursor: pointer; 
+            }
+            .controls button:hover { background: #0056b3; }
+            .sudoku-grid { 
+                display: inline-block; 
+                border: 3px solid #333; 
+                background: #fff;
+                margin: 20px auto;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            }
+            .sudoku-row { display: flex; }
+            .sudoku-cell { 
+                width: 50px; height: 50px; 
+                border: 1px solid #ccc; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center; 
+                font-weight: bold;
+                font-size: 18px;
+                transition: background-color 0.3s ease;
+            }
+            .sudoku-cell.filled { background-color: #e3f2fd; color: #1976d2; }
+            .sudoku-cell.empty { background-color: #fafafa; color: #ccc; }
+            .step-info { 
+                text-align: center; 
+                margin: 15px 0; 
+                font-size: 20px; 
+                font-weight: bold; 
+                color: #333;
+            }
+            .stats { 
+                display: flex; 
+                justify-content: space-around; 
+                margin: 20px 0; 
+                padding: 15px;
+                background: #f8f9fa;
+                border-radius: 8px;
+            }
+            .stat-item { text-align: center; }
+            .stat-value { font-weight: bold; font-size: 24px; color: #007bff; }
+            .stat-label { font-size: 14px; color: #666; margin-top: 5px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1 style="text-align: center; color: #333;">Sudoku Puzzle Solving Visualization</h1>
+            
+            <div class="controls">
+                <button onclick="prevStep()">← Previous</button>
+                <button onclick="playPause()">▶ Play</button>
+                <button onclick="nextStep()">Next →</button>
+            </div>
+            
+            <div class="step-info" id="stepInfo">Initial State</div>
+            
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="cellsFilled">0</div>
+                    <div class="stat-label">Cells Filled</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="rowsComplete">0</div>
+                    <div class="stat-label">Rows Complete</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="colsComplete">0</div>
+                    <div class="stat-label">Columns Complete</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="squaresComplete">0</div>
+                    <div class="stat-label">Squares Complete</div>
+                </div>
+            </div>
+            
+            <div id="sudokuContainer" style="text-align: center;"></div>
+            
+            <div style="text-align: center; margin-top: 20px; color: #666;">
+                Step <span id="stepCounter">1</span> of <span id="totalSteps">""" + str(len(board_states_js)) + """</span>
+            </div>
+        </div>
+        
+        <script>
+            // Board data - properly extracted and converted
+            const boardStates = """ + str(board_states_js) + """;
+            let currentStep = 0;
+            let isPlaying = false;
+            let playInterval;
+            
+            function renderBoard(board) {
+                const container = document.getElementById('sudokuContainer');
+                container.innerHTML = '';
+                
+                const grid = document.createElement('div');
+                grid.className = 'sudoku-grid';
+                
+                for (let i = 0; i < 9; i++) {
+                    const row = document.createElement('div');
+                    row.className = 'sudoku-row';
+                    
+                    for (let j = 0; j < 9; j++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'sudoku-cell';
+                        
+                        const value = board[i][j];
+                        if (value === 0) {
+                            cell.textContent = '';
+                            cell.className += ' empty';
+                        } else {
+                            cell.textContent = value;
+                            cell.className += ' filled';
+                        }
+                        
+                        // Add thicker borders for 3x3 sub-grids
+                        if (i % 3 === 0) cell.style.borderTop = '2px solid #333';
+                        if (i === 8) cell.style.borderBottom = '2px solid #333';
+                        if (j % 3 === 0) cell.style.borderLeft = '2px solid #333';
+                        if (j === 8) cell.style.borderRight = '2px solid #333';
+                        
+                        row.appendChild(cell);
+                    }
+                    grid.appendChild(row);
+                }
+                
+                container.appendChild(grid);
+            }
+            
+            function updateStats(board) {
+                // Count filled cells
+                let filled = 0;
+                for (let i = 0; i < 9; i++) {
+                    for (let j = 0; j < 9; j++) {
+                        if (board[i][j] !== 0) filled++;
+                    }
+                }
+                
+                // Count complete rows
+                let rowsComplete = 0;
+                for (let i = 0; i < 9; i++) {
+                    const row = board[i];
+                    const unique = new Set(row.filter(x => x !== 0));
+                    if (unique.size === 9) rowsComplete++;
+                }
+                
+                // Count complete columns
+                let colsComplete = 0;
+                for (let j = 0; j < 9; j++) {
+                    const col = [board[0][j], board[1][j], board[2][j], board[3][j], 
+                                board[4][j], board[5][j], board[6][j], board[7][j], board[8][j]];
+                    const unique = new Set(col.filter(x => x !== 0));
+                    if (unique.size === 9) colsComplete++;
+                }
+                
+                // Count complete 3x3 squares
+                let squaresComplete = 0;
+                for (let block = 0; block < 9; block++) {
+                    const blockRow = Math.floor(block / 3) * 3;
+                    const blockCol = (block % 3) * 3;
+                    const square = [];
+                    for (let i = 0; i < 3; i++) {
+                        for (let j = 0; j < 3; j++) {
+                            square.push(board[blockRow + i][blockCol + j]);
+                        }
+                    }
+                    const unique = new Set(square.filter(x => x !== 0));
+                    if (unique.size === 9) squaresComplete++;
+                }
+                
+                document.getElementById('cellsFilled').textContent = filled;
+                document.getElementById('rowsComplete').textContent = rowsComplete;
+                document.getElementById('colsComplete').textContent = colsComplete;
+                document.getElementById('squaresComplete').textContent = squaresComplete;
+            }
+            
+            function updateStep() {
+                const board = boardStates[currentStep];
+                renderBoard(board);
+                updateStats(board);
+                
+                document.getElementById('stepCounter').textContent = currentStep + 1;
+                document.getElementById('totalSteps').textContent = boardStates.length;
+                
+                const stepInfo = document.getElementById('stepInfo');
+                if (currentStep === 0) {
+                    stepInfo.textContent = 'Initial State';
+                } else if (currentStep === boardStates.length - 1) {
+                    stepInfo.textContent = 'Final State';
+                } else {
+                    stepInfo.textContent = `Step ${currentStep}`;
+                }
+            }
+            
+            function nextStep() {
+                if (currentStep < boardStates.length - 1) {
+                    currentStep++;
+                    updateStep();
+                }
+            }
+            
+            function prevStep() {
+                if (currentStep > 0) {
+                    currentStep--;
+                    updateStep();
+                }
+            }
+            
+            function playPause() {
+                const button = event.target;
+                if (isPlaying) {
+                    clearInterval(playInterval);
+                    isPlaying = false;
+                    button.textContent = '▶ Play';
+                } else {
+                    isPlaying = true;
+                    button.textContent = '⏸ Pause';
+                    playInterval = setInterval(() => {
+                        if (currentStep < boardStates.length - 1) {
+                            nextStep();
+                        } else {
+                            clearInterval(playInterval);
+                            isPlaying = false;
+                            button.textContent = '▶ Play';
+                        }
+                    }, 1000); // 1 second between steps
+                }
+            }
+            
+            // Initialize
+            updateStep();
+            console.log('Sudoku visualization loaded with', boardStates.length, 'states');
+            console.log('First board state:', boardStates[0]);
+        </script>
+    </body>
+    </html>
+    """
+    
+    return html_content

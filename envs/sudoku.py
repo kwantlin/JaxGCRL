@@ -56,8 +56,8 @@ class Sudoku:
         self.board_size = 9
         self.action_space_size = 81 * 9  # 81 cells * 9 possible numbers
         self.action_size = 81 * 9  # 81 cells * 9 possible numbers
-        self.state_dim = 81  # just the board
-        self.observation_size = 81 + 27  # board + goal indicators (no diagonals)
+        self.state_dim = 108  # 81 board + 27 goal indicators
+        self.observation_size = 135  # state (108) + goal (27)
         self.goal_indices = jnp.arange(81, 108)  # indices 81-107 are goal indicators
         self.goal_reach_thresh = 0.5
         
@@ -121,27 +121,37 @@ class Sudoku:
         # Store the solution in the state info for validation
         info = {"solution": solution}
         
-        # Create pipeline_state with board in q (following ant.py pattern)
-        q = board.flatten()  # 81 values for the board
-        qd = jnp.zeros(81, dtype=jnp.float32)  # No velocities needed for Sudoku
+        # Calculate completion indicators
+        completion_indicators = self._calculate_goal_indicators(board)
+        
+        # Create full state: board (81) + completion indicators (27) = 108
+        full_state = jnp.concatenate([board.flatten(), completion_indicators])
+        
+        # Create pipeline_state with full state in q (following ant.py pattern)
+        q = full_state  # 108 values: board + completion indicators
+        qd = jnp.zeros(108, dtype=jnp.float32)  # No velocities needed for Sudoku
         pipeline_state = self.pipeline_init(q, qd)
         
-        # Calculate goal indicators
-        goal_indicators = self._calculate_goal_indicators(board)
+        # Get observation using _get_obs method (following ant.py pattern)
+        obs = self._get_obs(pipeline_state)
         
-        # Combine board and goal indicators
-        obs = jnp.concatenate([board.flatten(), goal_indicators])
+        # Calculate initial metrics
+        cells_filled = jnp.sum(board != 0)
+        total_cells = 81
+        completion_ratio = cells_filled / total_cells
         
-        # Initialize metrics
-        reward, done, zero = jnp.zeros(3)
         metrics = {
-            "cells_filled": zero,
-            "rows_complete": zero,
-            "cols_complete": zero,
-            "squares_complete": zero,
-            "success_easy": zero,
-            "success": zero,
+            "cells_filled": jnp.array(completion_ratio, dtype=float),
+            "rows_complete": jnp.array(self._count_complete_rows(board) / 9.0, dtype=float),
+            "cols_complete": jnp.array(self._count_complete_cols(board) / 9.0, dtype=float),
+            "squares_complete": jnp.array(self._count_complete_squares(board) / 9.0, dtype=float),
+            "success_easy": jnp.array(completion_ratio >= 0.5, dtype=float),
+            "success": jnp.array(0.0, dtype=float),  # No success at start
         }
+        
+        # Initialize reward and done for reset
+        reward = jnp.array(0.0, dtype=float)
+        done = jnp.array(0.0, dtype=float)
         
         state = State(pipeline_state, obs, reward, done, metrics, info=info)
         return state
@@ -156,8 +166,11 @@ class Sudoku:
         row = jnp.array(cell_idx // 9, dtype=jnp.int32)
         col = jnp.array(cell_idx % 9, dtype=jnp.int32)
         
-        # Get current board from pipeline_state.q (following ant.py pattern)
-        board_flat = state.pipeline_state.q  # Shape: (81,) or (batch_size, 81)
+        # Get current full state from pipeline_state.q (following ant.py pattern)
+        full_state = state.pipeline_state.q  # Shape: (108,) or (batch_size, 108)
+        
+        # Extract board from first 81 dimensions of full state
+        board_flat = full_state[..., :81]  # Shape: (81,) or (batch_size, 81)
         board = board_flat.reshape(-1, 9, 9)  # Shape: (9, 9) or (batch_size, 9, 9)
         
         # Check if the move is valid (with debugging)
@@ -186,16 +199,19 @@ class Sudoku:
         # Flatten the board back
         new_board_flat = board.flatten()
         
-        # Update pipeline_state with new board (following ant.py pattern)
-        new_q = new_board_flat
+        # Recalculate completion indicators
+        new_completion_indicators = self._calculate_goal_indicators(board)
+        
+        # Create new full state: board (81) + completion indicators (27) = 108
+        new_full_state = jnp.concatenate([new_board_flat, new_completion_indicators])
+        
+        # Update pipeline_state with new full state (following ant.py pattern)
+        new_q = new_full_state
         new_qd = jnp.zeros_like(new_q, dtype=jnp.float32)  # Keep velocities as zeros
         pipeline_state = state.pipeline_state.replace(q=new_q, qd=new_qd)
         
-        # Calculate new goal indicators
-        goal_indicators = self._calculate_goal_indicators(board)
-        
-        # Create new observation
-        obs = jnp.concatenate([new_board_flat, goal_indicators])
+        # Get new observation using _get_obs method (following ant.py pattern)
+        obs = self._get_obs(pipeline_state)
         
         # Calculate reward and success
         cells_filled = jnp.sum(board != 0)
@@ -241,9 +257,46 @@ class Sudoku:
         )
     
     def _is_valid_move(self, board, row, col, number):
-        """Check if placing 'number' at (row, col) is valid."""
-        # Understanding: This is called with a single board and vectors of row/col/number
-        # The vmap is over the action space, not over multiple environments
+        """Check if a move is valid for the given board."""
+        # Handle both scalar and vectorized inputs
+        if row.ndim == 0:  # Scalar input (from step method)
+            return self._is_valid_move_scalar(board, row, col, number)
+        else:  # Vectorized input (from vmap)
+            return self._is_valid_move_vectorized(board, row, col, number)
+    
+    def _is_valid_move_scalar(self, board, row, col, number):
+        """Check if a single move is valid (scalar version)."""
+        # Remove the batch dimension from board if it exists
+        if len(board.shape) == 3 and board.shape[0] == 1:
+            board = board[0]  # Shape: (9, 9)
+        
+        # Check if cell is already filled
+        if board[row, col] != 0:
+            return False
+        
+        # Check row
+        row_values = board[row, :]
+        if jnp.any(row_values == number):
+            return False
+        
+        # Check column
+        col_values = board[:, col]
+        if jnp.any(col_values == number):
+            return False
+        
+        # Check 3x3 sub-square
+        sub_row_start = 3 * (row // 3)
+        sub_col_start = 3 * (col // 3)
+        sub_square = board[sub_row_start:sub_row_start+3, sub_col_start:sub_col_start+3]
+        if jnp.any(sub_square == number):
+            return False
+        
+        return True
+    
+    def _is_valid_move_vectorized(self, board, row, col, number):
+        """Check if moves are valid for the given board (vectorized version)."""
+        # Understanding: This is called with a single board and vectorized row/col/number
+        # The vmap is over the action space (729 possible actions)
         
         # Remove the batch dimension from board if it exists
         if len(board.shape) == 3 and board.shape[0] == 1:
@@ -314,9 +367,13 @@ class Sudoku:
         
         # Step 2: Check all columns
         # Sort each column and check if it equals [1,2,3,4,5,6,7,8,9]
-        col_sorted = jnp.sort(board, axis=0)  # Sort each column
-        cols_valid = jnp.all(col_sorted == expected, axis=0)  # Check each column
-        all_cols_valid = jnp.all(cols_valid)  # All columns must be valid
+        cols_valid = jnp.array(True, dtype=jnp.bool_)
+        for col in range(9):
+            col_values = board[:, col]
+            col_sorted = jnp.sort(col_values)
+            col_valid = jnp.array_equal(col_sorted, expected)
+            cols_valid = jnp.logical_and(cols_valid, col_valid)
+        all_cols_valid = cols_valid
         
         # Step 3: Check all 3x3 sub-squares
         # Check each 3x3 sub-square
@@ -339,6 +396,10 @@ class Sudoku:
     
     def _calculate_goal_indicators(self, board):
         """Calculate completion indicators for rows, columns, and 3x3 squares."""
+        # Handle batched input by removing batch dimension if present
+        if len(board.shape) == 3:
+            board = board[0]  # Take first batch element
+        
         indicators = []
         
         # Row completion indicators (9 values)
@@ -377,11 +438,10 @@ class Sudoku:
         row_complete = jnp.zeros(9, dtype=jnp.bool_)
         for row in range(9):
             row_values = board[row, :]
+            is_filled = jnp.all(row_values != 0)
+            is_valid = jnp.array_equal(jnp.sort(row_values), jnp.arange(1, 10))
             row_complete = row_complete.at[row].set(
-                jnp.logical_and(
-                    jnp.all(row_values != 0),
-                    jnp.array_equal(jnp.sort(row_values), jnp.arange(1, 10))
-                )
+                jnp.logical_and(is_filled, is_valid)
             )
         return jnp.sum(row_complete)
     
@@ -391,11 +451,10 @@ class Sudoku:
         col_complete = jnp.zeros(9, dtype=jnp.bool_)
         for col in range(9):
             col_values = board[:, col]
+            is_filled = jnp.all(col_values != 0)
+            is_valid = jnp.array_equal(jnp.sort(col_values), jnp.arange(1, 10))
             col_complete = col_complete.at[col].set(
-                jnp.logical_and(
-                    jnp.all(col_values != 0),
-                    jnp.array_equal(jnp.sort(col_values), jnp.arange(1, 10))
-                )
+                jnp.logical_and(is_filled, is_valid)
             )
         return jnp.sum(col_complete)
     
@@ -407,18 +466,25 @@ class Sudoku:
         for i in range(3):
             for j in range(3):
                 sub_square = board[3*i:3*i+3, 3*j:3*j+3].flatten()
+                is_filled = jnp.all(sub_square != 0)
+                is_valid = jnp.array_equal(jnp.sort(sub_square), jnp.arange(1, 10))
                 square_complete = square_complete.at[square_idx].set(
-                    jnp.logical_and(
-                        jnp.all(sub_square != 0),
-                        jnp.array_equal(jnp.sort(sub_square), jnp.arange(1, 10))
-                    )
+                    jnp.logical_and(is_filled, is_valid)
                 )
                 square_idx += 1
         return jnp.sum(square_complete)
     
-    def get_obs(self, state: State) -> jax.Array:
-        """Get the observation from the state."""
-        return state.obs
+    def _get_obs(self, pipeline_state: base.State) -> jax.Array:
+        """Get observation from pipeline state (following ant.py pattern)."""
+        # Extract full state from pipeline_state.q (108 dimensions)
+        full_state = pipeline_state.q  # Shape: (108,) or (batch_size, 108)
+        
+        # The goal is always 27 ones (all rows, cols, squares complete)
+        goal = jnp.ones(27, dtype=jnp.float32)  # Always 27 ones for solved Sudoku
+        
+        # Combine state and goal: state (108) + goal (27) = 135
+        obs = jnp.concatenate([full_state, goal])
+        return obs
     
     def pipeline_init(self, q: jax.Array, qd: jax.Array) -> base.State:
         """Initialize pipeline state (not used in discrete environment)."""

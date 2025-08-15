@@ -41,12 +41,12 @@ conda activate jaxgcrlsudoku
 
 
 XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python main.py crl \
-    --wandb_project_name test --wandb_group first_run --exp_name ${env}_${seed}_${train_step_multiplier}_${notes} --num_evals ${num_evals} \
+    --wandb_project_name sudoku-bmm --wandb_group first_run --exp_name ${env}_${seed}_${num_timesteps}_${batch_size}_${num_envs}_${train_step_multiplier}_${notes} --num_evals ${num_evals} \
     --seed ${seed} --total_env_steps ${num_timesteps} --batch_size ${batch_size} --num_envs ${num_envs} \
     --discounting 0.99 --action_repeat 1 --env ${env} \
     --episode_length ${episode_length} --unroll_length ${episode_length} --min_replay_size 1000 --max_replay_size 10000 \
     --contrastive_loss_fn bwd_infonce --energy_fn norm \
-    --train_step_multiplier ${train_step_multiplier} --log_wandb
+    --train_step_multiplier ${train_step_multiplier}
 EOF
 
     # Submit the job and run in background
@@ -62,11 +62,11 @@ EOF
 # submit_job $env 5 800000000 256 512 50 64 "largenet"
 
 env=sudoku
-submit_job $env 1 800000000 256 2048 50 64 81 "largenet" 
-submit_job $env 2 800000000 256 2048 50 64 81 "largenet"
-submit_job $env 3 800000000 256 2048 50 64 81 "largenet"
-submit_job $env 4 800000000 256 2048 50 64 81 "largenet"
-submit_job $env 5 800000000 256 2048 50 64 81 "largenet"
+submit_job $env 1 800000000 256 512 50 4 81 "largenet" 
+submit_job $env 2 800000000 256 512 50 4 81 "largenet"
+submit_job $env 3 800000000 256 512 50 4 81 "largenet"
+submit_job $env 4 800000000 256 512 50 4 81 "largenet"
+submit_job $env 5 800000000 256 512 50 4 81 "largenet"
 
 
 wait
