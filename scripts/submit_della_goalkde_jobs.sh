@@ -78,14 +78,14 @@ env=pusher_easy
 submit_job $env 1 standard 60000000 256 512 
 submit_job $env 2 standard 60000000 256 512 
 submit_job $env 3 standard 60000000 256 512 
-submit_job $env 4 standard 60000000 256 512 
-submit_job $env 5 standard 60000000 256 512 
+# submit_job $env 4 standard 60000000 256 512 
+# submit_job $env 5 standard 60000000 256 512 
 
 submit_job $env 1 meanfield 60000000 256 512 
 submit_job $env 2 meanfield 60000000 256 512 
 submit_job $env 3 meanfield 60000000 256 512 
-submit_job $env 4 meanfield 60000000 256 512 
-submit_job $env 5 meanfield 60000000 256 512 
+# submit_job $env 4 meanfield 60000000 256 512 
+# submit_job $env 5 meanfield 60000000 256 512 
 
 # submit_job $env 1 meanfield_encoded 60000000 256 512 
 
