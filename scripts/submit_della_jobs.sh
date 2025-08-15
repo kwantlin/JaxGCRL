@@ -8,7 +8,7 @@ submit_job() {
     local num_timesteps=$4
     local batch_size=$5
     local num_envs=$6
-    local num_evals=$7
+    local num_evals=${7:-50}
     local train_step_multiplier=${8:-1}
     local notes=${9:-""}
 
@@ -69,10 +69,17 @@ env=reacher
 # submit_job $env 1 meanfield_encoded 20000000 1024 256 50
 
 env=pusher_easy
-# submit_job $env 1 standard 60000000 1024 1024 100
-# submit_job $env 2 standard 60000000 1024 1024 100
-# submit_job $env 3 standard 60000000 1024 1024 100
-# submit_job $env 4 standard 60000000 1024 1024 100
+submit_job $env 1 standard 60000000 256 512 
+submit_job $env 2 standard 60000000 256 512 
+submit_job $env 3 standard 60000000 256 512 
+submit_job $env 4 standard 60000000 256 512 
+submit_job $env 5 standard 60000000 256 512 
+
+submit_job $env 1 meanfield 60000000 256 512 
+submit_job $env 2 meanfield 60000000 256 512 
+submit_job $env 3 meanfield 60000000 256 512 
+submit_job $env 4 meanfield 60000000 256 512 
+submit_job $env 5 meanfield 60000000 256 512 
 
 # submit_job $env 1 standard 60000000 1024 2048 100
 # submit_job $env 2 standard 60000000 1024 2048 100
@@ -99,10 +106,10 @@ env=pusher_easy
 # submit_job $env 4 meanfield_encoded 60000000 1024 1024 100
 # submit_job $env 5 meanfield_encoded 60000000 1024 1024 100
 
-env=arm_reach
-submit_job $env 1 standard 12000000000 1024 2048 1000 8
-submit_job $env 1 meanfield 12000000000 1024 2048 1000 8
-submit_job $env 1 meanfield_encoded 12000000000 1024 2048 1000 8
+# env=arm_reach
+# submit_job $env 1 standard 12000000000 1024 2048 1000 8
+# submit_job $env 1 meanfield 12000000000 1024 2048 1000 8
+# submit_job $env 1 meanfield_encoded 12000000000 1024 2048 1000 8
 
 
 # env=ant_fullobs
