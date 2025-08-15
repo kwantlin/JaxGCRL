@@ -128,6 +128,22 @@ class ActorEvaluator:
             # (np.min, "_min"),
         ]
 
+        desired_names = [
+            "reward",
+            "success",
+            "success_easy",
+            "dist",
+            "distance_from_origin",
+            # Sudoku-specific metrics
+            "cells_filled",
+            "rows_complete",
+            "cols_complete",
+            "squares_complete",
+        ]
+        available_names = [
+            name for name in desired_names if name in eval_metrics.episode_metrics
+        ]
+
         for fn, suffix in aggregating_fns:
             metrics.update(
                 {
@@ -136,13 +152,7 @@ class ActorEvaluator:
                         if aggregate_episodes
                         else eval_metrics.episode_metrics[name]
                     )
-                    for name in [
-                        "reward",
-                        "success",
-                        "success_easy",
-                        "dist",
-                        "distance_from_origin",
-                    ]
+                    for name in available_names
                 }
             )
 

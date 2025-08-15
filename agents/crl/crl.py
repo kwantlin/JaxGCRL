@@ -53,7 +53,7 @@ class Transition(NamedTuple):
 @functools.partial(jax.jit, static_argnames=("buffer_config"))
 def flatten_batch(buffer_config, transition, sample_key):
 
-    gamma, state_size, goal_indices = buffer_config
+    gamma, state_size, goal_indices, repetition_factor = buffer_config
 
     # Because it's vmaped transition.obs.shape is of shape (episode_len, obs_dim)
     seq_len = transition.observation.shape[0]
@@ -169,6 +169,9 @@ class CRL:
     # layer norm
     use_ln: bool = False
 
+    # CR²: repetition factor for trajectory sampling
+    repetition_factor: int = 1  # 1 = normal CRL, >1 = CR²
+
     contrastive_loss_fn: Literal[
         "fwd_infonce", "sym_infonce", "bwd_infonce", "binary_nce"
     ] = "fwd_infonce"
@@ -183,6 +186,12 @@ class CRL:
         assert (
             config.num_envs * (config.episode_length - 1) % self.batch_size == 0
         ), "num_envs * (episode_length - 1) must be divisible by batch_size"
+        
+        # Validate repetition factor
+        assert self.repetition_factor >= 1, "repetition_factor must be >= 1"
+        assert self.batch_size % self.repetition_factor == 0, (
+            f"batch_size ({self.batch_size}) must be divisible by repetition_factor ({self.repetition_factor})"
+        )
 
     def train_fn(
         self,
@@ -235,6 +244,13 @@ class CRL:
             "num_training_steps_per_epoch: %d",
             num_training_steps_per_epoch,
         )
+        
+        # Log CR² configuration
+        if self.repetition_factor > 1:
+            logging.info("Using CR² with repetition_factor: %d", self.repetition_factor)
+            logging.info("Unique trajectories per batch: %d", self.batch_size // self.repetition_factor)
+        else:
+            logging.info("Using standard CRL (repetition_factor: 1)")
 
         random.seed(config.seed)
         np.random.seed(config.seed)
@@ -429,6 +445,40 @@ class CRL:
                 length=num_prefill_actor_steps,
             )[0]
 
+        def sample_with_repetition(buffer_state, sampling_key):
+            """Sample from replay buffer with CR² repetition logic."""
+            if self.repetition_factor == 1:
+                # Normal CRL: sample normally
+                return replay_buffer.sample(buffer_state)
+            else:
+                # CR²: sample fewer unique trajectories and repeat them
+                # First, sample normally to get the structure
+                buffer_state, transitions = replay_buffer.sample(buffer_state)
+                
+                # Calculate how many unique trajectories we need
+                num_unique_trajectories = transitions.observation.shape[0] // self.repetition_factor
+                
+                # Sample only the unique trajectories
+                unique_indices = jax.random.choice(
+                    sampling_key, 
+                    jnp.arange(transitions.observation.shape[0]), 
+                    shape=(num_unique_trajectories,), 
+                    replace=False
+                )
+                
+                # Extract unique trajectories
+                unique_transitions = jax.tree_util.tree_map(
+                    lambda x: x[unique_indices], transitions
+                )
+                
+                # Repeat the unique trajectories
+                repeated_transitions = jax.tree_util.tree_map(
+                    lambda x: jnp.repeat(x, self.repetition_factor, axis=0),
+                    unique_transitions
+                )
+                
+                return buffer_state, repeated_transitions
+
         @jax.jit
         def update_networks(carry, transitions):
             training_state, key = carry
@@ -488,15 +538,15 @@ class CRL:
                 env_steps=training_state.env_steps + env_steps_per_actor_step,
             )
 
-            # sample actor-step worth of transitions
-            buffer_state, transitions = replay_buffer.sample(buffer_state)
+            # sample actor-step worth of transitions with CR² logic
+            buffer_state, transitions = sample_with_repetition(buffer_state, sampling_key)
 
             # process transitions for training
             batch_keys = jax.random.split(
                 sampling_key, transitions.observation.shape[0]
             )
             transitions = jax.vmap(flatten_batch, in_axes=(None, 0, 0))(
-                (self.discounting, state_size, tuple(train_env.goal_indices)),
+                (self.discounting, state_size, tuple(train_env.goal_indices), self.repetition_factor),
                 transitions,
                 batch_keys,
             )

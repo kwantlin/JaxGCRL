@@ -52,7 +52,7 @@ def main(config: Config):
         group=config.run.wandb_group,
         name=config.run.exp_name,
         config=info,
-        mode="online" if config.run.log_wandb else "disabled",
+        mode="offline" if config.run.log_wandb else "disabled",
     )
 
     env = create_env(env_name=config.run.env, backend=config.run.backend)
@@ -61,8 +61,8 @@ def main(config: Config):
     else:
         eval_env = env
 
-    os.makedirs("./runs", exist_ok=True)
-    run_dir = f"./runs/run_{config.run.exp_name}_s_{config.run.seed}"
+    os.makedirs("/scratch/gpfs/kw2960/JaxGCRL", exist_ok=True)
+    run_dir = f"/scratch/gpfs/kw2960/JaxGCRL/runs/run_{config.run.exp_name}_s_{config.run.seed}"
     ckpt_dir = run_dir + "/ckpt"
     os.makedirs(run_dir, exist_ok=True)
     os.makedirs(ckpt_dir, exist_ok=True)
@@ -80,6 +80,12 @@ def main(config: Config):
         "eval/episode_success_any",
         "eval/episode_success_easy",
         "eval/episode_success_hard",
+        # Sudoku-specific metrics
+        "eval/episode_cells_filled",
+        "eval/episode_rows_complete",
+        "eval/episode_cols_complete",
+        "eval/episode_squares_complete",
+        # the rest are the same as the original
         "training/actor_loss",
         "training/log_alpha",
         "training/alpha_loss",

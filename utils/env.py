@@ -32,6 +32,7 @@ from envs.pusher import Pusher, PusherReacher
 from envs.pusher2 import Pusher2
 from envs.reacher import Reacher
 from envs.simple_maze import SimpleMaze
+from envs.sudoku import Sudoku
 
 legal_envs = (
     "ant",
@@ -61,6 +62,7 @@ legal_envs = (
     "simple_u_maze",
     "simple_big_maze",
     "simple_hardest_maze",
+    "sudoku",
 )
 
 
@@ -131,6 +133,19 @@ def create_env(env_name: str, backend: str = None, **kwargs) -> object:
         env = ArmBinpickEasy(backend=backend or "mjx")
     elif env_name == "arm_binpick_hard":
         env = ArmBinpickHard(backend=backend or "mjx")
+    elif env_name == "sudoku":
+        # Extract Sudoku-specific parameters from kwargs
+        avg_rank = kwargs.get('avg_rank', 150)  # Default to medium difficulty
+        use_gaussian_scores = kwargs.get('use_gaussian_scores', True)
+        score_mean = kwargs.get('score_mean', 500)
+        score_std = kwargs.get('score_std', 150)
+        
+        env = Sudoku(
+            avg_rank=avg_rank,
+            use_gaussian_scores=use_gaussian_scores,
+            score_mean=score_mean,
+            score_std=score_std
+        )
     else:
         raise ValueError(f"Unknown environment: {env_name}")
     return env
