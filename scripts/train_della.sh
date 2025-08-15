@@ -36,7 +36,7 @@ submit_job() {
 #SBATCH --error=logs/della_${env}_main_${seed}_${sanitized_notes}_${num_timesteps}_${batch_size}_${num_envs}_${num_evals}_${train_step_multiplier}.err
 
 eval "\$(conda shell.bash hook)"
-conda activate jaxgcrl
+conda activate jaxgcrlsudoku
 
 
 

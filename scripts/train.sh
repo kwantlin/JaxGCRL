@@ -6,7 +6,7 @@
 # NOTE: If you run into OOM issues, try reducing --num_envs
 
 eval "$(conda shell.bash hook)"
-conda activate jaxgcrl
+conda activate jaxgcrlsudoku
 
 method=crl
 env=sudoku
