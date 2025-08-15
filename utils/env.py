@@ -134,18 +134,8 @@ def create_env(env_name: str, backend: str = None, **kwargs) -> object:
     elif env_name == "arm_binpick_hard":
         env = ArmBinpickHard(backend=backend or "mjx")
     elif env_name == "sudoku":
-        # Extract Sudoku-specific parameters from kwargs
-        avg_rank = kwargs.get('avg_rank', 150)  # Default to medium difficulty
-        use_gaussian_scores = kwargs.get('use_gaussian_scores', True)
-        score_mean = kwargs.get('score_mean', 500)
-        score_std = kwargs.get('score_std', 150)
-        
-        env = Sudoku(
-            avg_rank=avg_rank,
-            use_gaussian_scores=use_gaussian_scores,
-            score_mean=score_mean,
-            score_std=score_std
-        )
+        # Create Sudoku environment using the dataset
+        env = Sudoku()
     else:
         raise ValueError(f"Unknown environment: {env_name}")
     return env
@@ -358,9 +348,15 @@ def render(make_policy, params, env, exp_dir, exp_name, num_steps):
             key, subkey = jax.random.split(key)
             state = jit_env_reset(rng=subkey)
 
-    url = html.render(
-        env.sys.tree_replace({"opt.timestep": env.dt}), rollout, height=1024
-    )
+    # Handle non-physics environments (like Sudoku) that don't have sys attribute
+    if hasattr(env, 'sys'):
+        url = html.render(
+            env.sys.tree_replace({"opt.timestep": env.dt}), rollout, height=1024
+        )
+    else:
+        # For non-physics environments, skip rendering
+        logging.info("Skipping rendering for non-physics environment")
+        return
     with open(os.path.join(exp_dir, f"{exp_name}_{num_steps}.html"), "w") as file:
         file.write(url)
     wandb.log({"render": wandb.Html(url)})
@@ -391,7 +387,12 @@ def render_policy(params, save_path, env, actor, eval_env, vis_length):
             rollout_states.append(current_state.pipeline_state)
 
     # Render and save
-    html_string = html.render(env.sys, rollout_states)
+    if hasattr(env, 'sys'):
+        html_string = html.render(env.sys, rollout_states)
+    else:
+        # For non-physics environments, skip rendering
+        logging.info("Skipping policy rendering for non-physics environment")
+        return
     render_path = f"{save_path}/vis.html"
     with open(render_path, "w") as f:
         f.write(html_string)
