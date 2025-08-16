@@ -29,13 +29,13 @@ from functools import partial
 
 env_name = 'pusher_easy'
 # Load standard CRL checkpoint. For expert demos!
-RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-main-standard-numenvs2048-numtimesteps60000000-batchsize1024-della-maxent-gaussianmlp-_s_1'
+RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-main-standard-numenvs512-numtimesteps60000000-batchsize256-1-della-maxent-gaussianmlp-_s_2'
 CKPT_NAME = '/best.pkl'
 params = model.load_params(RUN_FOLDER_PATH + '/ckpt' + CKPT_NAME)
 policy_params, encoders_params, context_params = params
 
 # CRL Mean field checkpoint
-MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-main-meanfield-numenvs2048-numtimesteps60000000-batchsize1024-della-maxent-gaussianmlp-_s_4'
+MEAN_FIELD_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-main-meanfield-numenvs512-numtimesteps60000000-batchsize256-1-della-maxent-gaussianmlp-_s_3'
 MEAN_FIELD_CKPT_NAME = '/best.pkl'
 mean_field_params = model.load_params(MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + MEAN_FIELD_CKPT_NAME)
 _, _, mean_field_context_params = mean_field_params
@@ -48,13 +48,13 @@ _, _, mean_field_context_params = mean_field_params
 # mean_field_encoded_sa_encoder_params, _ = mean_field_encoded_encoder_params['sa_encoder'], mean_field_encoded_encoder_params['g_encoder']
 
 # GoalKDE + CRL
-GOALKDE_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-goalkde-standard-della-maxent-gaussianmlp_s_1'
+GOALKDE_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-goalkde-standard-1x-della-maxent-gaussianmlp-_s_1'
 GOALKDE_CKPT_NAME = '/best.pkl'
 goalkde_params = model.load_params(GOALKDE_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_CKPT_NAME)
 goalkde_policy_params, goalkde_encoder_params, goalkde_context_params = goalkde_params
 
 # GoalKDE + CRL Mean field
-GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-goalkde-meanfield-della-maxent-gaussianmlp_s_1'
+GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-goalkde-meanfield-1x-della-maxent-gaussianmlp-_s_2'
 GOALKDE_MEAN_FIELD_CKPT_NAME = '/best.pkl'
 goalkde_mean_field_params = model.load_params(GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_MEAN_FIELD_CKPT_NAME)
 _, _, goalkde_mean_field_context_params = goalkde_mean_field_params
@@ -202,6 +202,22 @@ print(observations.shape, actions.shape, rewards.shape)
 states = observations[:, :, :env.state_dim]
 goals = observations[:, 0, env.state_dim:]
 print(states.shape, actions.shape, goals.shape)
+
+# Calculate mean true goal
+mean_true_goal = jnp.mean(goals, axis=0)
+print("Mean true goal:", mean_true_goal)
+print("Mean true goal shape:", mean_true_goal.shape)
+
+# Also calculate standard deviation of goals
+std_true_goal = jnp.std(goals, axis=0)
+print("Standard deviation of true goals:", std_true_goal)
+
+# Calculate the range of goals (min and max)
+min_goals = jnp.min(goals, axis=0)
+max_goals = jnp.max(goals, axis=0)
+print("Min goals:", min_goals)
+print("Max goals:", max_goals)
+
 last_states = observations[:, -1, env.goal_indices]
 print(last_states.shape)
 # Calculate total reward per rollout
