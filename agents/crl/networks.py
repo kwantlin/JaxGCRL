@@ -7,7 +7,7 @@ from flax.linen.initializers import variance_scaling
 class Encoder(nn.Module):
     repr_dim: int = 64
     network_width: int = 256
-    network_depth: int = 64
+    network_depth: int = 16
     skip_connections: int = (
         4  # 0 for no skip connections, >= 0 means the frequency of skip connections (every X layers)
     )
@@ -53,7 +53,7 @@ class Encoder(nn.Module):
 class Actor(nn.Module):
     action_size: int
     network_width: int = 256
-    network_depth: int = 64
+    network_depth: int = 16
     skip_connections: int = (
         4  # 0 for no skip connections, >= 0 means the frequency of skip connections (every X layers)
     )
