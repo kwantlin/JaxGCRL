@@ -139,6 +139,21 @@ class ActorEvaluator:
             "rows_complete",
             "cols_complete",
             "squares_complete",
+            # Additional Sudoku metrics
+            "valid_move",
+            "correct_move",
+            "incorrect_move",
+            "cells_remaining",
+            "completion_percentage",
+            "distance_to_solution",
+            "moves_made",
+            "quarter_complete",
+            "half_complete",
+            "three_quarters_complete",
+            "almost_complete",
+            "initial_clues",
+            "puzzle_difficulty",
+            "initial_distance_to_solution",
         ]
         available_names = [
             name for name in desired_names if name in eval_metrics.episode_metrics

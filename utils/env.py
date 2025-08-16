@@ -413,11 +413,10 @@ def create_sudoku_visualization(rollout, env):
     # Extract board states from rollout
     board_states = []
     for state in rollout:
-        # Extract board from pipeline_state.q (first 81 dimensions of 108-dim state)
-        full_state = state.q
-        if len(full_state.shape) == 2:  # If batched
-            full_state = full_state[0]  # Take first batch
-        board_flat = full_state[:81]  # Extract board portion (first 81 dimensions)
+        # Extract board from pipeline_state.q (81 dimensions)
+        board_flat = state.q
+        if len(board_flat.shape) == 2:  # If batched
+            board_flat = board_flat[0]  # Take first batch
         board = board_flat.reshape(9, 9)
         board_states.append(board)
     

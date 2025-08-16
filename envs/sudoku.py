@@ -56,9 +56,9 @@ class Sudoku:
         self.board_size = 9
         self.action_space_size = 81 * 9  # 81 cells * 9 possible numbers
         self.action_size = 81 * 9  # 81 cells * 9 possible numbers
-        self.state_dim = 108  # 81 board + 27 goal indicators
-        self.observation_size = 135  # state (108) + goal (27)
-        self.goal_indices = jnp.arange(81, 108)  # indices 81-107 are goal indicators
+        self.state_dim = 81  # just the Sudoku board
+        self.observation_size = 162  # state (81) + goal (81)
+        self.goal_indices = jnp.arange(0, 81)  # indices 0-80 point to the board portion of the state
         self.goal_reach_thresh = 0.5
         
         # Dataset parameters
@@ -121,15 +121,9 @@ class Sudoku:
         # Store the solution in the state info for validation
         info = {"solution": solution}
         
-        # Calculate completion indicators
-        completion_indicators = self._calculate_goal_indicators(board)
-        
-        # Create full state: board (81) + completion indicators (27) = 108
-        full_state = jnp.concatenate([board.flatten(), completion_indicators])
-        
-        # Create pipeline_state with full state in q (following ant.py pattern)
-        q = full_state  # 108 values: board + completion indicators
-        qd = jnp.zeros(108, dtype=jnp.float32)  # No velocities needed for Sudoku
+        # Create pipeline_state with board in q and solution in qd (following ant.py pattern)
+        q = board.flatten()  # 81 values: just the board
+        qd = solution.flatten()  # 81 values: the complete solution (stored in qd for convenience)
         pipeline_state = self.pipeline_init(q, qd)
         
         # Get observation using _get_obs method (following ant.py pattern)
@@ -140,13 +134,40 @@ class Sudoku:
         total_cells = 81
         completion_ratio = cells_filled / total_cells
         
+        # Initial puzzle characteristics
+        initial_clues = cells_filled
+        puzzle_difficulty = 1.0 - (initial_clues / total_cells)  # Higher = harder (fewer clues)
+        
+        # Distance to solution at start
+        cells_different = jnp.sum(board != solution)
+        initial_distance_to_solution = cells_different / total_cells
+        
         metrics = {
+            # Existing metrics
             "cells_filled": jnp.array(completion_ratio, dtype=float),
             "rows_complete": jnp.array(self._count_complete_rows(board) / 9.0, dtype=float),
             "cols_complete": jnp.array(self._count_complete_cols(board) / 9.0, dtype=float),
             "squares_complete": jnp.array(self._count_complete_squares(board) / 9.0, dtype=float),
             "success_easy": jnp.array(completion_ratio >= 0.5, dtype=float),
             "success": jnp.array(0.0, dtype=float),  # No success at start
+            
+            # Initial puzzle characteristics
+            "initial_clues": jnp.array(initial_clues / total_cells, dtype=float),  # Normalize to [0,1]
+            "puzzle_difficulty": jnp.array(puzzle_difficulty, dtype=float),
+            "initial_distance_to_solution": jnp.array(initial_distance_to_solution, dtype=float),
+            
+            # Initialize step metrics to 0
+            "valid_move": jnp.array(0.0, dtype=float),
+            "correct_move": jnp.array(0.0, dtype=float),
+            "incorrect_move": jnp.array(0.0, dtype=float),
+            "cells_remaining": jnp.array(1.0 - completion_ratio, dtype=float),
+            "completion_percentage": jnp.array(completion_ratio * 100.0, dtype=float),
+            "distance_to_solution": jnp.array(initial_distance_to_solution, dtype=float),
+            "moves_made": jnp.array(0.0, dtype=float),
+            "quarter_complete": jnp.array(completion_ratio >= 0.25, dtype=float),
+            "half_complete": jnp.array(completion_ratio >= 0.5, dtype=float),
+            "three_quarters_complete": jnp.array(completion_ratio >= 0.75, dtype=float),
+            "almost_complete": jnp.array(completion_ratio >= 0.9, dtype=float),
         }
         
         # Initialize reward and done for reset
@@ -166,11 +187,8 @@ class Sudoku:
         row = jnp.array(cell_idx // 9, dtype=jnp.int32)
         col = jnp.array(cell_idx % 9, dtype=jnp.int32)
         
-        # Get current full state from pipeline_state.q (following ant.py pattern)
-        full_state = state.pipeline_state.q  # Shape: (108,) or (batch_size, 108)
-        
-        # Extract board from first 81 dimensions of full state
-        board_flat = full_state[..., :81]  # Shape: (81,) or (batch_size, 81)
+        # Get current board from pipeline_state.q (following ant.py pattern)
+        board_flat = state.pipeline_state.q  # Shape: (81,) or (batch_size, 81)
         board = board_flat.reshape(-1, 9, 9)  # Shape: (9, 9) or (batch_size, 9, 9)
         
         # Check if the move is valid (with debugging)
@@ -199,15 +217,12 @@ class Sudoku:
         # Flatten the board back
         new_board_flat = board.flatten()
         
-        # Recalculate completion indicators
-        new_completion_indicators = self._calculate_goal_indicators(board)
+        # Get the solution from the current state (stored in qd)
+        solution_flat = state.pipeline_state.qd  # Shape: (81,) or (batch_size, 81)
         
-        # Create new full state: board (81) + completion indicators (27) = 108
-        new_full_state = jnp.concatenate([new_board_flat, new_completion_indicators])
-        
-        # Update pipeline_state with new full state (following ant.py pattern)
-        new_q = new_full_state
-        new_qd = jnp.zeros_like(new_q, dtype=jnp.float32)  # Keep velocities as zeros
+        # Update pipeline_state with new board and keep solution (following ant.py pattern)
+        new_q = new_board_flat
+        new_qd = solution_flat  # Keep the solution in qd
         pipeline_state = state.pipeline_state.replace(q=new_q, qd=new_qd)
         
         # Get new observation using _get_obs method (following ant.py pattern)
@@ -242,14 +257,62 @@ class Sudoku:
         done = jnp.array(is_complete, dtype=float)
         done = jnp.mean(done) if done.ndim > 0 else done  # Ensure done is scalar
         
+        # Calculate additional metrics
+        # Move quality metrics - ensure they are scalars
+        valid_move = jnp.mean(jnp.array(is_valid, dtype=float)) if is_valid.ndim > 0 else jnp.array(is_valid, dtype=float)
+        correct_move = jnp.mean(jnp.array(is_correct, dtype=float)) if is_correct.ndim > 0 else jnp.array(is_correct, dtype=float)
+        incorrect_move = jnp.mean(jnp.array(jnp.logical_and(is_valid, jnp.logical_not(is_correct)), dtype=float)) if is_valid.ndim > 0 else jnp.array(jnp.logical_and(is_valid, jnp.logical_not(is_correct)), dtype=float)
+        
+        # Progress metrics
+        cells_remaining = total_cells - cells_filled
+        completion_percentage = completion_ratio * 100.0
+        
+        # Distance to solution (how many cells differ from solution)
+        cells_different = jnp.sum(board != solution)
+        distance_to_solution = cells_different / total_cells
+        
+        # Efficiency metrics
+        # These will be accumulated over the episode
+        moves_made = jnp.array(1.0, dtype=float)  # This step counts as 1 move
+        
+        # Puzzle-specific metrics
+        initial_cells = jnp.sum(state.info["solution"] != 0)  # Should be 81, but let's be safe
+        cells_to_fill = total_cells - initial_cells
+        
+        # Milestone metrics
+        quarter_complete = jnp.array(completion_ratio >= 0.25, dtype=float)
+        half_complete = jnp.array(completion_ratio >= 0.5, dtype=float)
+        three_quarters_complete = jnp.array(completion_ratio >= 0.75, dtype=float)
+        almost_complete = jnp.array(completion_ratio >= 0.9, dtype=float)
+        
         # Update metrics (following ant.py pattern)
         state.metrics.update(
+            # Existing metrics
             cells_filled=jnp.array(completion_ratio, dtype=float),
             rows_complete=jnp.array(self._count_complete_rows(board) / 9.0, dtype=float),
             cols_complete=jnp.array(self._count_complete_cols(board) / 9.0, dtype=float),
             squares_complete=jnp.array(self._count_complete_squares(board) / 9.0, dtype=float),
             success=success,
             success_easy=success_easy,
+            
+            # Move quality metrics
+            valid_move=valid_move,
+            correct_move=correct_move,
+            incorrect_move=incorrect_move,
+            
+            # Progress metrics
+            cells_remaining=cells_remaining / total_cells,  # Normalize to [0,1]
+            completion_percentage=completion_percentage,
+            distance_to_solution=distance_to_solution,
+            
+            # Efficiency metrics
+            moves_made=moves_made,
+            
+            # Milestone metrics
+            quarter_complete=quarter_complete,
+            half_complete=half_complete,
+            three_quarters_complete=three_quarters_complete,
+            almost_complete=almost_complete,
         )
         
         return state.replace(
@@ -476,14 +539,14 @@ class Sudoku:
     
     def _get_obs(self, pipeline_state: base.State) -> jax.Array:
         """Get observation from pipeline state (following ant.py pattern)."""
-        # Extract full state from pipeline_state.q (108 dimensions)
-        full_state = pipeline_state.q  # Shape: (108,) or (batch_size, 108)
+        # Extract board from pipeline_state.q (81 dimensions)
+        board_flat = pipeline_state.q  # Shape: (81,) or (batch_size, 81)
         
-        # The goal is always 27 ones (all rows, cols, squares complete)
-        goal = jnp.ones(27, dtype=jnp.float32)  # Always 27 ones for solved Sudoku
+        # Extract solution from pipeline_state.qd (81 dimensions)
+        solution_flat = pipeline_state.qd  # Shape: (81,) or (batch_size, 81)
         
-        # Combine state and goal: state (108) + goal (27) = 135
-        obs = jnp.concatenate([full_state, goal])
+        # Combine state and goal: state (81) + goal (81) = 162
+        obs = jnp.concatenate([board_flat, solution_flat])
         return obs
     
     def pipeline_init(self, q: jax.Array, qd: jax.Array) -> base.State:
