@@ -154,7 +154,7 @@ class Ant(PipelineEnv):
       healthy_z_range=(0.2, 2.5),
       contact_force_range=(-1.0, 1.0),
       reset_noise_scale=0.1,
-      exclude_current_positions_from_observation=True,
+      exclude_current_positions_from_observation=False,
       backend='generalized',
       **kwargs,
   ):
@@ -224,8 +224,10 @@ class Ant(PipelineEnv):
         'x_position': zero,
         'y_position': zero,
         'distance_from_origin': zero,
-        'x_velocity': zero,
-        'y_velocity': zero,
+        'world_x_velocity': zero,
+        'world_y_velocity': zero,
+        'local_x_velocity': zero,
+        'local_y_velocity': zero,
         'forward_reward': zero,
     }
     return State(pipeline_state, obs, reward, done, metrics)
@@ -236,8 +238,17 @@ class Ant(PipelineEnv):
     assert pipeline_state0 is not None
     pipeline_state = self.pipeline_step(pipeline_state0, action)
 
-    velocity = (pipeline_state.x.pos[0] - pipeline_state0.x.pos[0]) / self.dt
-    forward_reward = velocity[0]
+    # Calculate velocity in world frame
+    world_velocity = (pipeline_state.x.pos[0] - pipeline_state0.x.pos[0]) / self.dt
+    
+    # Transform to torso's local frame (like URLB approach)
+    torso_quat = pipeline_state.q[3:7]  # Torso orientation quaternion
+    torso_rot = math.quat_to_3x3(torso_quat)
+    local_velocity = torso_rot.T @ world_velocity
+    
+    # Use local x-velocity for forward reward (direction torso is facing)
+    local_x_velocity = local_velocity[0]
+    forward_reward = local_x_velocity
 
     min_z, max_z = self._healthy_z_range
     is_healthy = jp.where(pipeline_state.x.pos[0, 2] < min_z, 0.0, 1.0)
@@ -260,8 +271,10 @@ class Ant(PipelineEnv):
         x_position=pipeline_state.x.pos[0, 0],
         y_position=pipeline_state.x.pos[0, 1],
         distance_from_origin=math.safe_norm(pipeline_state.x.pos[0]),
-        x_velocity=velocity[0],
-        y_velocity=velocity[1],
+        world_x_velocity=world_velocity[0],
+        world_y_velocity=world_velocity[1],
+        local_x_velocity=local_x_velocity,
+        local_y_velocity=local_velocity[1],
         forward_reward=forward_reward,
     )
     return state.replace(
@@ -292,10 +305,18 @@ class AntForward(Ant):
     assert pipeline_state0 is not None
     pipeline_state = self.pipeline_step(pipeline_state0, action)
 
-    velocity = (pipeline_state.x.pos[0] - pipeline_state0.x.pos[0]) / self.dt
-    xy_speed = jp.linalg.norm(velocity[:2])
+    # Calculate velocity in world frame
+    world_velocity = (pipeline_state.x.pos[0] - pipeline_state0.x.pos[0]) / self.dt
+    
+    # Transform to torso's local frame (like URLB approach)
+    torso_quat = pipeline_state.q[3:7]  # Torso orientation quaternion
+    torso_rot = math.quat_to_3x3(torso_quat)
+    local_velocity = torso_rot.T @ world_velocity
+    
+    # Use local x-velocity for forward reward (direction torso is facing)
+    local_x_velocity = local_velocity[0]
     forward_reward = jp.where(
-        xy_speed > self._min_forward_velocity, xy_speed, 0.0
+        local_x_velocity > self._min_forward_velocity, local_x_velocity, 0.0
     )
 
     min_z, max_z = self._healthy_z_range
@@ -319,8 +340,10 @@ class AntForward(Ant):
         x_position=pipeline_state.x.pos[0, 0],
         y_position=pipeline_state.x.pos[0, 1],
         distance_from_origin=math.safe_norm(pipeline_state.x.pos[0]),
-        x_velocity=velocity[0],
-        y_velocity=velocity[1],
+        world_x_velocity=world_velocity[0],
+        world_y_velocity=world_velocity[1],
+        local_x_velocity=local_x_velocity,
+        local_y_velocity=local_velocity[1],
         forward_reward=forward_reward,
     )
     return state.replace(
@@ -358,8 +381,10 @@ class AntJump(Ant):
         'y_position': zero,
         'z_position': zero,
         'distance_from_origin': zero,
-        'x_velocity': zero,
-        'y_velocity': zero,
+        'world_x_velocity': zero,
+        'world_y_velocity': zero,
+        'local_x_velocity': zero,
+        'local_y_velocity': zero,
     }
     return State(pipeline_state, obs, reward, done, metrics)
 
@@ -391,8 +416,13 @@ class AntJump(Ant):
     reward = jump_reward + healthy_reward - ctrl_cost - contact_cost
     done = 1.0 - is_healthy if self._terminate_when_unhealthy else 0.0
 
-    # Also calculate velocity for metrics
-    velocity = (pipeline_state.x.pos[0] - pipeline_state0.x.pos[0]) / self.dt
+    # Calculate velocity in world frame
+    world_velocity = (pipeline_state.x.pos[0] - pipeline_state0.x.pos[0]) / self.dt
+    
+    # Transform to torso's local frame (like URLB approach)
+    torso_quat = pipeline_state.q[3:7]  # Torso orientation quaternion
+    torso_rot = math.quat_to_3x3(torso_quat)
+    local_velocity = torso_rot.T @ world_velocity
 
     state.metrics.update(
         reward_jump=jump_reward,
@@ -403,8 +433,10 @@ class AntJump(Ant):
         y_position=pipeline_state.x.pos[0, 1],
         z_position=z_position,
         distance_from_origin=math.safe_norm(pipeline_state.x.pos[0]),
-        x_velocity=velocity[0],
-        y_velocity=velocity[1],
+        world_x_velocity=world_velocity[0],
+        world_y_velocity=world_velocity[1],
+        local_x_velocity=local_velocity[0],
+        local_y_velocity=local_velocity[1],
     )
     return state.replace(
         pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
@@ -444,8 +476,10 @@ class AntFlip(Ant):
         'y_position': zero,
         'z_position': zero,
         'distance_from_origin': zero,
-        'x_velocity': zero,
-        'y_velocity': zero,
+        'world_x_velocity': zero,
+        'world_y_velocity': zero,
+        'local_x_velocity': zero,
+        'local_y_velocity': zero,
         'angular_velocity_x': zero,
         'angular_velocity_y': zero,
         'angular_velocity_z': zero,
@@ -491,8 +525,11 @@ class AntFlip(Ant):
     )
     done = 1.0 - (is_healthy & is_finite)
 
-    # Also calculate linear velocity for metrics
-    velocity = (pipeline_state.x.pos[0] - pipeline_state0.x.pos[0]) / self.dt
+    # Calculate velocity in world frame
+    world_velocity = (pipeline_state.x.pos[0] - pipeline_state0.x.pos[0]) / self.dt
+    
+    # Transform to torso's local frame (like URLB approach)
+    local_velocity = torso_rot.T @ world_velocity
     z_position = pipeline_state.x.pos[0, 2]
 
     state.metrics.update(
@@ -504,8 +541,10 @@ class AntFlip(Ant):
         y_position=pipeline_state.x.pos[0, 1],
         z_position=z_position,
         distance_from_origin=math.safe_norm(pipeline_state.x.pos[0]),
-        x_velocity=velocity[0],
-        y_velocity=velocity[1],
+        world_x_velocity=world_velocity[0],
+        world_y_velocity=world_velocity[1],
+        local_x_velocity=local_velocity[0],
+        local_y_velocity=local_velocity[1],
         angular_velocity_x=angular_velocity[0],
         angular_velocity_y=angular_velocity[1],
         angular_velocity_z=angular_velocity[2],

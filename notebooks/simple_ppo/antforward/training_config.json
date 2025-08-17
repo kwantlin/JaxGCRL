@@ -1,0 +1,22 @@
+{
+  "env_config": {
+    "env_name": "antforward",
+    "min_forward_velocity": 0.5
+  },
+  "training_config": {
+    "total_env_steps": 100000000,
+    "episode_length": 1000,
+    "num_envs": 4096,
+    "learning_rate": 0.0003,
+    "entropy_cost": 0.01,
+    "discounting": 0.97,
+    "unroll_length": 10,
+    "batch_size": 2048,
+    "num_minibatches": 32,
+    "num_updates_per_batch": 4,
+    "num_evals": 20,
+    "num_eval_episodes": 5,
+    "seed": 0,
+    "normalize_observations": true
+  }
+}

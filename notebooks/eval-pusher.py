@@ -48,13 +48,13 @@ _, _, mean_field_context_params = mean_field_params
 # mean_field_encoded_sa_encoder_params, _ = mean_field_encoded_encoder_params['sa_encoder'], mean_field_encoded_encoder_params['g_encoder']
 
 # GoalKDE + CRL
-GOALKDE_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-goalkde-standard-1x-della-maxent-gaussianmlp-_s_1'
+GOALKDE_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-goalkde-standard-1x-60000000-256-512-1e-4-1e-4-1e-4-6-della-maxent-gaussianmlp-1e-4_s_6'
 GOALKDE_CKPT_NAME = '/best.pkl'
 goalkde_params = model.load_params(GOALKDE_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_CKPT_NAME)
 goalkde_policy_params, goalkde_encoder_params, goalkde_context_params = goalkde_params
 
 # GoalKDE + CRL Mean field
-GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-goalkde-meanfield-1x-della-maxent-gaussianmlp-_s_2'
+GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-goalkde-meanfield-1x-60000000-256-512-1e-4-1e-4-1e-4-4-della-maxent-gaussianmlp-1e-4_s_4'
 GOALKDE_MEAN_FIELD_CKPT_NAME = '/best.pkl'
 goalkde_mean_field_params = model.load_params(GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_MEAN_FIELD_CKPT_NAME)
 _, _, goalkde_mean_field_context_params = goalkde_mean_field_params
@@ -1384,7 +1384,6 @@ methods = [
     'GCBC + Mean Field',
     'Nearest Neighbor',
     'FB',
-    'CRL + Oracle + Mean Field',
     'CRL + GoalKDE + Mean Field',
     
 ]
@@ -1393,7 +1392,6 @@ mean_diffs = [
     float(1.0 - bc_reward_diff_inferred_mean/jnp.mean(total_rewards)),
     float(1.0 - nn_expert_reward_diff_mean/jnp.mean(total_rewards)),
     float(1.0 - fb_reward_diff_inferred_mean/jnp.mean(total_rewards)),
-    float(1.0 - mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
     float(1.0 - goalkde_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
 ]
 
@@ -1401,12 +1399,11 @@ std_errors = [
     float(bc_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     float(nn_expert_reward_diff_stderror/jnp.mean(total_rewards)),
     float(fb_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
-    float(mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     float(goalkde_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     
 ]
 
-method_types = ['BC']*1 + ['NN']*1 + ['FB']*1 + ['CRL']*1 + ['GoalKDE']*1 
+method_types = ['BC']*1 + ['NN']*1 + ['FB']*1 + ['GoalKDE']*1 
 
 df = pd.DataFrame({
     'Method': methods,
@@ -1421,7 +1418,7 @@ ax = sns.barplot(
     y='Mean Difference', 
     hue='Method Type',
     data=df,
-    palette=['#d62728', 'purple', '#2ca02c', '#1f77b4', '#ff7f0e']
+    palette=['#d62728', 'purple', '#2ca02c', '#ff7f0e']
 )
 
 # Add error bars
