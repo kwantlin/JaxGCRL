@@ -1,0 +1,22 @@
+{
+  "env_config": {
+    "env_name": "antflip",
+    "min_flip_velocity": 1.0
+  },
+  "training_config": {
+    "total_env_steps": 90000000,
+    "episode_length": 1000,
+    "num_envs": 2048,
+    "learning_rate": 0.0003,
+    "entropy_cost": 0.0003,
+    "discounting": 0.97,
+    "unroll_length": 10,
+    "batch_size": 1024,
+    "num_minibatches": 8,
+    "num_updates_per_batch": 8,
+    "num_evals": 20,
+    "num_eval_episodes": 5,
+    "seed": 0,
+    "normalize_observations": true
+  }
+}

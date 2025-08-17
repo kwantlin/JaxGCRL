@@ -151,7 +151,9 @@ def compute_energy(energy_fn, sa_repr, g_repr):
         
 def compute_actor_energy(energy_fn, sa_repr, g_repr):
     if energy_fn == "l2":
-        q = -jnp.sqrt(jnp.sum((sa_repr - g_repr) ** 2, axis=-1))
+        # Add small epsilon to prevent NaN from sqrt(0)
+        epsilon = 1e-8
+        q = -jnp.sqrt(jnp.sum((sa_repr - g_repr) ** 2, axis=-1) + epsilon)
     elif energy_fn == "l1":
         q = -jnp.sum(jnp.abs(sa_repr - g_repr), axis=-1)
     elif energy_fn == "dot":
@@ -374,6 +376,8 @@ def actor_loss(actor_params, training_state, actor, sa_encoder, g_encoder, entro
     
     # Modify loss (actor entropy)
     if not config.disable_entropy_actor:
+        # Clip log_prob to prevent extreme values
+        log_prob = jnp.clip(log_prob, -100.0, 100.0)
         actor_loss += alpha * log_prob
 
     print("actor_loss", actor_loss.shape)

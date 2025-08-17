@@ -26,7 +26,7 @@ submit_job() {
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH -t 30:00:00
+#SBATCH -t 10:00:00
 #SBATCH --partition=pli 
 #SBATCH --account=buildstuff
 #SBATCH --constraint=h100
@@ -75,15 +75,15 @@ EOF
 # submit_job $env 1 standard 20000000 1024 256 "$saved_ckpt_path" 50
 # submit_job $env 1 meanfield 20000000 1024 256 "$saved_ckpt_path" 50
 
-# env=pusher_easy
-# saved_ckpt_path="/home/kw2960/JaxGCRL/runs/run_pusher_easy-main-standard-numenvs2048-numtimesteps60000000-batchsize1024-della-maxent-gaussianmlp-_s_1/ckpt/best.pkl"
-# submit_job $env 1 standard 60000000 1024 1024 "$saved_ckpt_path" 100
-# submit_job $env 1 meanfield 60000000 1024 1024 "$saved_ckpt_path" 100
+env=pusher_easy
+saved_ckpt_path="/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-main-standard-numenvs512-numtimesteps60000000-batchsize256-1-della-maxent-gaussianmlp-_s_2/ckpt/best.pkl"
+submit_job $env 1 standard 60000000 256 512 "$saved_ckpt_path" 100
+submit_job $env 1 meanfield 60000000 256 512 "$saved_ckpt_path" 100
 
-env=arm_reach
-saved_ckpt_path="/home/kw2960/JaxGCRL/runs/run_arm_reach-main-standard-numenvs2048-numtimesteps60000000-batchsize1024-della-maxent-gaussianmlp-_s_1/ckpt/best.pkl"
-submit_job $env 1 standard 12000000000 1024 2048 "$saved_ckpt_path" 1000 16
-submit_job $env 1 meanfield 12000000000 1024 2048 "$saved_ckpt_path" 1000 16
+# env=arm_reach
+# saved_ckpt_path="/home/kw2960/JaxGCRL/runs/run_arm_reach-main-standard-numenvs2048-numtimesteps60000000-batchsize1024-della-maxent-gaussianmlp-_s_1/ckpt/best.pkl"
+# submit_job $env 1 standard 12000000000 1024 2048 "$saved_ckpt_path" 1000 16
+# submit_job $env 1 meanfield 12000000000 1024 2048 "$saved_ckpt_path" 1000 16
 
 
 # env=ant_fullobs

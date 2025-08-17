@@ -188,7 +188,7 @@ def main():
     repo_root = Path(__file__).resolve().parents[1]
     env_to_csv = {
         "ant": repo_root / "notebooks" / "results_ant" / "full_trajectory_vs_mean_field_ant.csv",
-        "arm_reach": repo_root / "notebooks" / "results_arm_reach" / "full_trajectory_vs_mean_field_arm_reach.csv",
+        "pusher_easy": repo_root / "notebooks" / "results_pusher_easy" / "full_trajectory_vs_mean_field_pusher_easy.csv",
         "reacher": repo_root / "notebooks" / "results_reacher" / "full_trajectory_vs_mean_field_reacher.csv",
     }
 
