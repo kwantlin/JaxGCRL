@@ -21,7 +21,7 @@ from utils.evaluator import ActorEvaluator
 from utils.replay_buffer import TrajectoryUniformSamplingQueue
 
 from .losses import update_actor_and_alpha, update_critic
-from .networks import Actor, Encoder
+from .networks import Actor, CategoricalActor, Encoder
 import functools
 
 Metrics = types.Metrics
@@ -177,6 +177,8 @@ class CRL:
     ] = "fwd_infonce"
     energy_fn: Literal["norm", "l2", "dot", "cosine"] = "norm"
 
+    use_categorical_actor: bool = False
+
     def check_config(self, config):
         """
         episode_length: the maximum length of an episode
@@ -274,13 +276,22 @@ class CRL:
 
         # Network setup
         # Actor
-        actor = Actor(
-            action_size=action_size,
-            network_width=self.h_dim,
-            network_depth=self.n_hidden,
-            skip_connections=self.skip_connections,
-            use_relu=self.use_relu,
-        )
+        if self.use_categorical_actor:
+            actor = CategoricalActor(
+                num_actions=action_size,
+                network_width=self.h_dim,
+                network_depth=self.n_hidden,
+                skip_connections=self.skip_connections,
+                use_relu=self.use_relu,
+            )
+        else:
+            actor = Actor(
+                action_size=action_size,
+                network_width=self.h_dim,
+                network_depth=self.n_hidden,
+                skip_connections=self.skip_connections,
+                use_relu=self.use_relu,
+            )
         actor_state = TrainState.create(
             apply_fn=actor.apply,
             params=actor.init(actor_key, np.ones([1, obs_size])),
@@ -315,7 +326,13 @@ class CRL:
         )
 
         # Entropy coefficient
-        target_entropy = -0.5 * action_size
+        if self.use_categorical_actor:
+            # For categorical actions, target entropy is -log(num_actions)
+            # This encourages uniform distribution over actions
+            target_entropy = -jnp.log(jnp.array(1.0 / action_size, dtype=jnp.float32))
+        else:
+            # For continuous actions, use the original formula
+            target_entropy = -0.5 * action_size
         log_alpha = jnp.asarray(0.0, dtype=jnp.float32)
         alpha_state = TrainState.create(
             apply_fn=None,
@@ -366,8 +383,12 @@ class CRL:
         buffer_state = jax.jit(replay_buffer.init)(buffer_key)
 
         def deterministic_actor_step(training_state, env, env_state, extra_fields):
-            means, _ = actor.apply(training_state.actor_state.params, env_state.obs)
-            actions = nn.tanh(means)
+            if self.use_categorical_actor:
+                logits = actor.apply(training_state.actor_state.params, env_state.obs)
+                actions = jnp.argmax(logits, axis=-1)
+            else:
+                means, _ = actor.apply(training_state.actor_state.params, env_state.obs)
+                actions = nn.tanh(means)
 
             nstate = env.step(env_state, actions)
             state_extras = {x: nstate.info[x] for x in extra_fields}
@@ -381,12 +402,16 @@ class CRL:
             )
 
         def actor_step(actor_state, env, env_state, key, extra_fields):
-            means, log_stds = actor.apply(actor_state.params, env_state.obs)
-            stds = jnp.exp(log_stds)
-            actions = nn.tanh(
-                means
-                + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype)
-            )
+            if self.use_categorical_actor:
+                logits = actor.apply(actor_state.params, env_state.obs)
+                actions = jax.random.categorical(key, logits)
+            else:
+                means, log_stds = actor.apply(actor_state.params, env_state.obs)
+                stds = jnp.exp(log_stds)
+                actions = nn.tanh(
+                    means
+                    + stds * jax.random.normal(key, shape=means.shape, dtype=means.dtype)
+                )
 
             nstate = env.step(env_state, actions)
             state_extras = {x: nstate.info[x] for x in extra_fields}
@@ -654,7 +679,10 @@ class CRL:
             logging.info("step: %d", current_step)
 
             do_render = ne % config.visualization_interval == 0
-            make_policy = lambda param: lambda obs, rng: actor.apply(param, obs)
+            if self.use_categorical_actor:
+                make_policy = lambda param: lambda obs, rng: (jnp.argmax(actor.apply(param, obs), axis=-1), None)
+            else:
+                make_policy = lambda param: lambda obs, rng: actor.apply(param, obs)
 
             progress_fn(
                 current_step,

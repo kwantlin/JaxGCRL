@@ -44,15 +44,25 @@ def update_actor_and_alpha(config, networks, transitions, training_state, key):
         goal = future_state[:, config["goal_indices"]]
         observation = jnp.concatenate([state, goal], axis=1)
 
-        means, log_stds = networks["actor"].apply(actor_params, observation)
-        stds = jnp.exp(log_stds)
-        x_ts = means + stds * jax.random.normal(
-            key, shape=means.shape, dtype=means.dtype
-        )
-        action = nn.tanh(x_ts)
-        log_prob = jax.scipy.stats.norm.logpdf(x_ts, loc=means, scale=stds)
-        log_prob -= jnp.log((1 - jnp.square(action)) + 1e-6)
-        log_prob = log_prob.sum(-1)  # dimension = B
+        if config.get("use_categorical_actor", False):
+            # Categorical actor
+            logits = networks["actor"].apply(actor_params, observation)
+            actions = jax.random.categorical(key, logits)
+            action_probs = jax.nn.softmax(logits)
+            log_prob = jax.nn.log_softmax(logits)[jnp.arange(actions.shape[0]), actions]
+            # Convert to one-hot for critic (to match expected 80 dimensions)
+            action = jax.nn.one_hot(actions, num_classes=logits.shape[-1])
+        else:
+            # Continuous actor
+            means, log_stds = networks["actor"].apply(actor_params, observation)
+            stds = jnp.exp(log_stds)
+            x_ts = means + stds * jax.random.normal(
+                key, shape=means.shape, dtype=means.dtype
+            )
+            action = nn.tanh(x_ts)
+            log_prob = jax.scipy.stats.norm.logpdf(x_ts, loc=means, scale=stds)
+            log_prob -= jnp.log((1 - jnp.square(action)) + 1e-6)
+            log_prob = log_prob.sum(-1)  # dimension = B
 
         sa_encoder_params, g_encoder_params = (
             critic_params["sa_encoder"],
@@ -113,7 +123,9 @@ def update_critic(config, networks, transitions, training_state, key):
 
         state = transitions.observation[:, : config["state_size"]]
         action = transitions.action
+        
 
+        
         sa_repr = networks["sa_encoder"].apply(
             sa_encoder_params, jnp.concatenate([state, action], axis=-1)
         )

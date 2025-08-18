@@ -105,3 +105,54 @@ class Actor(nn.Module):
         )  # From SpinUp / Denis Yarats
 
         return mean, log_std
+
+
+class CategoricalActor(nn.Module):
+    """Categorical actor for discrete action spaces.
+    
+    Outputs logits for 80 discrete actions and samples a single integer action.
+    This is designed for environments like Sudoku that expect a single discrete action.
+    """
+    num_actions: int = 80  # Number of discrete actions (e.g., 80 for Sudoku)
+    network_width: int = 256
+    network_depth: int = 16
+    skip_connections: int = 4
+    use_relu: bool = False
+    use_ln: bool = False
+
+    @nn.compact
+    def __call__(self, x):
+        if self.use_ln:
+            normalize = lambda x: nn.LayerNorm()(x)
+        else:
+            normalize = lambda x: x
+
+        if self.use_relu:
+            activation = nn.relu
+        else:
+            activation = nn.swish
+
+        lecun_uniform = variance_scaling(1 / 3, "fan_in", "uniform")
+        bias_init = nn.initializers.zeros
+
+        logging.info("categorical actor input shape: %s", x.shape)
+        for i in range(self.network_depth):
+            x = nn.Dense(
+                self.network_width, kernel_init=lecun_uniform, bias_init=bias_init
+            )(x)
+            x = normalize(x)
+            x = activation(x)
+
+            if self.skip_connections:
+                if i == 0:
+                    skip = x
+                if i > 0 and i % self.skip_connections == 0:
+                    x = x + skip
+                    skip = x
+
+        # Output logits for categorical distribution
+        logits = nn.Dense(
+            self.num_actions, kernel_init=lecun_uniform, bias_init=bias_init
+        )(x)
+
+        return logits
