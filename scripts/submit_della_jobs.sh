@@ -68,16 +68,16 @@ env=reacher
 # submit_job $env 1 meanfield 20000000 1024 256 50
 # submit_job $env 1 meanfield_encoded 20000000 1024 256 50
 
-env=pusher_easy
-submit_job $env 1 standard 60000000 256 512 
-submit_job $env 2 standard 60000000 256 512 
-submit_job $env 3 standard 60000000 256 512 
+# env=pusher_easy
+# submit_job $env 1 standard 60000000 256 512 
+# submit_job $env 2 standard 60000000 256 512 
+# submit_job $env 3 standard 60000000 256 512 
 # submit_job $env 4 standard 60000000 256 512 
 # submit_job $env 5 standard 60000000 256 512 
 
-submit_job $env 1 meanfield 60000000 256 512 
-submit_job $env 2 meanfield 60000000 256 512 
-submit_job $env 3 meanfield 60000000 256 512 
+# submit_job $env 1 meanfield 60000000 256 512 
+# submit_job $env 2 meanfield 60000000 256 512 
+# submit_job $env 3 meanfield 60000000 256 512 
 # submit_job $env 4 meanfield 60000000 256 512 
 # submit_job $env 5 meanfield 60000000 256 512 
 
@@ -112,17 +112,19 @@ submit_job $env 3 meanfield 60000000 256 512
 # submit_job $env 1 meanfield_encoded 12000000000 1024 2048 1000 8
 
 
-# env=ant_fullobs
-# submit_job $env 1 standard 1200000000 512 2048 1000
-# submit_job $env 1 meanfield 1200000000 512 2048 1000
-# submit_job $env 1 standard 1200000000 512 3000 1000 "more_envs"
-# submit_job $env 1 meanfield 1200000000 512 3000 1000 "more_envs"
-# submit_job $env 1 meanfield_encoded 1200000000 512 3000 1000 "more_envs"
+env=ant_fullobs
+submit_job $env 1 standard 12000000000 256 512 50
 
-# env=ant_posvel
-# submit_job $env 1 standard 1200000000 512 3000 1000 "more_envs"
-# submit_job $env 1 meanfield 1200000000 512 3000 1000 "more_envs"
-# submit_job $env 1 meanfield_encoded 1200000000 512 3000 1000 "more_envs"
+
+submit_job $env 1 meanfield 12000000000 256 512 50
+
+
+
+env=ant_posvel
+submit_job $env 1 standard 12000000000 256 512 50
+
+submit_job $env 1 meanfield 12000000000 256 512 50
+
 
 
 # Wait for all background processes to complete

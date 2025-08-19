@@ -28,8 +28,7 @@ def collect_points(env_to_csv: dict) -> pd.DataFrame:
     Returns a DataFrame with columns: [environment, method_base, x, y]
     """
     pairs = [
-        ("CRL + Oracle", "CRL + Oracle + Full Tau", "CRL + Oracle + Mean Field"),
-        ("CRL + GoalKDE", "CRL + GoalKDE + Full Tau", "CRL + GoalKDE + Mean Field"),
+        ("CIRL", "CRL + GoalKDE + Full Tau", "CRL + GoalKDE + Mean Field"),
         ("GCBC", "GCBC + Full Tau", "GCBC + Mean Field"),
     ]
 
@@ -65,8 +64,7 @@ def plot_scatter(points: pd.DataFrame, output_dir: Path) -> None:
 
     # Style mappings
     method_to_color = {
-        "CRL + Oracle": "#1f77b4",  # blue
-        "CRL + GoalKDE": "#ff7f0e",  # orange
+        "CIRL": "#ff7f0e",  # orange
         "GCBC": "#d62728",          # red
     }
     environments = sorted(points["environment"].unique())
