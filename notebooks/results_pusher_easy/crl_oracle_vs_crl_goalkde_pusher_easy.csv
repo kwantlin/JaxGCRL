@@ -1,0 +1,3 @@
+Method,Mean Difference,Std Error,Method Type
+CRL + Oracle + Mean Field,0.3366013765335083,0.0164866391569376,CRL
+CRL + GoalKDE + Mean Field,0.21102255582809448,0.01594877801835537,GoalKDE

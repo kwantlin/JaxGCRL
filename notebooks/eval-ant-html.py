@@ -28,14 +28,22 @@ from functools import partial
 
 env_name = 'ant'
 # Load standard CRL checkpoint. For expert demos!
-RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-main-standard_s_1'
-CKPT_NAME = '/step_19522560.pkl'
+RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-main-standard-della-maxent-gaussianmlp_s_1'
+CKPT_NAME = '/best.pkl'
 params = model.load_params(RUN_FOLDER_PATH + '/ckpt' + CKPT_NAME)
 policy_params, encoders_params, context_params = params
 
+# # OPTION 1: CRL Mean field
 # CRL Mean field checkpoint
-MEAN_FIELD_RUN_FOLDER_PATH = f'/n/fs/klips/JaxGCRL/runs/run_{env_name}-main-meanfield_s_1'
-MEAN_FIELD_CKPT_NAME = '/step_19522560.pkl'
+# MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-main-meanfield-della-maxent-gaussianmlp_s_1'
+# MEAN_FIELD_CKPT_NAME = '/best.pkl'
+# mean_field_params = model.load_params(MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + MEAN_FIELD_CKPT_NAME)
+# _, _, mean_field_context_params = mean_field_params
+
+# # OPTION 2: CRL + GoalKDE + Mean field
+# # CRL + GoalKDE + Mean field checkpoint
+MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-goalkde-meanfield-della-maxent-gaussianmlp_s_1'
+MEAN_FIELD_CKPT_NAME = '/best.pkl'
 mean_field_params = model.load_params(MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + MEAN_FIELD_CKPT_NAME)
 _, _, mean_field_context_params = mean_field_params
 

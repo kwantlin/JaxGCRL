@@ -1282,16 +1282,12 @@ print(f"Goal distance comparison data saved to {output_dir}/goal_distance_compar
 
 # Create a new figure for showing whether time matters for inferring behavior (full trajectory vs. mean field), using percentages
 methods = [
-    'CRL + Oracle + Full Tau', 'CRL + Oracle + Mean Field',
     'CRL + GoalKDE + Full Tau', 'CRL + GoalKDE + Mean Field',
     'GCBC + Full Tau', 'GCBC + Mean Field',
     
 ]
 
 mean_diffs = [
-    
-    float(1.0 - reward_diff_inferred_mean/jnp.mean(total_rewards)),
-    float(1.0 - mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
     float(1.0 - goalkde_reward_diff_inferred_mean/jnp.mean(total_rewards)),
     float(1.0 - goalkde_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
     float(1.0 - bc_reward_diff_inferred_mean/jnp.mean(total_rewards)),
@@ -1299,8 +1295,6 @@ mean_diffs = [
 ]
 
 std_errors = [
-    float(reward_diff_inferred_stderror/jnp.mean(total_rewards)),
-    float(mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     float(goalkde_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     float(goalkde_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     float(bc_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
@@ -1308,7 +1302,7 @@ std_errors = [
     
 ]
 
-method_types = ['CRL']*2 + ['GoalKDE']*2 + ['BC']*2 
+method_types = ['GoalKDE']*2 + ['BC']*2 
 
 df = pd.DataFrame({
     'Method': methods,
@@ -1326,7 +1320,7 @@ ax = sns.barplot(
     y='Mean Difference', 
     hue='Method Type',
     data=df,
-    palette=['#1f77b4', '#ff7f0e', '#d62728']  # Blue for CRL, Orange for GoalKDE, Purple for NN, Green for BC, Red for FB
+    palette=['#ff7f0e', '#d62728']  # Blue for CRL, Orange for GoalKDE, Purple for NN, Green for BC, Red for FB
 )
 
 # Add error bars
@@ -1500,7 +1494,7 @@ ax = sns.barplot(
     y='Mean Difference', 
     hue='Method Type',
     data=df,
-    palette=['#d62728', '#ff7f0e']  # Blue for CRL, Orange for GoalKDE, Purple for NN, Green for BC, Red for FB
+    palette=['#2ca02c', '#ff7f0e']  # Blue for CRL, Orange for GoalKDE, Purple for NN, Green for BC, Red for FB
 )
 
 # Add error bars
@@ -1539,3 +1533,88 @@ plt.savefig(f'{output_dir}/fb_vs_goalkde_last_state_{env_name}.png', dpi=300, bb
 performance_df = df
 performance_df.to_csv(f'{output_dir}/fb_vs_goalkde_last_state_{env_name}.csv', index=False)
 print(f"Performance comparison data saved to {output_dir}/fb_vs_goalkde_last_state_{env_name}.csv")
+
+
+# Create a visualization of crl + oracle vs crl + goalkde
+methods = [
+    'CRL + Oracle + Mean Field', 'CRL + GoalKDE + Mean Field',
+    
+]
+
+mean_diffs = [
+    
+    float(1.0 - mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - goalkde_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+]
+
+std_errors = [
+    float(mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(goalkde_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    
+]
+
+method_types = ['CRL']*1 + ['GoalKDE']*1 
+
+df = pd.DataFrame({
+    'Method': methods,
+    'Mean Difference': mean_diffs,
+    'Std Error': std_errors,
+    'Method Type': method_types
+})
+
+# Set up the figure
+plt.figure(figsize=(14, 8))
+
+# Create the bar plot with error bars
+ax = sns.barplot(
+    x='Method', 
+    y='Mean Difference', 
+    hue='Method Type',
+    data=df,
+    palette=['#1f77b4', '#ff7f0e']  # Blue for CRL, Orange for GoalKDE, Purple for NN, Green for BC, Red for FB
+)
+
+# Add error bars
+for i, (_, row) in enumerate(df.iterrows()):
+    ax.errorbar(
+        i, row['Mean Difference'], 
+        yerr=row['Std Error'], 
+        fmt='none', 
+        color='black', 
+        capsize=5
+    )
+
+# Add a horizontal line at y=avg rew for reference (zero regret = matching expert performance)
+# plt.axhline(y=jnp.mean(total_rewards), color='green', linestyle='-', alpha=0.7, label=f'Mean Expert Reward: {float(jnp.mean(total_rewards)):.3f}')
+
+# Add horizontal lines for standard error bands
+# expert_stderr = float(jnp.std(total_rewards) / jnp.sqrt(NUM_ENVS))
+# plt.axhline(y=jnp.mean(total_rewards)+expert_stderr, color='green', linestyle=':', alpha=0.5, label=f'+1 StdErr: {expert_stderr:.3f}')
+# plt.axhline(y=jnp.mean(total_rewards)-expert_stderr, color='green', linestyle=':', alpha=0.5, label=f'-1 StdErr: {-expert_stderr:.3f}')
+
+# Add a note about expert performance in the legend
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(handles=handles, labels=labels, loc='best')
+
+# Customize the plot
+plt.title(f'Imitation Score ({env_name})', fontsize=16)
+plt.ylabel('Imitation Score (%)', fontsize=14)
+plt.xlabel('Method', fontsize=14)
+plt.xticks(rotation=45, ha='right')
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+
+# Add a note explaining the interpretation
+# plt.figtext(0.5, 0.01, 
+#             "Note: Higher values indicate better performance compared to expert demonstrations.\n"
+#             "Error bars represent standard error of the mean.", 
+#             ha='center', fontsize=10)
+
+# Save the figure
+plt.savefig(f'{output_dir}/crl_oracle_vs_crl_goalkde_{env_name}.png', dpi=300, bbox_inches='tight')
+
+# Save the performance comparison data to CSV
+performance_df = df
+performance_df.to_csv(f'{output_dir}/crl_oracle_vs_crl_goalkde_{env_name}.csv', index=False)
+print(f"Performance comparison data saved to {output_dir}/crl_oracle_vs_crl_goalkde_{env_name}.csv")
+
