@@ -15,6 +15,170 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from envs.ant_base import AntJump
 from brax.training.agents.ppo import networks as ppo_networks
 from brax.io import model
+from brax import math
+
+
+def quat_to_3x3(quat):
+    """Convert quaternion to 3x3 rotation matrix."""
+    return math.quat_to_3x3(quat)
+
+
+def calculate_antforward_reward(obs, action, min_forward_velocity=0.5, ctrl_cost_weight=0.5, healthy_reward=1.0, healthy_z_range=(0.2, 2.5)):
+    """Calculate AntForward reward from observations."""
+    # Extract torso position and velocity from observations
+    # obs[0] = z-coordinate of torso (height)
+    # obs[1:5] = torso orientation quaternion [w, x, y, z]
+    # obs[13:16] = torso velocity [vx, vy, vz]
+    
+    # Transform to local frame using torso orientation
+    torso_quat = obs[1:5]  # [w, x, y, z] quaternion
+    torso_vel = obs[13:16]  # [vx, vy, vz] world velocity
+    torso_rot = quat_to_3x3(torso_quat)
+    local_velocity = torso_rot.T @ torso_vel
+    
+    # Calculate forward reward
+    local_x_velocity = local_velocity[0]
+    # The environment uses the opposite sign for local x velocity
+    forward_reward = jp.where(-local_x_velocity > min_forward_velocity, -local_x_velocity, 0.0)
+    
+    # Calculate healthy reward - match environment behavior
+    # The environment seems to always give healthy reward regardless of health status
+    # when terminate_when_unhealthy=True (which is the default)
+    healthy_reward_component = healthy_reward
+    
+    # Control cost
+    ctrl_cost = ctrl_cost_weight * jp.sum(jp.square(action))
+    
+    return forward_reward + healthy_reward_component - ctrl_cost
+
+
+def calculate_antforward_reward_exact(obs, next_obs, action, dt, min_forward_velocity=0.5, ctrl_cost_weight=0.5, healthy_reward=1.0):
+    """Reproduce AntForward env reward exactly using (s, a, s').
+
+    - world_velocity = (pos_after - pos_before) / dt
+    - local velocity = R(q_after)^T @ world_velocity
+    - forward_reward = where(local_x_velocity > min_forward_velocity, local_x_velocity, 0.0)
+    - healthy_reward = constant (default env behavior with terminate_when_unhealthy=True)
+    - ctrl_cost = ctrl_cost_weight * sum(action^2)
+    """
+    # Positions (world)
+    pos_before = obs[0:3]
+    pos_after = next_obs[0:3]
+    world_velocity = (pos_after - pos_before) / dt
+
+    # Use orientation AFTER step
+    torso_quat_after = next_obs[3:7]
+    torso_rot_after = quat_to_3x3(torso_quat_after)
+    local_velocity = torso_rot_after.T @ world_velocity
+    local_x_velocity = local_velocity[0]
+
+    forward_reward = jp.where(local_x_velocity > min_forward_velocity, local_x_velocity, 0.0)
+    healthy = healthy_reward
+    ctrl_cost = ctrl_cost_weight * jp.sum(jp.square(action))
+    return forward_reward + healthy - ctrl_cost
+
+
+def calculate_antjump_reward(obs, action, target_height=1.0, ctrl_cost_weight=0.5, healthy_reward=1.0, healthy_z_range=(0.2, 2.5)):
+    """Calculate AntJump reward from observations."""
+    # Extract torso height from observations
+    z_position = obs[0]  # Torso z-coordinate (height)
+    
+    # Calculate jump reward
+    jump_reward = jp.where(z_position > target_height, z_position, 0.0)
+    
+    # Calculate healthy reward - always give healthy reward like environment
+    healthy_reward_component = healthy_reward
+    
+    # Control cost
+    ctrl_cost = ctrl_cost_weight * jp.sum(jp.square(action))
+    
+    return jump_reward + healthy_reward_component - ctrl_cost
+
+
+def calculate_antjump_reward_exact(obs, next_obs, action, dt, target_height=1.0, ctrl_cost_weight=0.5, healthy_reward=1.0):
+    """Reproduce AntJump env reward exactly using (s, a, s')."""
+    z_after = next_obs[2]
+    jump_reward = jp.where(z_after > target_height, z_after, 0.0)
+    healthy = healthy_reward
+    ctrl_cost = ctrl_cost_weight * jp.sum(jp.square(action))
+    return jump_reward + healthy - ctrl_cost
+
+
+def calculate_antflip_reward(obs, action, min_flip_velocity=1.0, ctrl_cost_weight=0.5):
+    """Calculate AntFlip reward from observations."""
+    # Extract torso position and orientation
+    torso_height = obs[0]  # z-coordinate
+    torso_quat = obs[1:5]  # quaternion
+    torso_ang_vel = obs[16:19]  # angular velocity
+    
+    # Calculate stand reward
+    torso_rot = quat_to_3x3(torso_quat)
+    upright = torso_rot[2, 2]  # Projection of torso z-axis on world z-axis
+    # The environment uses the opposite sign for upright calculation
+    upright = -upright
+    
+    standing = jp.where(torso_height > 0.7, 1.0, 0.0)  # stand_height = 0.7
+    stand_reward = (standing * 3 + upright) / 4
+    
+    # Calculate flip reward
+    flip_speed_y = torso_ang_vel[1]  # Angular velocity around y-axis
+    move_reward = jp.clip(flip_speed_y / min_flip_velocity, 0.0, 1.0)
+    
+    # Control cost
+    ctrl_cost = ctrl_cost_weight * jp.sum(jp.square(action))
+    
+    # AntFlip does NOT include healthy reward in the final reward calculation!
+    # The environment only uses: stand_reward * (5 * move_reward + 1) / 6 - ctrl_cost
+    return stand_reward * (5 * move_reward + 1) / 6 - ctrl_cost
+
+
+def calculate_antflip_reward_exact(obs, next_obs, action, dt, min_flip_velocity=1.0, ctrl_cost_weight=0.5):
+    """Reproduce AntFlip env reward exactly using (s, a, s').
+
+    Uses AFTER-step quantities for height, orientation, and angular velocity.
+    Matches env: upright = R(q)[2,2]; flip_speed from qd[4] (y axis) as in obs[18:21].
+    """
+    torso_height = next_obs[2]
+    torso_quat = next_obs[3:7]
+    torso_rot = quat_to_3x3(torso_quat)
+    torso_ang_vel = next_obs[18:21]
+
+    upright = torso_rot[2, 2]
+
+    standing = jp.where(torso_height > 0.7, 1.0, 0.0)
+    stand_reward = (standing * 3 + upright) / 4
+
+    flip_speed_y = torso_ang_vel[1]
+    move_reward = jp.clip(flip_speed_y / min_flip_velocity, 0.0, 1.0)
+    ctrl_cost = ctrl_cost_weight * jp.sum(jp.square(action))
+    return stand_reward * (5 * move_reward + 1) / 6 - ctrl_cost
+
+
+def get_reward_function(env_type, **kwargs):
+    """Get the appropriate reward function based on environment type."""
+    ctrl_cost_weight = kwargs.get('ctrl_cost_weight', 0.5)
+    healthy_reward = kwargs.get('healthy_reward', 1.0)
+    
+    if 'antforward' in env_type:
+        min_forward_velocity = kwargs.get('min_forward_velocity', 0.5)
+        dt = kwargs['dt']
+        return lambda obs, next_obs, action: calculate_antforward_reward_exact(
+            obs, next_obs, action, dt, min_forward_velocity, ctrl_cost_weight, healthy_reward
+        )
+    elif 'antjump' in env_type:
+        target_height = kwargs.get('target_height', 1.0)
+        dt = kwargs['dt']
+        return lambda obs, next_obs, action: calculate_antjump_reward_exact(
+            obs, next_obs, action, dt, target_height, ctrl_cost_weight, healthy_reward
+        )
+    elif 'antflip' in env_type:
+        min_flip_velocity = kwargs.get('min_flip_velocity', 1.0)
+        dt = kwargs['dt']
+        return lambda obs, next_obs, action: calculate_antflip_reward_exact(
+            obs, next_obs, action, dt, min_flip_velocity, ctrl_cost_weight
+        )
+    else:
+        raise ValueError(f"Unknown environment type: {env_type}")
 
 
 def find_latest_model(env_name):
@@ -49,7 +213,7 @@ def load_policy(model_path, env):
     return policy
 
 
-def collect_trajectory(env, policy, episode_length=1000, seed=0):
+def collect_trajectory(env, policy, episode_length=1000, seed=0, reward_function=None):
     """Collect a single trajectory of state-action pairs."""
     rng = jax.random.PRNGKey(seed)
     
@@ -57,6 +221,10 @@ def collect_trajectory(env, policy, episode_length=1000, seed=0):
     jit_env_reset = jax.jit(env.reset)
     jit_env_step = jax.jit(env.step)
     jit_policy = jax.jit(policy)
+    
+    # JIT the reward function if provided
+    if reward_function is not None:
+        jit_reward_function = jax.jit(reward_function)
     
     # Reset environment
     rng, reset_rng = jax.random.split(rng)
@@ -66,6 +234,8 @@ def collect_trajectory(env, policy, episode_length=1000, seed=0):
     observations = []
     actions = []
     rewards = []
+    env_rewards = []
+    custom_rewards = []
     dones = []
     infos = []
     
@@ -80,10 +250,27 @@ def collect_trajectory(env, policy, episode_length=1000, seed=0):
         actions.append(np.array(action))
         
         # Step environment
-        state = jit_env_step(state, action)
+        next_state = jit_env_step(state, action)
         
-        # Store reward and done
-        rewards.append(float(state.reward))
+        # Calculate rewards on the SAME transition (s, a, s')
+        # - env reward comes from next_state.reward
+        # - custom reward uses (obs_before, obs_after, action) to reproduce env exactly
+        env_rew = float(next_state.reward)
+        if reward_function is not None:
+            custom_rew = float(jit_reward_function(state.obs, next_state.obs, action))
+        else:
+            custom_rew = None
+        
+        # Primary rewards vector mirrors previous behavior:
+        # if a custom function is provided, use it; otherwise use env reward
+        rewards.append(float(custom_rew if custom_rew is not None else env_rew))
+        
+        # Always store both for comparison
+        env_rewards.append(env_rew)
+        custom_rewards.append(float(custom_rew) if custom_rew is not None else np.nan)
+        
+        state = next_state
+        
         dones.append(bool(state.done))
         infos.append(dict(state.metrics))
         
@@ -96,6 +283,8 @@ def collect_trajectory(env, policy, episode_length=1000, seed=0):
         'observations': np.array(observations),
         'actions': np.array(actions),
         'rewards': np.array(rewards),
+        'env_rewards': np.array(env_rewards),
+        'custom_rewards': np.array(custom_rewards),
         'dones': np.array(dones),
         'infos': infos
     }
@@ -207,6 +396,7 @@ def main(args):
     print(f"Loading model from: {model_path}")
     
     # Create environment (same as used during training)
+    env_params = {}
     if 'antjump' in model_path:
         # Extract target jump height from filename if possible
         target_height = 1.0  # default
@@ -217,6 +407,7 @@ def main(args):
         # Add more cases as needed
         
         env = AntJump(target_jump_height=target_height)
+        env_params['target_height'] = target_height
         print(f"Created AntJump environment with target height: {target_height}")
     elif 'antforward' in model_path:
         # Extract forward velocity from filename if possible
@@ -229,6 +420,7 @@ def main(args):
         
         from envs.ant_base import AntForward
         env = AntForward(min_forward_velocity=min_forward_velocity)
+        env_params['min_forward_velocity'] = min_forward_velocity
         print(f"Created AntForward environment with min_forward_velocity: {min_forward_velocity}")
     elif 'antflip' in model_path:
         # Extract flip velocity from filename if possible
@@ -241,9 +433,35 @@ def main(args):
         
         from envs.ant_base import AntFlip
         env = AntFlip(min_flip_velocity=min_flip_velocity)
+        env_params['min_flip_velocity'] = min_flip_velocity
         print(f"Created AntFlip environment with min_flip_velocity: {min_flip_velocity}")
     else:
         raise ValueError(f"Unsupported environment type in model path: {model_path}")
+    
+    # Get custom reward function if requested
+    reward_function = None
+    if args.use_custom_rewards:
+        # Read parameters directly from the constructed env to avoid mismatch
+        if 'antjump' in model_path:
+            env_params['target_height'] = getattr(env, '_target_jump_height', args.target_height)
+        elif 'antforward' in model_path:
+            env_params['min_forward_velocity'] = getattr(env, '_min_forward_velocity', args.min_forward_velocity)
+        elif 'antflip' in model_path:
+            # AntFlip stores spin speed as the threshold parameter
+            env_params['min_flip_velocity'] = getattr(env, '_spin_speed', args.min_flip_velocity)
+
+        # Control weight and healthy reward
+        env_params['ctrl_cost_weight'] = getattr(env, '_ctrl_cost_weight', args.ctrl_cost_weight)
+        env_params['healthy_reward'] = getattr(env, '_healthy_reward', args.healthy_reward)
+
+        # Time step for velocity discretization
+        env_params['dt'] = getattr(env, 'dt', 0.05)
+
+        reward_function = get_reward_function(model_path, **env_params)
+        print("Using custom reward calculations")
+        print(f"Reward parameters: {env_params}")
+    else:
+        print("Using environment's built-in rewards")
     
     # Load the trained policy
     policy = load_policy(model_path, env)
@@ -260,7 +478,8 @@ def main(args):
             env, 
             policy, 
             episode_length=args.episode_length,
-            seed=args.seed + episode
+            seed=args.seed + episode,
+            reward_function=reward_function
         )
         
         all_trajectories.append(trajectory)
@@ -269,6 +488,15 @@ def main(args):
         
         print(f"  Episode {episode + 1} total reward: {total_reward:.2f}")
         print(f"  Episode {episode + 1} length: {len(trajectory['observations'])}")
+        
+        # If both env and custom rewards are available, print their sums for verification
+        if args.use_custom_rewards and 'env_rewards' in trajectory:
+            env_sum = float(np.nansum(trajectory['env_rewards']))
+            custom_sum = float(np.nansum(trajectory['custom_rewards']))
+            diff_sum = custom_sum - env_sum
+            print(f"    Env reward sum:    {env_sum:.4f}")
+            print(f"    Custom reward sum: {custom_sum:.4f}")
+            print(f"    Difference (cust - env): {diff_sum:.4f}")
     
     # Print summary statistics
     print("\n" + "="*50)
@@ -279,6 +507,12 @@ def main(args):
     print(f"Min total reward: {np.min(total_rewards):.2f}")
     print(f"Max total reward: {np.max(total_rewards):.2f}")
     print(f"Mean episode length: {np.mean([len(t['observations']) for t in all_trajectories]):.1f}")
+    
+    if args.use_custom_rewards:
+        print(f"Reward calculation: Custom reward functions")
+        print(f"Reward parameters: {env_params}")
+    else:
+        print(f"Reward calculation: Environment's built-in rewards")
     
     # Save trajectories if requested
     if args.save_trajectories:
@@ -345,7 +579,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--episode_length',
         type=int,
-        default=1000,
+        default=1024,
         help='Maximum length of each episode.'
     )
     parser.add_argument(
@@ -368,6 +602,41 @@ if __name__ == '__main__':
         '--plot_single',
         action='store_true',
         help='Plot individual trajectories separately.'
+    )
+    parser.add_argument(
+        '--use_custom_rewards',
+        action='store_true',
+        help='Use custom reward calculations instead of environment rewards.'
+    )
+    parser.add_argument(
+        '--target_height',
+        type=float,
+        default=1.0,
+        help='Target jump height for AntJump environment (when using custom rewards).'
+    )
+    parser.add_argument(
+        '--min_forward_velocity',
+        type=float,
+        default=0.5,
+        help='Minimum forward velocity for AntForward environment (when using custom rewards).'
+    )
+    parser.add_argument(
+        '--min_flip_velocity',
+        type=float,
+        default=1.5,
+        help='Minimum flip velocity for AntFlip environment (when using custom rewards).'
+    )
+    parser.add_argument(
+        '--ctrl_cost_weight',
+        type=float,
+        default=0.5,
+        help='Control cost weight for reward calculations.'
+    )
+    parser.add_argument(
+        '--healthy_reward',
+        type=float,
+        default=1.0,
+        help='Healthy reward per timestep when ant is within healthy height range.'
     )
     
     args = parser.parse_args()
