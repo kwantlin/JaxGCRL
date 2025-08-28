@@ -131,14 +131,14 @@ if __name__ == '__main__':
   parser.add_argument(
       '--env',
       type=str,
-      default='antforward',
+      default='antflip',
       choices=['antforward', 'antjump', 'walkerforward', 'walkerjump', 'walkerflip', 'antflip'],
       help='Environment to train.',
   )
   parser.add_argument(
       '--total_env_steps',
       type=int,
-      default=50_000_000,
+      default=150_000_000,
       help='Total number of environment steps to train for.',
   )
   parser.add_argument(
@@ -209,7 +209,7 @@ if __name__ == '__main__':
   parser.add_argument(
       '--min_flip_velocity',
       type=float,
-      default=1.0,
+      default=1.5,
       help='Minimum angular velocity for flip environments.',
   )
 

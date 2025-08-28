@@ -63,21 +63,21 @@ EOF
 
 # Submit jobs for each environment
 env=ant
-submit_job $env 1 standard 60000000 256 512 50
-submit_job $env 2 standard 60000000 256 512 50
-submit_job $env 3 standard 60000000 256 512 50
+# submit_job $env 1 standard 60000000 256 512 50
+# submit_job $env 2 standard 60000000 256 512 50
+# submit_job $env 3 standard 60000000 256 512 50
 
-submit_job $env 1 meanfield 60000000 256 512 50
-submit_job $env 2 meanfield 60000000 256 512 50
-submit_job $env 3 meanfield 60000000 256 512 50
+# submit_job $env 1 meanfield 60000000 256 512 50
+# submit_job $env 2 meanfield 60000000 256 512 50
+# submit_job $env 3 meanfield 60000000 256 512 50
 
-submit_job $env 1 standard 60000000 256 512 50 1 1e-4 1e-4 1e-4
-submit_job $env 2 standard 60000000 256 512 50 1 1e-4 1e-4 1e-4
-submit_job $env 3 standard 60000000 256 512 50 1 1e-4 1e-4 1e-4
+# submit_job $env 1 standard 60000000 256 512 50 1 1e-4 1e-4 1e-4
+# submit_job $env 2 standard 60000000 256 512 50 1 1e-4 1e-4 1e-4
+# submit_job $env 3 standard 60000000 256 512 50 1 1e-4 1e-4 1e-4
 
-submit_job $env 1 meanfield 60000000 256 512 50 1 1e-4 1e-4 1e-4
-submit_job $env 2 meanfield 60000000 256 512 50 1 1e-4 1e-4 1e-4
-submit_job $env 3 meanfield 60000000 256 512 50 1 1e-4 1e-4 1e-4
+# submit_job $env 1 meanfield 60000000 256 512 50 1 1e-4 1e-4 1e-4
+# submit_job $env 2 meanfield 60000000 256 512 50 1 1e-4 1e-4 1e-4
+# submit_job $env 3 meanfield 60000000 256 512 50 1 1e-4 1e-4 1e-4
 
 
 
@@ -135,15 +135,15 @@ env=pusher_easy
 
 
 
-# env=ant_posvel
-# submit_job $env 1 standard 12000000000 256 512 50
-# submit_job $env 2 standard 12000000000 256 512 50
-# submit_job $env 3 standard 12000000000 256 512 50
+env=ant_posvel
+submit_job $env 1 standard 12000000000 256 512 500 1 1e-4 1e-4 1e-4
+submit_job $env 2 standard 12000000000 256 512 500 1 1e-4 1e-4 1e-4
+submit_job $env 3 standard 12000000000 256 512 500 1 1e-4 1e-4 1e-4
 
 
-# submit_job $env 1 meanfield 12000000000 256 512 50
-# submit_job $env 2 meanfield 12000000000 256 512 50
-# submit_job $env 3 meanfield 12000000000 256 512 50
+submit_job $env 1 meanfield 12000000000 256 512 500 1 1e-4 1e-4 1e-4
+submit_job $env 2 meanfield 12000000000 256 512 500 1 1e-4 1e-4 1e-4
+submit_job $env 3 meanfield 12000000000 256 512 500 1 1e-4 1e-4 1e-4
 
 
 # submit_job $env 1 standard 1200000000 512 2048 1000
