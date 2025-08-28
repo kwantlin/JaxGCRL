@@ -451,7 +451,7 @@ class AntFlip(Ant):
     self._stand_height = 0.7  # Hardcoded stand height
     self._spin_speed = min_flip_velocity
     # Override the healthy_z_range from the base class for flipping
-    self._healthy_z_range = (0.0, 5.0)
+    self._healthy_z_range = (0.1, 3.0)
 
   def reset(self, rng: jax.Array) -> State:
     """Resets the environment to an initial state."""
@@ -476,10 +476,8 @@ class AntFlip(Ant):
         'y_position': zero,
         'z_position': zero,
         'distance_from_origin': zero,
-        'world_x_velocity': zero,
-        'world_y_velocity': zero,
-        'local_x_velocity': zero,
-        'local_y_velocity': zero,
+        'x_velocity': zero,
+        'y_velocity': zero,
         'angular_velocity_x': zero,
         'angular_velocity_y': zero,
         'angular_velocity_z': zero,
@@ -525,11 +523,8 @@ class AntFlip(Ant):
     )
     done = 1.0 - (is_healthy & is_finite)
 
-    # Calculate velocity in world frame
-    world_velocity = (pipeline_state.x.pos[0] - pipeline_state0.x.pos[0]) / self.dt
-    
-    # Transform to torso's local frame (like URLB approach)
-    local_velocity = torso_rot.T @ world_velocity
+    # Also calculate linear velocity for metrics
+    velocity = (pipeline_state.x.pos[0] - pipeline_state0.x.pos[0]) / self.dt
     z_position = pipeline_state.x.pos[0, 2]
 
     state.metrics.update(
@@ -541,10 +536,8 @@ class AntFlip(Ant):
         y_position=pipeline_state.x.pos[0, 1],
         z_position=z_position,
         distance_from_origin=math.safe_norm(pipeline_state.x.pos[0]),
-        world_x_velocity=world_velocity[0],
-        world_y_velocity=world_velocity[1],
-        local_x_velocity=local_velocity[0],
-        local_y_velocity=local_velocity[1],
+        x_velocity=velocity[0],
+        y_velocity=velocity[1],
         angular_velocity_x=angular_velocity[0],
         angular_velocity_y=angular_velocity[1],
         angular_velocity_z=angular_velocity[2],
