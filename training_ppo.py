@@ -7,7 +7,8 @@ import wandb
 from brax.io import model
 from pyinstrument import Profiler
 
-from src.baselines.ppo import train
+# from src.baselines.ppo import train
+from src.train_ppo import train
 from utils import MetricsRecorder, create_env, create_eval_env, create_parser
 
 
@@ -33,8 +34,8 @@ def main(args):
     eval_env = create_eval_env(args)
 
 
-    os.makedirs('./runs', exist_ok=True)
-    run_dir = './runs/run_{name}_s_{seed}'.format(name=args.exp_name, seed=args.seed)
+    os.makedirs('/scratch/gpfs/kw2960/JaxGCRL/runs', exist_ok=True)
+    run_dir = '/scratch/gpfs/kw2960/JaxGCRL/runs/run_{name}_s_{seed}'.format(name=args.exp_name, seed=args.seed)
     ckpt_dir = run_dir + '/ckpt'
     os.makedirs(run_dir, exist_ok=True)
     os.makedirs(ckpt_dir, exist_ok=True)
@@ -67,7 +68,8 @@ def main(args):
         gae_lambda=0.95,
         max_devices_per_host=1,
         seed=args.seed,
-        eval_env=eval_env
+        eval_env=eval_env,
+        checkpoint_logdir=ckpt_dir
     )
 
     metrics_to_collect = [
@@ -109,7 +111,7 @@ if __name__ == "__main__":
         group=args.group_name,
         name=args.exp_name,
         config=vars(args),
-        mode="online" if args.log_wandb else "disabled",
+        mode="offline" if args.log_wandb else "disabled",
     )
 
     with Profiler(interval=0.1) as profiler:

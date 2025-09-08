@@ -558,15 +558,15 @@ print("Standard error of difference between nearest neighbor and expert policy r
 def fb_infer_latent(backward_repr, backward_params, states):
     goal_portion_of_state = states[:, env.goal_indices]
     backward_reprs = backward_repr.apply(backward_params, goal_portion_of_state)
-    backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(goal_size)
+    backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(args.repr_dim)
     avg_backward_repr = jnp.mean(backward_reprs, axis=0)
-    latent = avg_backward_repr / jnp.linalg.norm(avg_backward_repr) * jnp.sqrt(goal_size)
+    latent = avg_backward_repr / jnp.linalg.norm(avg_backward_repr) * jnp.sqrt(args.repr_dim)
     return latent
 
 def fb_infer_latent_from_last_state(backward_repr, backward_params, states):
     goal_portion_of_state = states[:, env.goal_indices]
     backward_reprs = backward_repr.apply(backward_params, goal_portion_of_state)
-    backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(goal_size)
+    backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(args.repr_dim)
     latent = backward_reprs[-1]
     return latent
 
@@ -586,7 +586,7 @@ print("FB inferred goals shape:", fb_inferred_goals.shape)
 print("FB inferred goals from last state shape:", fb_inferred_goals_from_last_state.shape)
 
 # Add an extra dimension at axis 1 to fb_inferred_goals
-# This transforms the shape from [NUM_ENVS, goal_size] to [NUM_ENVS, 1, goal_size]
+# This transforms the shape from [NUM_ENVS, repr_dim] to [NUM_ENVS, 1, repr_dim]
 fb_inferred_goals = fb_inferred_goals[:, None, :]
 fb_inferred_goals_from_last_state = fb_inferred_goals_from_last_state[:, None, :]
 print("FB inferred goals shape after adding dimension:", fb_inferred_goals.shape)
@@ -898,6 +898,109 @@ goalkde_mf_reward_diff_inferred_pct_stderror = jnp.std(goalkde_mf_reward_diff_in
 
 print("Mean difference between total rewards and GoalKDE inferred goal rewards (mean field):", goalkde_mf_reward_diff_inferred_mean)
 print("Standard error of difference between total rewards and GoalKDE inferred goal rewards (mean field):", goalkde_mf_reward_diff_inferred_stderror)
+
+
+
+
+
+
+### FB with GoalKDE Mean Field Inferred Goal ###
+
+# Create a new FB inference function that uses the GoalKDE mean field inferred goal
+def fb_infer_latent_from_goalkde_mf_goal(backward_repr, backward_params, goalkde_mf_goal):
+    # Use the GoalKDE mean field inferred goal directly
+    backward_repr_goal = backward_repr.apply(backward_params, goalkde_mf_goal)
+    backward_repr_goal = backward_repr_goal / jnp.linalg.norm(backward_repr_goal, axis=-1, keepdims=True) * jnp.sqrt(args.repr_dim)
+    latent = backward_repr_goal
+    return latent
+
+fb_infer_latent_from_goalkde_mf_goal = jax.jit(fb_infer_latent_from_goalkde_mf_goal, static_argnums=0)
+
+# Generate FB inferred goals using GoalKDE mean field inferred goals
+# goalkde_mf_inferred_goals has shape (2000, 1, goal_dim), we need to squeeze to (2000, goal_dim)
+goalkde_mf_inferred_goals_squeezed = jnp.squeeze(goalkde_mf_inferred_goals, axis=1)
+print("goalkde_mf_inferred_goals_squeezed shape:", goalkde_mf_inferred_goals_squeezed.shape)
+
+# Apply the backward representation to convert goals to latents
+fb_inferred_goals_from_goalkde_mf = backward_repr.apply(fb_target_backward_params, goalkde_mf_inferred_goals_squeezed)
+print("fb_inferred_goals_from_goalkde_mf after backward_repr.apply shape:", fb_inferred_goals_from_goalkde_mf.shape)
+fb_inferred_goals_from_goalkde_mf = fb_inferred_goals_from_goalkde_mf / jnp.linalg.norm(fb_inferred_goals_from_goalkde_mf, axis=-1, keepdims=True) * jnp.sqrt(args.repr_dim)
+print("fb_inferred_goals_from_goalkde_mf after normalization shape:", fb_inferred_goals_from_goalkde_mf.shape)
+
+print("FB inferred goals from GoalKDE MF shape:", fb_inferred_goals_from_goalkde_mf.shape)
+
+# Add an extra dimension at axis 1 to match the expected shape
+fb_inferred_goals_from_goalkde_mf = fb_inferred_goals_from_goalkde_mf[:, None, :]
+print("FB inferred goals from GoalKDE MF shape after adding dimension:", fb_inferred_goals_from_goalkde_mf.shape)
+
+# Collect trajectories using FB inferred goals from GoalKDE mean field
+fb_goalkde_mf_inferred_goal_rngs = jax.random.split(jax.random.PRNGKey(3), NUM_ENVS * NUM_SAMPLES)
+fb_goalkde_mf_inferred_goal_rngs = fb_goalkde_mf_inferred_goal_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
+
+fb_goalkde_mf_inferred_goal_rews = jax.vmap(
+    jax.vmap(fb_collect_trajectory_with_target, in_axes=(0, 0, None)),
+    in_axes=(0, 0, 0)
+)(
+    fb_goalkde_mf_inferred_goal_rngs,
+    fb_inferred_goals_from_goalkde_mf,
+    goals
+)
+
+print("fb goalkde mf inferred_goal_rews shape:", fb_goalkde_mf_inferred_goal_rews.shape)
+fb_goalkde_mf_total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(fb_goalkde_mf_inferred_goal_rews, axis=2), axis=1)
+fb_goalkde_mf_total_rewards_inferred_goal_std = jnp.std(jnp.sum(fb_goalkde_mf_inferred_goal_rews, axis=2), axis=1)
+
+# Compute differences and their statistics for total rewards vs FB with GoalKDE MF inferred goal rewards
+fb_goalkde_mf_reward_diff_inferred = total_rewards - fb_goalkde_mf_total_rewards_inferred_goal_mean
+fb_goalkde_mf_reward_diff_inferred_mean = jnp.mean(fb_goalkde_mf_reward_diff_inferred)
+fb_goalkde_mf_reward_diff_inferred_stderror = jnp.std(fb_goalkde_mf_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
+
+fb_goalkde_mf_reward_diff_inferred_pct = fb_goalkde_mf_total_rewards_inferred_goal_mean / (total_rewards + epsilon)
+fb_goalkde_mf_reward_diff_inferred_pct_mean = jnp.mean(fb_goalkde_mf_reward_diff_inferred_pct)
+fb_goalkde_mf_reward_diff_inferred_pct_stderror = jnp.std(fb_goalkde_mf_reward_diff_inferred_pct) / jnp.sqrt(NUM_ENVS)
+
+print("Mean difference between total rewards and FB with GoalKDE MF inferred goal rewards:", fb_goalkde_mf_reward_diff_inferred_mean)
+print("Standard error of difference between total rewards and FB with GoalKDE MF inferred goal rewards:", fb_goalkde_mf_reward_diff_inferred_stderror)
+
+### FB with True Goal (as latent) ###
+
+# Convert true goals to latents using the backward representation
+fb_inferred_goals_from_true_goals = backward_repr.apply(fb_target_backward_params, goals)
+fb_inferred_goals_from_true_goals = fb_inferred_goals_from_true_goals / jnp.linalg.norm(fb_inferred_goals_from_true_goals, axis=-1, keepdims=True) * jnp.sqrt(args.repr_dim)
+print("FB inferred goals from true goals shape:", fb_inferred_goals_from_true_goals.shape)
+
+# Add an extra dimension at axis 1 to match the expected shape (repr_dim)
+fb_inferred_goals_from_true_goals = fb_inferred_goals_from_true_goals[:, None, :]
+print("FB inferred goals from true goals shape after adding dimension:", fb_inferred_goals_from_true_goals.shape)
+
+# Collect trajectories using FB inferred goals from true goals
+fb_true_goal_rngs = jax.random.split(jax.random.PRNGKey(4), NUM_ENVS * NUM_SAMPLES)
+fb_true_goal_rngs = fb_true_goal_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
+
+fb_true_goal_rews = jax.vmap(
+    jax.vmap(fb_collect_trajectory_with_target, in_axes=(0, 0, None)),
+    in_axes=(0, 0, 0)
+)(
+    fb_true_goal_rngs,
+    fb_inferred_goals_from_true_goals,
+    goals
+)
+
+print("fb true goal rews shape:", fb_true_goal_rews.shape)
+fb_true_goal_total_rewards_mean = jnp.mean(jnp.sum(fb_true_goal_rews, axis=2), axis=1)
+fb_true_goal_total_rewards_std = jnp.std(jnp.sum(fb_true_goal_rews, axis=2), axis=1)
+
+# Compute differences and their statistics for total rewards vs FB with true goal rewards
+fb_true_goal_reward_diff = total_rewards - fb_true_goal_total_rewards_mean
+fb_true_goal_reward_diff_mean = jnp.mean(fb_true_goal_reward_diff)
+fb_true_goal_reward_diff_stderror = jnp.std(fb_true_goal_reward_diff) / jnp.sqrt(NUM_ENVS)
+
+fb_true_goal_reward_diff_pct = fb_true_goal_total_rewards_mean / (total_rewards + epsilon)
+fb_true_goal_reward_diff_pct_mean = jnp.mean(fb_true_goal_reward_diff_pct)
+fb_true_goal_reward_diff_pct_stderror = jnp.std(fb_true_goal_reward_diff_pct) / jnp.sqrt(NUM_ENVS)
+
+print("Mean difference between total rewards and FB with true goal rewards:", fb_true_goal_reward_diff_mean)
+print("Standard error of difference between total rewards and FB with true goal rewards:", fb_true_goal_reward_diff_stderror)
 
 
 
@@ -1383,14 +1486,14 @@ methods = [
 ]
 
 mean_diffs = [
-    float(1.0 - bc_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - bc_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
     float(1.0 - nn_expert_reward_diff_mean/jnp.mean(total_rewards)),
     float(1.0 - fb_reward_diff_inferred_mean/jnp.mean(total_rewards)),
     float(1.0 - goalkde_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
 ]
 
 std_errors = [
-    float(bc_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(bc_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     float(nn_expert_reward_diff_stderror/jnp.mean(total_rewards)),
     float(fb_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     float(goalkde_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
@@ -1617,4 +1720,163 @@ plt.savefig(f'{output_dir}/crl_oracle_vs_crl_goalkde_{env_name}.png', dpi=300, b
 performance_df = df
 performance_df.to_csv(f'{output_dir}/crl_oracle_vs_crl_goalkde_{env_name}.csv', index=False)
 print(f"Performance comparison data saved to {output_dir}/crl_oracle_vs_crl_goalkde_{env_name}.csv")
+
+
+# Create a visualization comparing FB with GoalKDE MF vs standard FB vs CRL + GoalKDE MF vs FB with True Goal
+methods = [
+    'FB + Standard', 'FB + GoalKDE MF', 'FB + True Goal', 'CRL + GoalKDE + Mean Field',
+]
+
+mean_diffs = [
+    float(1.0 - fb_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - fb_goalkde_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - fb_true_goal_reward_diff_mean/jnp.mean(total_rewards)),
+    float(1.0 - goalkde_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+]
+
+std_errors = [
+    float(fb_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(fb_goalkde_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(fb_true_goal_reward_diff_stderror/jnp.mean(total_rewards)),
+    float(goalkde_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+]
+
+method_types = ['FB']*3 + ['GoalKDE']*1 
+
+df = pd.DataFrame({
+    'Method': methods,
+    'Mean Difference': mean_diffs,
+    'Std Error': std_errors,
+    'Method Type': method_types
+})
+
+# Set up the figure
+plt.figure(figsize=(12, 8))
+
+# Create the bar plot with error bars
+ax = sns.barplot(
+    x='Method', 
+    y='Mean Difference', 
+    hue='Method Type',
+    data=df,
+    palette=['#2ca02c', '#ff7f0e']  # Green for FB, Orange for GoalKDE
+)
+
+# Add error bars
+for i, (_, row) in enumerate(df.iterrows()):
+    ax.errorbar(
+        i, row['Mean Difference'], 
+        yerr=row['Std Error'], 
+        fmt='none', 
+        color='black', 
+        capsize=5
+    )
+
+# Add a note about expert performance in the legend
+handles, labels = ax.get_legend_handles_labels()
+ax.legend(handles=handles, labels=labels, loc='best')
+
+# Customize the plot
+plt.title(f'FB with GoalKDE vs Standard FB vs FB with True Goal vs CRL + GoalKDE ({env_name})', fontsize=16)
+plt.ylabel('Imitation Score (%)', fontsize=14)
+plt.xlabel('Method', fontsize=14)
+plt.xticks(rotation=45, ha='right')
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+
+# Save the figure
+plt.savefig(f'{output_dir}/fb_goalkde_vs_standard_fb_vs_crl_goalkde_{env_name}.png', dpi=300, bbox_inches='tight')
+
+# Save the performance comparison data to CSV
+performance_df = df
+performance_df.to_csv(f'{output_dir}/fb_goalkde_vs_standard_fb_vs_crl_goalkde_{env_name}.csv', index=False)
+print(f"Performance comparison data saved to {output_dir}/fb_goalkde_vs_standard_fb_vs_crl_goalkde_{env_name}.csv")
+
+
+# Create a visualization for CRL + GoalKDE with error analysis
+methods = [
+    'True Goal', 'Last State', 'MF Inferred Goal',
+]
+
+mean_diffs = [
+    float(1.0 - goalkde_reward_diff_true_goal_mean/jnp.mean(total_rewards)),
+    float(1.0 - goalkde_reward_diff_last_state_mean/jnp.mean(total_rewards)),
+    float(1.0 - goalkde_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+]
+
+std_errors = [
+    float(goalkde_reward_diff_true_goal_stderror/jnp.mean(total_rewards)),
+    float(goalkde_reward_diff_last_state_stderror/jnp.mean(total_rewards)),
+    float(goalkde_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+]
+
+method_types = ['CRL + GoalKDE']*3
+
+df = pd.DataFrame({
+    'Method': methods,
+    'Mean Difference': mean_diffs,
+    'Std Error': std_errors,
+    'Method Type': method_types
+})
+
+# Set up the figure
+plt.figure(figsize=(12, 8))
+
+# Create the bar plot with error bars
+ax = sns.barplot(
+    x='Method', 
+    y='Mean Difference', 
+    hue='Method Type',
+    data=df,
+    palette=['#ff7f0e']  # Orange for CRL + GoalKDE
+)
+
+# Add error bars
+for i, (_, row) in enumerate(df.iterrows()):
+    ax.errorbar(
+        i, row['Mean Difference'], 
+        yerr=row['Std Error'], 
+        fmt='none', 
+        color='black', 
+        capsize=5
+    )
+
+# Add dashed line from true goal to mean field
+true_goal_height = mean_diffs[0]
+mean_field_height = mean_diffs[2]
+plt.plot([0.4, 1.6], [true_goal_height, true_goal_height], 'k--', linewidth=2)
+
+# Add stacked bars on top of mean field bar
+# First bar: from mean field height to true goal height (goal inference error)
+goal_inference_bar_height = true_goal_height - mean_field_height
+plt.bar(2, goal_inference_bar_height, bottom=mean_field_height, color='orange', alpha=0.6, width=0.8)
+
+# Second bar: from true goal height to 1.0 (distribution shift error)
+distribution_shift_bar_height = 1.0 - true_goal_height
+plt.bar(2, distribution_shift_bar_height, bottom=true_goal_height, color='lightblue', alpha=0.6, width=0.8)
+
+# Create custom legend with stacked bars
+from matplotlib.patches import Rectangle
+goal_inference_legend = Rectangle((0, 0), 1, 1, color='orange', alpha=0.6)
+distribution_shift_legend = Rectangle((0, 0), 1, 1, color='lightblue', alpha=0.6)
+ax.legend([goal_inference_legend, distribution_shift_legend], 
+          ['Goal Inference Error', 'Distribution Shift Error'], 
+          loc='best')
+
+# Customize the plot
+plt.title(f'CRL + GoalKDE Error Analysis ({env_name})', fontsize=16)
+plt.ylabel('Imitation Score (%)', fontsize=14)
+plt.xlabel('Method', fontsize=14)
+plt.xticks(rotation=45, ha='right')
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.ylim(0, 1.0)  # Ensure y-axis extends to 1.0 so the blue arrow is visible
+plt.tight_layout()
+
+# Save the figure
+plt.savefig(f'{output_dir}/crl_goalkde_error_analysis_{env_name}.png', dpi=300, bbox_inches='tight')
+
+# Save the performance comparison data to CSV
+performance_df = df
+performance_df.to_csv(f'{output_dir}/crl_goalkde_error_analysis_{env_name}.csv', index=False)
+print(f"Performance comparison data saved to {output_dir}/crl_goalkde_error_analysis_{env_name}.csv")
 

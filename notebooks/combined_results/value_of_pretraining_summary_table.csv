@@ -1,13 +1,13 @@
 Environment,Method,Method Type,Imitation Score (%)
-Ant,GCBC + Mean Field,BC,28.5 ± 1.4
-Ant,Nearest Neighbor,NN,0.3 ± 1.1
-Ant,FB,FB,0.0 ± 1.1
-Ant,CRL + GoalKDE + Mean Field,CIRL,46.2 ± 1.1
-Reacher,GCBC + Mean Field,BC,81.8 ± 0.8
+Ant,GCBC + Mean Field,GCBC,95.0 ± 1.0
+Ant,Nearest Neighbor,NN,0.4 ± 1.0
+Ant,FB,FB,0.0 ± 1.0
+Ant,CRL + GoalKDE + Mean Field,CIRL,44.9 ± 1.1
+Reacher,GCBC + Mean Field,GCBC,103.3 ± 0.2
 Reacher,Nearest Neighbor,NN,98.6 ± 0.1
 Reacher,FB,FB,17.3 ± 0.5
 Reacher,CRL + GoalKDE + Mean Field,CIRL,100.4 ± 0.2
-Pusher,GCBC + Mean Field,BC,17.2 ± 1.6
-Pusher,Nearest Neighbor,NN,15.6 ± 1.5
-Pusher,FB,FB,5.0 ± 1.4
-Pusher,CRL + GoalKDE + Mean Field,CIRL,21.1 ± 1.6
+Pusher,GCBC + Mean Field,GCBC,44.6 ± 1.8
+Pusher,Nearest Neighbor,NN,14.7 ± 1.5
+Pusher,FB,FB,5.1 ± 1.4
+Pusher,CRL + GoalKDE + Mean Field,CIRL,20.8 ± 1.6

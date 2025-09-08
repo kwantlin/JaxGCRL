@@ -3,6 +3,17 @@ from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
 
+# Set global font sizes to match create_combined_plots.py
+plt.rcParams.update({
+    'font.size': 20,
+    'axes.titlesize': 28,
+    'axes.labelsize': 26,
+    'xtick.labelsize': 24,
+    'ytick.labelsize': 24,
+    'legend.fontsize': 24,
+    'figure.titlesize': 32
+})
+
 
 def load_method_scores(csv_path: Path) -> pd.DataFrame:
     """
@@ -70,7 +81,7 @@ def plot_scatter(points: pd.DataFrame, output_dir: Path) -> None:
     environments = sorted(points["environment"].unique())
     env_to_marker = {env: marker for env, marker in zip(environments, ["o", "^", "s", "D", "P"]) }
 
-    plt.figure(figsize=(7, 7))
+    plt.figure(figsize=(12, 12))
     ax = plt.gca()
 
     # Plot each point with color (method) and marker (environment)
@@ -79,33 +90,32 @@ def plot_scatter(points: pd.DataFrame, output_dir: Path) -> None:
             row["x"], row["y"],
             color=method_to_color[row["method_base"]],
             marker=env_to_marker[row["environment"]],
-            s=80,
+            s=180,
             edgecolors="black",
-            linewidths=0.5,
+            linewidths=1.5,
         )
 
     # Parity line y=x
     min_val = min(points["x"].min(), points["y"].min())
     max_val = max(points["x"].max(), points["y"].max())
     pad = 0.05 * (max_val - min_val if max_val > min_val else 1.0)
-    ax.plot([min_val - pad, max_val + pad], [min_val - pad, max_val + pad], linestyle="--", color="gray", linewidth=1)
+    ax.plot([min_val - pad, max_val + pad], [min_val - pad, max_val + pad], linestyle="--", color="gray", linewidth=3)
 
-    # Axis labels and title
+    # Axis labels
     ax.set_xlabel("Imitation Score (Full Tau)")
     ax.set_ylabel("Imitation Score (Mean Field)")
-    ax.set_title("Full Tau vs Mean Field Imitation Scores")
 
     # Build legends: one for methods (colors), one for environments (markers)
     from matplotlib.lines import Line2D
 
     method_handles = [
         Line2D([0], [0], marker="o", color="w", label=method,
-               markerfacecolor=color, markeredgecolor="black", markersize=8)
+               markerfacecolor=color, markeredgecolor="black", markersize=16)
         for method, color in method_to_color.items()
     ]
     env_handles = [
         Line2D([0], [0], marker=marker, color="black", label=env,
-               linestyle="None", markersize=8)
+               linestyle="None", markersize=16)
         for env, marker in env_to_marker.items()
     ]
 
@@ -168,7 +178,7 @@ def plot_scatter(points: pd.DataFrame, output_dir: Path) -> None:
     )
     ax.add_artist(method_legend)
 
-    ax.grid(True, linestyle="--", alpha=0.4)
+    ax.grid(True, linestyle="--", alpha=0.4, linewidth=2.0)
     plt.tight_layout()
 
     # Save

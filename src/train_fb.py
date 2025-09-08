@@ -54,7 +54,8 @@ class Net(nn.Module):
         return x
 
 # The brax version of this does not take in the actor and action_distribution arguments; before we pass it to brax evaluator or return it from train(), we do a partial application.
-def make_policy(actor, parametric_action_distribution, backward_repr, actor_params, backward_repr_params, state_dim, deterministic=False):
+def make_policy(actor, parametric_action_distribution, backward_repr, params, state_dim, deterministic=False):
+    actor_params, backward_repr_params = params
     def policy(obs, key_sample):
         state = obs[:, :state_dim]
         goal = obs[:, state_dim:]
@@ -733,22 +734,35 @@ def train(
     training_walltime = time.time() - t
 
     # Eval init
+    if not eval_env:
+        eval_env = environment
+    eval_env = TrajectoryIdWrapper(eval_env)
+    eval_env = wrap_for_training(eval_env, episode_length=episode_length, action_repeat=action_repeat)
     global make_policy
-    make_policy = functools.partial(make_policy, actor, parametric_action_distribution, backward_repr)
-    evaluator = CrlEvaluator(eval_env, 
-                             functools.partial(make_policy,
-                                               deterministic=deterministic_eval),
-                             num_eval_envs=num_eval_envs,
-                             episode_length=episode_length, action_repeat=action_repeat, key=eval_key)
+    make_policy = functools.partial(
+        make_policy,
+        actor,
+        parametric_action_distribution,
+        backward_repr,
+        state_dim=env.state_dim,
+    )
+    evaluator = CrlEvaluator(
+        eval_env,
+        functools.partial(make_policy, deterministic=deterministic_eval),
+        num_eval_envs=num_eval_envs,
+        episode_length=episode_length,
+        action_repeat=action_repeat,
+        key=eval_key,
+    )
 
     # Run initial eval
     metrics = {}
-    # if process_id == 0 and num_evals > 1:
-    #     # We pass in the actor and backward_repr params to the evaluator
-    #     eval_params = _unpmap((training_state.actor_state.params, training_state.fb_repr_state.params[1]))
-    #     metrics = evaluator.run_evaluation(eval_params, training_metrics={})
-    #     logging.info(metrics)
-    #     progress_fn(0, metrics, make_policy, _unpmap(training_state.actor_state.params), unwrapped_env)
+    if process_id == 0 and num_evals > 1:
+        # We pass in the actor and backward_repr params to the evaluator
+        eval_params = _unpmap((training_state.actor_state.params, training_state.fb_repr_state.params[1]))
+        metrics = evaluator.run_evaluation(eval_params, training_metrics={})
+        logging.info(metrics)
+        progress_fn(0, metrics, make_policy, eval_params, unwrapped_env)
 
     # Collect/train/eval loop
     current_step = 0
@@ -778,12 +792,11 @@ def train(
                 # Log all params
                 logging.info(f"Saving checkpoint at {path} with actor, fb_repr, and target params.")
                 brax.io.model.save_params(path, params)
-
             ## Run evals
-            # eval_params = _unpmap((training_state.actor_state.params, training_state.fb_repr_state.params[1]))
-            # metrics = evaluator.run_evaluation(eval_params, training_metrics)
-            # logging.info(metrics)
-            # progress_fn(current_step, metrics, make_policy, _unpmap(training_state.actor_state.params), unwrapped_env)
+            eval_params = _unpmap((training_state.actor_state.params, training_state.fb_repr_state.params[1]))
+            metrics = evaluator.run_evaluation(eval_params, training_metrics)
+            logging.info(metrics)
+            progress_fn(current_step, metrics, make_policy, eval_params, unwrapped_env)
 
     # Final validity checks
     total_steps = current_step
