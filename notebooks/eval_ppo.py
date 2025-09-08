@@ -947,7 +947,6 @@ def main(args):
 
         # FB: robust truncation = min(next_obs_bad, reward_bad), and treat step-0 as no-trunc
         fb_first_bad = jp.minimum(fb_first_idxs[:, 2], fb_first_idxs[:, 3])
-        fb_first_bad = jp.where(fb_first_bad == 0, -jp.ones_like(fb_first_bad), fb_first_bad)
         fb_total_rewards, fb_trunc_flags, fb_trunc_steps = jax.vmap(compute_truncated_total_rewards)(
             fb_rewards, fb_first_bad, expert_lengths
         )
@@ -971,13 +970,105 @@ def main(args):
     except Exception as e:
         print(f"FB comparison skipped due to error: {e}")
 
+    # ================= Additional mean-field checkpoint goal inference (like GoalKDE) =================
+    try:
+        mainmf_dir = '/scratch/gpfs/kw2960/JaxGCRL/runs/run_ant_posvel-main-meanfield-test_s_1'
+        mainmf_ckpt = os.path.join(mainmf_dir, 'ckpt', 'best.pkl')
+        print(f"\nLoading MainMF checkpoint: {mainmf_ckpt}")
+        mainmf_params = model.load_params(mainmf_ckpt)
+        # Expect similar structure: (_, _, context_params) or dict with 'context'
+        try:
+            _, _, mainmf_context_params = mainmf_params
+        except Exception:
+            if isinstance(mainmf_params, dict):
+                mainmf_context_params = mainmf_params.get('context') or mainmf_params.get('context_params')
+                if mainmf_context_params is None:
+                    raise ValueError('Unsupported MainMF checkpoint format')
+            else:
+                raise
+
+        # Try to infer goal_dim from this run's args.pkl if present
+        mm_args_path = os.path.join(mainmf_dir, 'args.pkl')
+        try:
+            with open(mm_args_path, 'rb') as f:
+                mmargs = pickle.load(f)
+            if hasattr(mmargs, 'env_name') and 'fullobs' in str(mmargs.env_name).lower():
+                goal_dim_mm = 9
+            elif hasattr(mmargs, 'env_name') and 'posvel' in str(mmargs.env_name).lower():
+                goal_dim_mm = 6
+            else:
+                goal_dim_mm = goal_dim
+        except Exception:
+            goal_dim_mm = goal_dim
+
+        # Reuse context_net architecture but with current params
+        def mainmf_context_apply(x):
+            xb = jp.expand_dims(x, 0)
+            yb = context_net.apply(mainmf_context_params, xb)
+            return jp.squeeze(yb, axis=0)
+
+        mm_context_out = jax.vmap(mainmf_context_apply)(sa_pairs_mf)
+        mm_context_mean, mm_context_log_std = jp.split(mm_context_out, 2, axis=-1)
+        mm_context_mean = jp.reshape(mm_context_mean, (NUM_ENVS, NUM_STEPS, -1))
+        mm_context_log_std = jp.reshape(mm_context_log_std, (NUM_ENVS, NUM_STEPS, -1))
+        mm_precisions = 1.0 / jp.exp(2.0 * mm_context_log_std)
+        mm_combined_precision = jp.sum(mm_precisions, axis=1)
+        mm_combined_variance = 1.0 / mm_combined_precision
+        mm_weighted_means = mm_context_mean * mm_precisions
+        mm_combined_mean = jp.sum(mm_weighted_means, axis=1) / mm_combined_precision
+        # Sample one goal per env using per-env RNG (stable w.r.t. NUM_ENVS)
+        base_key_mm = jax.random.PRNGKey(args.seed + 101)
+        env_keys_mm = jax.vmap(lambda i: jax.random.fold_in(base_key_mm, i))(env_ids)
+        mm_combined_std = jp.sqrt(mm_combined_variance)
+        def sample_goal_mm(key, mean, std):
+            eps = jax.random.normal(key, mean.shape)
+            return mean + eps * std
+        mainmf_goals = jax.vmap(sample_goal_mm)(env_keys_mm, mm_combined_mean, mm_combined_std)
+
+        # Rollout using the same GoalKDE policy toward mainmf_goals
+        mainmf_out = jax.vmap(rollout_goalkde)(rollout_rngs, mainmf_goals)
+        _, mainmf_rewards, mainmf_counts, mainmf_first_idxs = mainmf_out
+
+        # Truncate and compute regret
+        mainmf_total_rewards, _, mainmf_trunc_steps = jax.vmap(compute_truncated_total_rewards)(
+            mainmf_rewards, mainmf_first_idxs[:, 2], expert_lengths
+        )
+        mainmf_regret = expert_total_trunc - mainmf_total_rewards
+        mainmf_regret_mean = jp.mean(mainmf_regret)
+        mainmf_regret_stderr = jp.std(mainmf_regret, ddof=1) / jp.sqrt(mainmf_regret.shape[0])
+        print("\nMainMF imitation comparison:")
+        print(f"  Mean regret (aligned lengths): {float(mainmf_regret_mean):.4f}")
+        print(f"  Std. error of mean regret:    {float(mainmf_regret_stderr):.4f}")
+    except Exception as e:
+        print(f"MainMF comparison skipped due to error: {e}")
+
     # ===================== Final plotting for AntForward =====================
     try:
-        if 'antforward' in model_path and ('fb_regret_mean' in locals() and 'fb_regret_stderr' in locals()):
-            labels = ['CRL + GoalKDE', 'FB']
-            means = [goalkde_regret_mean, float(fb_regret_mean)]
-            stderrs = [goalkde_regret_stderr, float(fb_regret_stderr)]
-            colors = ['#ff7f0e', '#2ca02c']  # orange (GoalKDE), green (FB)
+        # Extract expert policy name and inference method for file naming
+        expert_policy = 'antforward' if 'antforward' in model_path else 'antjump' if 'antjump' in model_path else 'antflip'
+        inference_method = 'ant_fullobs' if 'fullobs' in goalkde_dir else 'ant_posvel' if 'posvel' in goalkde_dir else 'unknown'
+        
+        if expert_policy in ['antforward', 'antjump'] and ('fb_regret_mean' in locals() and 'fb_regret_stderr' in locals()):
+            labels = []
+            means = []
+            stderrs = []
+            colors = []
+            # MainMF (blue) if available
+            if 'mainmf_regret_mean' in locals() and 'mainmf_regret_stderr' in locals():
+                labels.append('MainMF')
+                means.append(float(mainmf_regret_mean))
+                stderrs.append(float(mainmf_regret_stderr))
+                colors.append('#1f77b4')  # blue
+            # GoalKDE (orange)
+            labels.append('CRL + GoalKDE')
+            means.append(goalkde_regret_mean)
+            stderrs.append(goalkde_regret_stderr)
+            colors.append('#ff7f0e')
+            # FB (green)
+            labels.append('FB')
+            means.append(float(fb_regret_mean))
+            stderrs.append(float(fb_regret_stderr))
+            colors.append('#2ca02c')
 
             # PNG plot
             fig, ax = plt.subplots(figsize=(6, 5))
@@ -985,13 +1076,12 @@ def main(args):
             ax.bar(x, means, yerr=stderrs, capsize=6, color=colors)
             ax.set_xticks(x)
             ax.set_xticklabels(labels, rotation=0)
-            ax.set_ylabel('Mean Regret (± StdErr)')
-            ax.set_title('AntForward: Mean Regret Comparison')
+            ax.set_ylabel('Regret')
             ax.grid(axis='y', linestyle='--', alpha=0.5)
 
-            out_dir = os.path.join('.', 'results_ant_posvel')
+            out_dir = os.path.join('.', f'results_{inference_method}')
             os.makedirs(out_dir, exist_ok=True)
-            out_png = os.path.join(out_dir, 'antforward_regret_goalkde_vs_fb.png')
+            out_png = os.path.join(out_dir, f'{expert_policy}_regret_goalkde_vs_fb.png')
             plt.tight_layout()
             plt.savefig(out_png, dpi=300, bbox_inches='tight')
             print(f"Saved regret comparison plot to: {out_png}")
@@ -999,7 +1089,7 @@ def main(args):
 
             # CSV
             import csv
-            out_csv = os.path.join(out_dir, 'antforward_regret_goalkde_vs_fb.csv')
+            out_csv = os.path.join(out_dir, f'{expert_policy}_regret_goalkde_vs_fb.csv')
             with open(out_csv, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(['Method', 'MeanRegret', 'StdError'])
@@ -1011,6 +1101,10 @@ def main(args):
     
     # ===================== Plot expert vs imitation rewards (GoalKDE & FB) =====================
     try:
+        # Extract expert policy name and inference method for file naming
+        expert_policy = 'antforward' if 'antforward' in model_path else 'antjump' if 'antjump' in model_path else 'antflip'
+        inference_method = 'ant_fullobs' if 'fullobs' in goalkde_dir else 'ant_posvel' if 'posvel' in goalkde_dir else 'unknown'
+        
         # Compute means and stderr for expert and imitation (GoalKDE)
         exp_mean = float(jp.mean(expert_total_trunc))
         exp_stderr = float(jp.std(expert_total_trunc, ddof=1) / jp.sqrt(expert_total_trunc.shape[0]))
@@ -1022,7 +1116,7 @@ def main(args):
             fb_mean = float(jp.mean(fb_total_rewards))
             fb_stderr = float(jp.std(fb_total_rewards, ddof=1) / jp.sqrt(fb_total_rewards.shape[0]))
 
-        if 'antforward' in model_path:
+        if expert_policy in ['antforward', 'antjump']:
             # Build grouped bars: [GoalKDE Expert, GoalKDE Imit, FB Expert, FB Imit]
             labels = ['GoalKDE Expert', 'GoalKDE Imit']
             means = [exp_mean, gkde_mean]
@@ -1040,12 +1134,11 @@ def main(args):
             ax.set_xticks(x)
             ax.set_xticklabels(labels, rotation=20)
             ax.set_ylabel('Total Reward (± StdErr)')
-            ax.set_title('AntForward: Expert vs Imitation Rewards (GoalKDE & FB)')
             ax.grid(axis='y', linestyle='--', alpha=0.5)
 
-            out_dir = os.path.join('.', 'results_ant_posvel')
+            out_dir = os.path.join('.', f'results_{inference_method}')
             os.makedirs(out_dir, exist_ok=True)
-            out_png = os.path.join(out_dir, 'antforward_expert_vs_imitation_rewards.png')
+            out_png = os.path.join(out_dir, f'{expert_policy}_expert_vs_imitation_rewards.png')
             plt.tight_layout()
             plt.savefig(out_png, dpi=300, bbox_inches='tight')
             print(f"Saved expert vs imitation rewards plot to: {out_png}")
@@ -1053,7 +1146,7 @@ def main(args):
 
             # CSV dump
             import csv
-            out_csv = os.path.join(out_dir, 'antforward_expert_vs_imitation_rewards.csv')
+            out_csv = os.path.join(out_dir, f'{expert_policy}_expert_vs_imitation_rewards.csv')
             with open(out_csv, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(['Series', 'MeanTotalReward', 'StdError'])

@@ -32,11 +32,14 @@ from brax.training.acme import running_statistics
 from brax.training.acme import specs
 from brax.training.agents.ppo import losses as ppo_losses
 from brax.training.agents.ppo import networks as ppo_networks
+from brax.training import distribution
+from brax.training.networks import FeedForwardNetwork
 from brax.training.types import Params
 from brax.training.types import PRNGKey
 from brax.v1 import envs as envs_v1
 from etils import epath
 import flax
+import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -51,6 +54,71 @@ InferenceParams = Tuple[running_statistics.NestedMeanStd, Params]
 Metrics = types.Metrics
 
 _PMAP_AXIS_NAME = 'i'
+class Net(nn.Module):
+  """CRL-style MLP with residual connections, matching src/train.py."""
+  output_size: int
+  width: int = 256
+  num_blocks: int = 1
+  block_size: int = 2
+  use_ln: bool = False
+
+  @nn.compact
+  def __call__(self, x):
+    lecun_uniform = nn.initializers.variance_scaling(1/3, 'fan_in', 'uniform')
+    normalize = nn.LayerNorm() if self.use_ln else (lambda t: t)
+
+    # Support arbitrary leading dimensions (e.g., [num_minibatches, batch, feat])
+    residual_stream = jnp.zeros(x.shape[:-1] + (self.width,))
+    for _ in range(self.num_blocks):
+      for _ in range(self.block_size):
+        x = nn.swish(normalize(nn.Dense(self.width, kernel_init=lecun_uniform)(x)))
+      x = x + residual_stream
+      residual_stream = x
+
+    x = nn.Dense(self.output_size, kernel_init=lecun_uniform)(x)
+    return x
+
+
+def make_crl_like_ppo_networks(
+    observation_size: int,
+    action_size: int,
+    preprocess_observations_fn: types.PreprocessObservationFn = types.identity_observation_preprocessor,
+    h_dim: int = 256,
+    n_hidden: int = 2,
+    use_ln: bool = False,
+) -> ppo_networks.PPONetworks:
+  """Builds PPO networks where policy/value match src/train.py Net architecture."""
+  block_size = 2
+  num_blocks = max(1, n_hidden // block_size)
+
+  # Policy network outputs mean and log-std (2 * action_size)
+  policy_module = Net(output_size=action_size * 2, width=h_dim, num_blocks=num_blocks, block_size=block_size, use_ln=use_ln)
+  value_module = Net(output_size=1, width=h_dim, num_blocks=num_blocks, block_size=block_size, use_ln=use_ln)
+
+  def make_ffn(module: nn.Module, squeeze_last_dim: bool = False) -> FeedForwardNetwork:
+    dummy_obs = jnp.zeros((1, observation_size))
+
+    def init(key):
+      return module.init(key, dummy_obs)
+
+    def apply(processor_params, params, obs):
+      obs = preprocess_observations_fn(obs, processor_params)
+      out = module.apply(params, obs)
+      if squeeze_last_dim:
+        out = jnp.squeeze(out, axis=-1)
+      return out
+
+    return FeedForwardNetwork(init=init, apply=apply)
+
+  policy_network = make_ffn(policy_module)
+  value_network = make_ffn(value_module, squeeze_last_dim=True)
+  pad = distribution.NormalTanhDistribution(event_size=action_size)
+
+  return ppo_networks.PPONetworks(
+      policy_network=policy_network,
+      value_network=value_network,
+      parametric_action_distribution=pad,
+  )
 
 
 @flax.struct.dataclass
@@ -98,9 +166,6 @@ def train(
     clipping_epsilon: float = 0.3,
     gae_lambda: float = 0.95,
     deterministic_eval: bool = False,
-    network_factory: types.NetworkFactory[
-        ppo_networks.PPONetworks
-    ] = ppo_networks.make_ppo_networks,
     progress_fn: Callable[[int, Metrics], None] = lambda *args: None,
     normalize_advantage: bool = True,
     eval_env: Optional[envs.Env] = None,
@@ -111,6 +176,10 @@ def train(
     restore_checkpoint_path: Optional[str] = None,
     visualization_interval: int = 5,
     checkpoint_logdir: Optional[str] = None,
+    # CRL-like policy architecture knobs (used when network_factory not provided)
+    h_dim: int = 256,
+    n_hidden: int = 2,
+    use_ln: bool = False,
 ):
   """PPO training.
 
@@ -241,7 +310,10 @@ def train(
   normalize = lambda x, y: x
   if normalize_observations:
     normalize = running_statistics.normalize
-  ppo_network = network_factory(
+  local_network_factory = functools.partial(
+        make_crl_like_ppo_networks, h_dim=h_dim, n_hidden=n_hidden, use_ln=use_ln)
+
+  ppo_network = local_network_factory(
       env_state.obs.shape[-1],
       env.action_size,
       preprocess_observations_fn=normalize)

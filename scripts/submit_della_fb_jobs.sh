@@ -24,7 +24,7 @@ submit_job() {
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH -t 30:00:00
+#SBATCH -t 12:00:00
 #SBATCH --partition=pli 
 #SBATCH --account=buildstuff
 #SBATCH --constraint=h100
@@ -50,20 +50,20 @@ EOF
 }
 
 # Submit jobs for each environment
-# env=ant
-# submit_job $env 1 40000000 512 1024 50
+env=ant
+submit_job $env 1 4000000000 512 1024 100 1 "with_eval"
 
 # env=simple_u_maze
 # submit_job $env 1 40000000 1024 256 50
 
-# env=reacher
-# submit_job $env 1 40000000 1024 256 50
+env=reacher
+submit_job $env 1 4000000000 1024 256 100 1 "with_eval"
 
-# env=pusher_easy
-# submit_job $env 1 80000000 1024 512 50  
+env=pusher_easy
+submit_job $env 1 8000000000 256 512 100 1 "with_eval"
 
-env=arm_reach
-submit_job $env 4 12000000000 1024 2048 1000 8
+# env=arm_reach
+# submit_job $env 4 12000000000 1024 2048 1000 8
 
 # submit_job $env 2 60000000 1024 1024 100
 # submit_job $env 3 60000000 1024 1024 100
@@ -71,16 +71,16 @@ submit_job $env 4 12000000000 1024 2048 1000 8
 # submit_job $env 5 60000000 1024 1024 100
 
 # env=ant_fullobs
-# submit_job $env 2 1200000000 512 2048 1000 
-# submit_job $env 3 1200000000 512 2048 1000 
-# submit_job $env 4 1200000000 512 2048 1000 
-# submit_job $env 5 1200000000 512 2048 1000 
+# submit_job $env 2 12000000000 256 512 500 
+# submit_job $env 3 12000000000 256 512 500  
+# submit_job $env 4 12000000000 256 512 500 
+# submit_job $env 5 12000000000 256 512 500 
 
-# env=ant_posvel
-# submit_job $env 2 1200000000 512 2048 1000 
-# submit_job $env 3 1200000000 512 2048 1000 
-# submit_job $env 4 1200000000 512 2048 1000 
-# submit_job $env 5 1200000000 512 2048 1000 
+env=ant_posvel
+submit_job $env 2 12000000000 256 512 500 1 "with_eval"
+submit_job $env 3 12000000000 256 512 500 1 "with_eval"
+submit_job $env 4 12000000000 256 512 500 1 "with_eval"
+submit_job $env 5 12000000000 256 512 500 1 "with_eval"
 
 
 
