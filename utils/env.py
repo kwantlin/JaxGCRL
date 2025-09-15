@@ -1,4 +1,5 @@
 import argparse
+import json
 import math
 import os
 from collections import namedtuple
@@ -34,6 +35,7 @@ from envs.reacher import Reacher
 from envs.simple_maze import SimpleMaze
 from envs.sudoku import Sudoku
 from envs.sudoku_4x4 import Sudoku4x4
+from envs.nqueens_4x4 import NQueens4x4
 
 legal_envs = (
     "ant",
@@ -65,6 +67,7 @@ legal_envs = (
     "simple_hardest_maze",
     "sudoku",
     "sudoku_4x4",
+    "nqueens_4x4",
 )
 
 
@@ -141,6 +144,8 @@ def create_env(env_name: str, backend: str = None, **kwargs) -> object:
     elif env_name == "sudoku_4x4":
         # Create 4x4 Sudoku environment using the dataset
         env = Sudoku4x4()
+    elif env_name == "nqueens_4x4":
+        env = NQueens4x4()
     else:
         raise ValueError(f"Unknown environment: {env_name}")
     return env
@@ -338,6 +343,7 @@ def render(make_policy, params, env, exp_dir, exp_name, num_steps):
     jit_policy = jax.jit(policy)
 
     rollout = []
+    actions_taken = []
     key = jax.random.PRNGKey(seed=1)
     key, subkey = jax.random.split(key)
     state = jit_env_reset(rng=subkey)
@@ -348,6 +354,15 @@ def render(make_policy, params, env, exp_dir, exp_name, num_steps):
             state.obs[None], subkey
         )  # Policy requires batched dimension
         action = action[0]  # Remove batch dimension
+        # Ensure we store a Python int for JS serialization later
+        try:
+            actions_taken.append(int(jax.device_get(action)))
+        except Exception:
+            try:
+                actions_taken.append(int(action))
+            except Exception:
+                # Fallback: skip if cannot convert
+                pass
         state = jit_env_step(state, action)
         if i % 1000 == 0:
             key, subkey = jax.random.split(key)
@@ -364,7 +379,7 @@ def render(make_policy, params, env, exp_dir, exp_name, num_steps):
             if env.board_size == 9:
                 url = create_sudoku_visualization(rollout, env)
             elif env.board_size == 4:
-                url = create_sudoku_4x4_visualization(rollout, env)
+                url = create_sudoku_4x4_visualization(rollout, env, actions_taken)
             else:
                 # For other non-physics environments, skip rendering
                 logging.info("Skipping rendering for non-physics environment")
@@ -707,8 +722,188 @@ def create_sudoku_visualization(rollout, env):
     return html_content
 
 
-def create_sudoku_4x4_visualization(rollout, env):
-    """Create an HTML visualization for 4x4 Sudoku puzzle solving."""
+def create_nqueens_4x4_visualization(rollout, env, actions=None):
+    """Create an HTML visualization for 4x4 N-Queens with action overlays."""
+    # Extract board states
+    board_states = []
+    for state in rollout:
+        board_flat = state.q
+        if len(board_flat.shape) == 2:
+            board_flat = board_flat[0]
+        board = board_flat.reshape(4, 4)
+        board_states.append(board)
+
+    # Convert to serializable lists
+    board_states_js = []
+    for board in board_states:
+        board_js = []
+        for r in range(4):
+            row_js = []
+            for c in range(4):
+                row_js.append(int(board[r, c]))
+            row_js and board_js.append(row_js)
+        board_states_js.append(board_js)
+
+    actions_list = []
+    if actions is not None:
+        try:
+            actions_list = [int(a) for a in actions]
+        except Exception:
+            actions_list = []
+
+    boards_json = json.dumps(board_states_js)
+    actions_json = json.dumps(actions_list)
+
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>4x4 N-Queens Visualization</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+            .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .controls { margin: 20px 0; text-align: center; }
+            .controls button { margin: 0 10px; padding: 10px 20px; font-size: 16px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+            .controls button:hover { background: #0056b3; }
+            .board { display: inline-block; border: 3px solid #333; background: #fff; margin: 20px auto; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+            .row { display: flex; }
+            .cell { width: 60px; height: 60px; border: 1px solid #ccc; display: flex; align-items: center; justify-content: center; font-size: 28px; position: relative; }
+            .cell.dark { background: #e0e0e0; }
+            .queen { color: #2e7d32; font-weight: 900; }
+            .attempt-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 900; opacity: 0.9; pointer-events: none; }
+            .attempt-valid { color: #1976d2; }
+            .attempt-invalid { color: #d32f2f; }
+            .step-info { text-align: center; margin: 15px 0; font-size: 20px; font-weight: bold; color: #333; }
+            .sub-info { text-align: center; margin: 5px 0; font-size: 16px; color: #555; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1 style="text-align: center; color: #333;">4x4 N-Queens Visualization</h1>
+            <div class="controls">
+                <button onclick="prevStep()">← Previous</button>
+                <button onclick="playPause()">▶ Play</button>
+                <button onclick="nextStep()">Next →</button>
+            </div>
+            <div class="step-info" id="stepInfo">Initial State</div>
+            <div class="sub-info" id="actionInfo">No action (initial state)</div>
+            <div id="boardContainer" style="text-align:center;"></div>
+            <div style="text-align:center; margin-top: 10px; color: #666;">
+                Step <span id="stepCounter">1</span> of <span id="totalSteps"></span>
+            </div>
+        </div>
+        <script>
+            const boardStates = """ + boards_json + """;
+            const actions = """ + actions_json + """;
+            let currentStep = 0, isPlaying = false, playInterval;
+
+            function renderBoard(board) {
+                const container = document.getElementById('boardContainer');
+                container.innerHTML = '';
+                const grid = document.createElement('div');
+                grid.className = 'board';
+                for (let i = 0; i < 4; i++) {
+                    const row = document.createElement('div');
+                    row.className = 'row';
+                    for (let j = 0; j < 4; j++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell' + ((i + j) % 2 === 1 ? ' dark' : '');
+                        if (board[i][j] === 1) {
+                            cell.innerHTML = '♛';
+                            cell.className += ' queen';
+                        }
+                        row.appendChild(cell);
+                    }
+                    grid.appendChild(row);
+                }
+
+                // Action overlay
+                if (Array.isArray(actions) && currentStep >= 0 && currentStep < actions.length) {
+                    const a = actions[currentStep];
+                    if (Number.isInteger(a)) {
+                        const idx = Math.floor(a / 2);
+                        const t = a % 2; // 0 erase, 1 place
+                        const r = Math.floor(idx / 4);
+                        const c = idx % 4;
+                        let valid = false;
+                        if (currentStep + 1 < boardStates.length) {
+                            const next = boardStates[currentStep + 1];
+                            const before = board[r][c];
+                            const after = next[r][c];
+                            const intended = (t === 0 ? 0 : 1);
+                            valid = (after !== before) && (after === intended);
+                        }
+                        const overlay = document.createElement('div');
+                        overlay.className = 'attempt-overlay ' + (valid ? 'attempt-valid' : 'attempt-invalid');
+                        overlay.textContent = (t === 0 ? '×' : '♛');
+                        grid.children[r].children[c].appendChild(overlay);
+                    }
+                }
+
+                container.appendChild(grid);
+            }
+
+            function updateStep() {
+                const board = boardStates[currentStep];
+                renderBoard(board);
+                document.getElementById('stepCounter').textContent = currentStep + 1;
+                document.getElementById('totalSteps').textContent = boardStates.length;
+                const stepInfo = document.getElementById('stepInfo');
+                if (currentStep === 0) stepInfo.textContent = 'Initial State';
+                else if (currentStep === boardStates.length - 1) stepInfo.textContent = 'Final State';
+                else stepInfo.textContent = `Step ${currentStep}`;
+
+                const actionInfo = document.getElementById('actionInfo');
+                if (Array.isArray(actions) && currentStep >= 0 && currentStep < actions.length) {
+                    const a = actions[currentStep];
+                    if (Number.isInteger(a)) {
+                        const idx = Math.floor(a / 2);
+                        const t = a % 2; // 0 erase, 1 place
+                        const r = Math.floor(idx / 4);
+                        const c = idx % 4;
+                        const readable = (t === 0 ? 'erase' : 'place');
+                        let validity = 'unknown';
+                        if (currentStep + 1 < boardStates.length) {
+                            const next = boardStates[currentStep + 1];
+                            const before = board[r][c];
+                            const after = next[r][c];
+                            const intended = (t === 0 ? 0 : 1);
+                            validity = ((after !== before) && (after === intended)) ? 'valid' : 'invalid';
+                        }
+                        actionInfo.textContent = `Tried to ${readable} at (row ${r + 1}, col ${c + 1}) → ${validity}`;
+                    } else {
+                        actionInfo.textContent = 'Action not available for this step';
+                    }
+                } else if (currentStep === 0) {
+                    actionInfo.textContent = 'No action (initial state)';
+                } else {
+                    actionInfo.textContent = 'No further action recorded';
+                }
+            }
+
+            function nextStep() { if (currentStep < boardStates.length - 1) { currentStep++; updateStep(); } }
+            function prevStep() { if (currentStep > 0) { currentStep--; updateStep(); } }
+            function playPause() {
+                const button = event.target;
+                if (isPlaying) { clearInterval(playInterval); isPlaying = false; button.textContent = '▶ Play'; }
+                else { isPlaying = true; button.textContent = '⏸ Pause'; playInterval = setInterval(() => { if (currentStep < boardStates.length - 1) nextStep(); else { clearInterval(playInterval); isPlaying = false; button.textContent = '▶ Play'; } }, 800); }
+            }
+
+            updateStep();
+        </script>
+    </body>
+    </html>
+    """
+    return html_content
+
+def create_sudoku_4x4_visualization(rollout, env, actions=None):
+    """Create an HTML visualization for 4x4 Sudoku puzzle solving with action overlays.
+
+    Args:
+        rollout: List of pipeline_state objects (each containing q)
+        env: The Sudoku4x4 env (used for sizes)
+        actions: Optional list of attempted actions (ints), length ~= len(rollout)-1
+    """
     
     # Extract board states from rollout
     board_states = []
@@ -732,6 +927,18 @@ def create_sudoku_4x4_visualization(rollout, env):
             board_js.append(row_js)
         board_states_js.append(board_js)
     
+    # Prepare JSON-serializable payloads for robust JS embedding
+    actions_list = []
+    if actions is not None:
+        try:
+            actions_list = [int(a) for a in actions]
+        except Exception:
+            # Fallback: empty if conversion fails
+            actions_list = []
+
+    boards_json = json.dumps(board_states_js)
+    actions_json = json.dumps(actions_list)
+
     # Create HTML visualization with working styling and functionality
     html_content = """
     <!DOCTYPE html>
@@ -770,9 +977,23 @@ def create_sudoku_4x4_visualization(rollout, env):
                 font-weight: bold;
                 font-size: 24px;
                 transition: background-color 0.3s ease;
+                position: relative;
             }
             .sudoku-cell.filled { background-color: #e3f2fd; color: #1976d2; }
             .sudoku-cell.empty { background-color: #fafafa; color: #ccc; }
+            .attempt-overlay {
+                position: absolute;
+                top: 0; left: 0; right: 0; bottom: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 28px;
+                font-weight: 900;
+                opacity: 0.9;
+                pointer-events: none;
+            }
+            .attempt-valid { color: #1976d2; }
+            .attempt-invalid { color: #d32f2f; }
             .step-info { 
                 text-align: center; 
                 margin: 15px 0; 
@@ -804,6 +1025,7 @@ def create_sudoku_4x4_visualization(rollout, env):
             </div>
             
             <div class="step-info" id="stepInfo">Initial State</div>
+            <div class="step-info" id="actionInfo" style="font-size:16px; font-weight:normal; color:#555;">No action (initial state)</div>
             
             <div class="stats">
                 <div class="stat-item">
@@ -832,8 +1054,9 @@ def create_sudoku_4x4_visualization(rollout, env):
         </div>
         
         <script>
-            // Board data - properly extracted and converted
-            const boardStates = """ + str(board_states_js) + """;
+            // Board data and actions (embedded as JSON literals)
+            const boardStates = """ + boards_json + """;
+            const actions = """ + actions_json + """;
             let currentStep = 0;
             let isPlaying = false;
             let playInterval;
@@ -873,6 +1096,32 @@ def create_sudoku_4x4_visualization(rollout, env):
                     grid.appendChild(row);
                 }
                 
+                // Overlay attempted action for current step (transient)
+                if (Array.isArray(actions) && currentStep < actions.length) {
+                    const action = actions[currentStep];
+                    if (Number.isInteger(action)) {
+                        const cellIdx = Math.floor(action / 5);
+                        const actType = action % 5; // 0=erase, 1-4 numbers
+                        const rowIdx = Math.floor(cellIdx / 4);
+                        const colIdx = cellIdx % 4;
+
+                        // Determine validity by comparing to next board state if available
+                        let isValid = false;
+                        if (currentStep + 1 < boardStates.length) {
+                            const nextBoard = boardStates[currentStep + 1];
+                            const before = board[rowIdx][colIdx];
+                            const after = nextBoard[rowIdx][colIdx];
+                            const intended = actType === 0 ? 0 : actType;
+                            isValid = (after !== before) && (after === intended);
+                        }
+
+                        const overlay = document.createElement('div');
+                        overlay.className = 'attempt-overlay ' + (isValid ? 'attempt-valid' : 'attempt-invalid');
+                        overlay.textContent = (actType === 0 ? '×' : String(actType));
+                        grid.children[rowIdx].children[colIdx].appendChild(overlay);
+                    }
+                }
+
                 container.appendChild(grid);
             }
             
@@ -938,6 +1187,52 @@ def create_sudoku_4x4_visualization(rollout, env):
                 } else {
                     stepInfo.textContent = `Step ${currentStep}`;
                 }
+
+                // Action info text
+                const actionInfo = document.getElementById('actionInfo');
+                if (Array.isArray(actions) && currentStep >= 0 && currentStep < actions.length) {
+                    const action = actions[currentStep];
+                    if (Number.isInteger(action)) {
+                        const cellIdx = Math.floor(action / 5);
+                        const actType = action % 5; // 0 erase, 1-4 numbers
+                        const rowIdx = Math.floor(cellIdx / 4);
+                        const colIdx = cellIdx % 4;
+                        const intended = actType === 0 ? 0 : actType;
+
+                        let validity = 'unknown';
+                        if (currentStep + 1 < boardStates.length) {
+                            const nextBoard = boardStates[currentStep + 1];
+                            const before = board[rowIdx][colIdx];
+                            const after = nextBoard[rowIdx][colIdx];
+                            const isValid = (after !== before) && (after === intended);
+                            validity = isValid ? 'valid' : 'invalid';
+                        }
+
+                        const readable = actType === 0 ? 'erase' : `place ${actType}`;
+                        actionInfo.textContent = `Tried to ${readable} at (row ${rowIdx + 1}, col ${colIdx + 1}) → ${validity}`;
+                    } else {
+                        actionInfo.textContent = 'Action not available for this step';
+                    }
+                } else if (currentStep === 0) {
+                    actionInfo.textContent = 'No action (initial state)';
+                } else {
+                    // If we're past the last recorded action, show last known action context if available
+                    if (Array.isArray(actions) && actions.length > 0) {
+                        const last = actions[Math.min(actions.length - 1, currentStep - 1)];
+                        if (Number.isInteger(last)) {
+                            const cellIdx = Math.floor(last / 5);
+                            const actType = last % 5;
+                            const rowIdx = Math.floor(cellIdx / 4);
+                            const colIdx = cellIdx % 4;
+                            const readable = actType === 0 ? 'erase' : `place ${actType}`;
+                            actionInfo.textContent = `No further action recorded. Last: ${readable} at (row ${rowIdx + 1}, col ${colIdx + 1})`;
+                        } else {
+                            actionInfo.textContent = 'No further action recorded';
+                        }
+                    } else {
+                        actionInfo.textContent = 'No further action recorded';
+                    }
+                }
             }
             
             function nextStep() {
@@ -978,7 +1273,7 @@ def create_sudoku_4x4_visualization(rollout, env):
             // Initialize
             updateStep();
             console.log('4x4 Sudoku visualization loaded with', boardStates.length, 'states');
-            console.log('First board state:', boardStates[0]);
+            console.log('Actions length:', Array.isArray(actions) ? actions.length : 0);
         </script>
     </body>
     </html>
