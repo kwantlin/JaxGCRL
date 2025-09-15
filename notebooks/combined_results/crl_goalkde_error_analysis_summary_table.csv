@@ -1,0 +1,10 @@
+Environment,Method,Method Type,Imitation Score (%)
+Ant,True Goal,CRL + CIRL,61.8 ± 1.4
+Ant,Last State,CRL + CIRL,43.8 ± 1.1
+Ant,MF Inferred Goal,CRL + CIRL,44.9 ± 1.1
+Reacher,True Goal,CRL + CIRL,102.7 ± 0.2
+Reacher,Last State,CRL + CIRL,95.8 ± 0.4
+Reacher,MF Inferred Goal,CRL + CIRL,100.4 ± 0.2
+Pusher,True Goal,CRL + CIRL,108.2 ± 1.7
+Pusher,Last State,CRL + CIRL,80.4 ± 1.1
+Pusher,MF Inferred Goal,CRL + CIRL,20.8 ± 1.6
