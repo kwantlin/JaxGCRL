@@ -1,0 +1,660 @@
+Arguments:
+{
+    "action_repeat": 1,
+    "alpha_lr": 0.0003,
+    "backend": null,
+    "batch_size": 512,
+    "contrastive_loss_fn": "symmetric_infonce",
+    "critic_lr": 0.0003,
+    "disable_entropy_actor": false,
+    "discounting": 0.99,
+    "discriminator_lr": 0.0003,
+    "energy_fn": "l2",
+    "entropy_alpha": 1e-06,
+    "env_name": "ant",
+    "episode_length": 1025,
+    "eval_env": null,
+    "exp_name": "ant-fb-della_1_with_eval_40000000_512_1024_50_1",
+    "generator_lr": 0.0003,
+    "group_name": "first_run",
+    "h_dim": 256,
+    "l2_penalty": 0.0,
+    "log_wandb": true,
+    "logsumexp_penalty": 0.0,
+    "max_replay_size": 10000,
+    "min_replay_size": 1000,
+    "n_hidden": 8,
+    "no_resubs": false,
+    "noise_dim": 4,
+    "num_envs": 1024,
+    "num_eval_envs": 256,
+    "num_evals": 50,
+    "num_timesteps": 40000000,
+    "policy_lr": 0.0003,
+    "project_name": "test",
+    "random_goals": 0.0,
+    "repr_dim": 64,
+    "saved_ckpt_path": null,
+    "seed": 1,
+    "train_step_multiplier": 1,
+    "unroll_length": 62,
+    "use_dense_reward": false,
+    "use_generator_for_targets": false,
+    "use_her": false,
+    "use_ln": false,
+    "var_post": "meanfield",
+    "visualization_interval": 5
+}
+Updates per environment step: 0.03228956653225806
+Backward network parameter shapes: {'params': {'Dense_0': {'bias': (256,), 'kernel': (2, 256)}, 'Dense_1': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_2': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_3': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_4': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_5': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_6': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_7': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_8': {'bias': (64,), 'kernel': (256, 64)}}}
+fb: env_state.obs.shape (1024, 31)
+fb: goal shape (1024, 2)
+fb: backward_reprs_goal shape (1024, 64)
+fb: policy_obs shape (1024, 93)
+ACTION SHAPE (256, 8)
+ACTION SHAPE (1, 8)
+step: 0, eval/episode_dist: 9453.801 +/- 0.000
+step: 0, eval/episode_reward_survive: 920.828 +/- 0.000
+step: 0, eval/episode_success: 0.000 +/- 0.000
+step: 0, eval/episode_success_easy: 0.000 +/- 0.000
+step: 0, eval/episode_success_any: 0.000 +/- 0.000
+step: 0, eval/episode_success_hard: 0.000 +/- 0.000
+step: 0, training/actor_loss: 0.000 +/- 0.000
+step: 0, training/fb_loss: 0.000 +/- 0.000
+step: 0, training/critic_loss: 0.000 +/- 0.000
+step: 0, training/value_loss: 0.000 +/- 0.000
+fb: env_state.obs.shape (1024, 31)
+fb: goal shape (1024, 2)
+fb: backward_reprs_goal shape (1024, 64)
+fb: policy_obs shape (1024, 93)
+ENVS IDXS (1024,)
+transitions (1024, 1025, 93)
+SEQ LEN (1025, 93)
+traj_id (1025,)
+SINGLE TRAJECTORIES (1025, 1025)
+probs shape (1025, 1025)
+goal index Traced<ShapedArray(int32[1025])>with<DynamicJaxprTrace(level=3/1)>
+goal index shape (1025,)
+state, target, noise (1024, 29) (1024, 64) (1,)
+next state (1024, 29)
+fb: next_states shape (512, 29)
+fb: next_states[:, goal_indices] shape (512, 2)
+fb: goals shape (512, 2)
+fb: latents shape (512, 64)
+fb: goals before backward repr (512, 2)
+fb: goals after backward repr (512, 64)
+ACTION SHAPE (1, 8)
+step: 1904640, eval/episode_dist: 1765.229 +/- 0.000
+step: 1904640, eval/episode_reward_survive: 173.926 +/- 0.000
+step: 1904640, eval/episode_success: 0.000 +/- 0.000
+step: 1904640, eval/episode_success_easy: 0.000 +/- 0.000
+step: 1904640, eval/episode_success_any: 0.000 +/- 0.000
+step: 1904640, eval/episode_success_hard: 0.000 +/- 0.000
+step: 1904640, training/actor_loss: -236020796207564558285406208.000 +/- 0.000
+step: 1904640, training/fb_loss: -49.806 +/- 0.000
+step: 1904640, training/critic_loss: 0.000 +/- 0.000
+step: 1904640, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 2729984, eval/episode_dist: 1768.911 +/- 0.000
+step: 2729984, eval/episode_reward_survive: 175.512 +/- 0.000
+step: 2729984, eval/episode_success: 0.000 +/- 0.000
+step: 2729984, eval/episode_success_easy: 0.000 +/- 0.000
+step: 2729984, eval/episode_success_any: 0.000 +/- 0.000
+step: 2729984, eval/episode_success_hard: 0.000 +/- 0.000
+step: 2729984, training/actor_loss: -702423089832152148960346112.000 +/- 0.000
+step: 2729984, training/fb_loss: -63.517 +/- 0.000
+step: 2729984, training/critic_loss: 0.000 +/- 0.000
+step: 2729984, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 3555328, eval/episode_dist: 1764.359 +/- 0.000
+step: 3555328, eval/episode_reward_survive: 176.543 +/- 0.000
+step: 3555328, eval/episode_success: 0.000 +/- 0.000
+step: 3555328, eval/episode_success_easy: 0.000 +/- 0.000
+step: 3555328, eval/episode_success_any: 0.000 +/- 0.000
+step: 3555328, eval/episode_success_hard: 0.000 +/- 0.000
+step: 3555328, training/actor_loss: -1226488595712326564608737280.000 +/- 0.000
+step: 3555328, training/fb_loss: -63.631 +/- 0.000
+step: 3555328, training/critic_loss: 0.000 +/- 0.000
+step: 3555328, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 4380672, eval/episode_dist: 1625.118 +/- 0.000
+step: 4380672, eval/episode_reward_survive: 162.016 +/- 0.000
+step: 4380672, eval/episode_success: 0.000 +/- 0.000
+step: 4380672, eval/episode_success_easy: 0.000 +/- 0.000
+step: 4380672, eval/episode_success_any: 0.000 +/- 0.000
+step: 4380672, eval/episode_success_hard: 0.000 +/- 0.000
+step: 4380672, training/actor_loss: -3090965951781290404059545600.000 +/- 0.000
+step: 4380672, training/fb_loss: -63.700 +/- 0.000
+step: 4380672, training/critic_loss: 0.000 +/- 0.000
+step: 4380672, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 5206016, eval/episode_dist: 2017.730 +/- 0.000
+step: 5206016, eval/episode_reward_survive: 201.301 +/- 0.000
+step: 5206016, eval/episode_success: 0.000 +/- 0.000
+step: 5206016, eval/episode_success_easy: 0.000 +/- 0.000
+step: 5206016, eval/episode_success_any: 0.000 +/- 0.000
+step: 5206016, eval/episode_success_hard: 0.000 +/- 0.000
+step: 5206016, training/actor_loss: -308030804286610190177675509760.000 +/- 0.000
+step: 5206016, training/fb_loss: -63.725 +/- 0.000
+step: 5206016, training/critic_loss: 0.000 +/- 0.000
+step: 5206016, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 6031360, eval/episode_dist: 2319.339 +/- 0.000
+step: 6031360, eval/episode_reward_survive: 232.133 +/- 0.000
+step: 6031360, eval/episode_success: 0.000 +/- 0.000
+step: 6031360, eval/episode_success_easy: 0.000 +/- 0.000
+step: 6031360, eval/episode_success_any: 0.000 +/- 0.000
+step: 6031360, eval/episode_success_hard: 0.000 +/- 0.000
+step: 6031360, training/actor_loss: -628226877980274941911772430336.000 +/- 0.000
+step: 6031360, training/fb_loss: -63.759 +/- 0.000
+step: 6031360, training/critic_loss: 0.000 +/- 0.000
+step: 6031360, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 6856704, eval/episode_dist: 2627.829 +/- 0.000
+step: 6856704, eval/episode_reward_survive: 254.609 +/- 0.000
+step: 6856704, eval/episode_success: 0.000 +/- 0.000
+step: 6856704, eval/episode_success_easy: 0.000 +/- 0.000
+step: 6856704, eval/episode_success_any: 0.000 +/- 0.000
+step: 6856704, eval/episode_success_hard: 0.000 +/- 0.000
+step: 6856704, training/actor_loss: -1874034493162911634608399319040.000 +/- 0.000
+step: 6856704, training/fb_loss: -63.770 +/- 0.000
+step: 6856704, training/critic_loss: 0.000 +/- 0.000
+step: 6856704, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 7682048, eval/episode_dist: 2925.271 +/- 0.000
+step: 7682048, eval/episode_reward_survive: 270.520 +/- 0.000
+step: 7682048, eval/episode_success: 0.152 +/- 0.000
+step: 7682048, eval/episode_success_easy: 1.305 +/- 0.000
+step: 7682048, eval/episode_success_any: 0.004 +/- 0.000
+step: 7682048, eval/episode_success_hard: 0.000 +/- 0.000
+step: 7682048, training/actor_loss: -6377196128568393057088326074368.000 +/- 0.000
+step: 7682048, training/fb_loss: -63.743 +/- 0.000
+step: 7682048, training/critic_loss: 0.000 +/- 0.000
+step: 7682048, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 8507392, eval/episode_dist: 2974.694 +/- 0.000
+step: 8507392, eval/episode_reward_survive: 275.109 +/- 0.000
+step: 8507392, eval/episode_success: 0.070 +/- 0.000
+step: 8507392, eval/episode_success_easy: 1.652 +/- 0.000
+step: 8507392, eval/episode_success_any: 0.004 +/- 0.000
+step: 8507392, eval/episode_success_hard: 0.000 +/- 0.000
+step: 8507392, training/actor_loss: -10105419993102332381087735480320.000 +/- 0.000
+step: 8507392, training/fb_loss: -63.764 +/- 0.000
+step: 8507392, training/critic_loss: 0.000 +/- 0.000
+step: 8507392, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 9332736, eval/episode_dist: 2890.918 +/- 0.000
+step: 9332736, eval/episode_reward_survive: 261.934 +/- 0.000
+step: 9332736, eval/episode_success: 0.059 +/- 0.000
+step: 9332736, eval/episode_success_easy: 1.801 +/- 0.000
+step: 9332736, eval/episode_success_any: 0.004 +/- 0.000
+step: 9332736, eval/episode_success_hard: 0.000 +/- 0.000
+step: 9332736, training/actor_loss: -12609029807660503487580806840320.000 +/- 0.000
+step: 9332736, training/fb_loss: -63.785 +/- 0.000
+step: 9332736, training/critic_loss: 0.000 +/- 0.000
+step: 9332736, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 10158080, eval/episode_dist: 2906.096 +/- 0.000
+step: 10158080, eval/episode_reward_survive: 265.953 +/- 0.000
+step: 10158080, eval/episode_success: 0.000 +/- 0.000
+step: 10158080, eval/episode_success_easy: 1.027 +/- 0.000
+step: 10158080, eval/episode_success_any: 0.000 +/- 0.000
+step: 10158080, eval/episode_success_hard: 0.000 +/- 0.000
+step: 10158080, training/actor_loss: -38761029348889137241482405609472.000 +/- 0.000
+step: 10158080, training/fb_loss: -63.807 +/- 0.000
+step: 10158080, training/critic_loss: 0.000 +/- 0.000
+step: 10158080, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 10983424, eval/episode_dist: 2966.756 +/- 0.000
+step: 10983424, eval/episode_reward_survive: 281.559 +/- 0.000
+step: 10983424, eval/episode_success: 0.090 +/- 0.000
+step: 10983424, eval/episode_success_easy: 2.723 +/- 0.000
+step: 10983424, eval/episode_success_any: 0.004 +/- 0.000
+step: 10983424, eval/episode_success_hard: 0.000 +/- 0.000
+step: 10983424, training/actor_loss: -54214060773970514706447015608320.000 +/- 0.000
+step: 10983424, training/fb_loss: -63.814 +/- 0.000
+step: 10983424, training/critic_loss: 0.000 +/- 0.000
+step: 10983424, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 11808768, eval/episode_dist: 2804.938 +/- 0.000
+step: 11808768, eval/episode_reward_survive: 262.844 +/- 0.000
+step: 11808768, eval/episode_success: 0.164 +/- 0.000
+step: 11808768, eval/episode_success_easy: 0.910 +/- 0.000
+step: 11808768, eval/episode_success_any: 0.004 +/- 0.000
+step: 11808768, eval/episode_success_hard: 0.000 +/- 0.000
+step: 11808768, training/actor_loss: -70593521068842253259089161224192.000 +/- 0.000
+step: 11808768, training/fb_loss: -63.818 +/- 0.000
+step: 11808768, training/critic_loss: 0.000 +/- 0.000
+step: 11808768, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 12634112, eval/episode_dist: 2904.423 +/- 0.000
+step: 12634112, eval/episode_reward_survive: 273.004 +/- 0.000
+step: 12634112, eval/episode_success: 0.035 +/- 0.000
+step: 12634112, eval/episode_success_easy: 0.750 +/- 0.000
+step: 12634112, eval/episode_success_any: 0.004 +/- 0.000
+step: 12634112, eval/episode_success_hard: 0.000 +/- 0.000
+step: 12634112, training/actor_loss: -75017067685471193662639638052864.000 +/- 0.000
+step: 12634112, training/fb_loss: -63.827 +/- 0.000
+step: 12634112, training/critic_loss: 0.000 +/- 0.000
+step: 12634112, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 13459456, eval/episode_dist: 2605.064 +/- 0.000
+step: 13459456, eval/episode_reward_survive: 240.184 +/- 0.000
+step: 13459456, eval/episode_success: 0.000 +/- 0.000
+step: 13459456, eval/episode_success_easy: 0.426 +/- 0.000
+step: 13459456, eval/episode_success_any: 0.000 +/- 0.000
+step: 13459456, eval/episode_success_hard: 0.000 +/- 0.000
+step: 13459456, training/actor_loss: -86523913778759941658494950703104.000 +/- 0.000
+step: 13459456, training/fb_loss: -63.830 +/- 0.000
+step: 13459456, training/critic_loss: 0.000 +/- 0.000
+step: 13459456, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 14284800, eval/episode_dist: 2475.373 +/- 0.000
+step: 14284800, eval/episode_reward_survive: 234.379 +/- 0.000
+step: 14284800, eval/episode_success: 0.156 +/- 0.000
+step: 14284800, eval/episode_success_easy: 1.172 +/- 0.000
+step: 14284800, eval/episode_success_any: 0.004 +/- 0.000
+step: 14284800, eval/episode_success_hard: 0.000 +/- 0.000
+step: 14284800, training/actor_loss: -113242006133207141284373638152192.000 +/- 0.000
+step: 14284800, training/fb_loss: -63.839 +/- 0.000
+step: 14284800, training/critic_loss: 0.000 +/- 0.000
+step: 14284800, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 15110144, eval/episode_dist: 3365.417 +/- 0.000
+step: 15110144, eval/episode_reward_survive: 290.473 +/- 0.000
+step: 15110144, eval/episode_success: 0.082 +/- 0.000
+step: 15110144, eval/episode_success_easy: 0.781 +/- 0.000
+step: 15110144, eval/episode_success_any: 0.004 +/- 0.000
+step: 15110144, eval/episode_success_hard: 0.000 +/- 0.000
+step: 15110144, training/actor_loss: -150446311375585077454620298575872.000 +/- 0.000
+step: 15110144, training/fb_loss: -63.855 +/- 0.000
+step: 15110144, training/critic_loss: 0.000 +/- 0.000
+step: 15110144, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 15935488, eval/episode_dist: 2677.522 +/- 0.000
+step: 15935488, eval/episode_reward_survive: 253.020 +/- 0.000
+step: 15935488, eval/episode_success: 0.617 +/- 0.000
+step: 15935488, eval/episode_success_easy: 3.441 +/- 0.000
+step: 15935488, eval/episode_success_any: 0.012 +/- 0.000
+step: 15935488, eval/episode_success_hard: 0.000 +/- 0.000
+step: 15935488, training/actor_loss: -171618606439351797955552067190784.000 +/- 0.000
+step: 15935488, training/fb_loss: -63.843 +/- 0.000
+step: 15935488, training/critic_loss: 0.000 +/- 0.000
+step: 15935488, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 16760832, eval/episode_dist: 2715.132 +/- 0.000
+step: 16760832, eval/episode_reward_survive: 245.438 +/- 0.000
+step: 16760832, eval/episode_success: 0.281 +/- 0.000
+step: 16760832, eval/episode_success_easy: 1.527 +/- 0.000
+step: 16760832, eval/episode_success_any: 0.012 +/- 0.000
+step: 16760832, eval/episode_success_hard: 0.000 +/- 0.000
+step: 16760832, training/actor_loss: -200339550377670946027749970542592.000 +/- 0.000
+step: 16760832, training/fb_loss: -63.846 +/- 0.000
+step: 16760832, training/critic_loss: 0.000 +/- 0.000
+step: 16760832, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 17586176, eval/episode_dist: 2662.401 +/- 0.000
+step: 17586176, eval/episode_reward_survive: 258.223 +/- 0.000
+step: 17586176, eval/episode_success: 0.000 +/- 0.000
+step: 17586176, eval/episode_success_easy: 0.805 +/- 0.000
+step: 17586176, eval/episode_success_any: 0.000 +/- 0.000
+step: 17586176, eval/episode_success_hard: 0.000 +/- 0.000
+step: 17586176, training/actor_loss: -193054060475532230935233876197376.000 +/- 0.000
+step: 17586176, training/fb_loss: -63.858 +/- 0.000
+step: 17586176, training/critic_loss: 0.000 +/- 0.000
+step: 17586176, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 18411520, eval/episode_dist: 2389.869 +/- 0.000
+step: 18411520, eval/episode_reward_survive: 225.012 +/- 0.000
+step: 18411520, eval/episode_success: 0.000 +/- 0.000
+step: 18411520, eval/episode_success_easy: 0.180 +/- 0.000
+step: 18411520, eval/episode_success_any: 0.000 +/- 0.000
+step: 18411520, eval/episode_success_hard: 0.000 +/- 0.000
+step: 18411520, training/actor_loss: -199814741172266400127459923066880.000 +/- 0.000
+step: 18411520, training/fb_loss: -63.851 +/- 0.000
+step: 18411520, training/critic_loss: 0.000 +/- 0.000
+step: 18411520, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 19236864, eval/episode_dist: 3101.068 +/- 0.000
+step: 19236864, eval/episode_reward_survive: 283.242 +/- 0.000
+step: 19236864, eval/episode_success: 0.008 +/- 0.000
+step: 19236864, eval/episode_success_easy: 1.332 +/- 0.000
+step: 19236864, eval/episode_success_any: 0.004 +/- 0.000
+step: 19236864, eval/episode_success_hard: 0.000 +/- 0.000
+step: 19236864, training/actor_loss: -285881574605739885870548565098496.000 +/- 0.000
+step: 19236864, training/fb_loss: -63.863 +/- 0.000
+step: 19236864, training/critic_loss: 0.000 +/- 0.000
+step: 19236864, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 20062208, eval/episode_dist: 2674.230 +/- 0.000
+step: 20062208, eval/episode_reward_survive: 248.789 +/- 0.000
+step: 20062208, eval/episode_success: 0.000 +/- 0.000
+step: 20062208, eval/episode_success_easy: 1.562 +/- 0.000
+step: 20062208, eval/episode_success_any: 0.000 +/- 0.000
+step: 20062208, eval/episode_success_hard: 0.000 +/- 0.000
+step: 20062208, training/actor_loss: -426229099968657766221677328334848.000 +/- 0.000
+step: 20062208, training/fb_loss: -63.860 +/- 0.000
+step: 20062208, training/critic_loss: 0.000 +/- 0.000
+step: 20062208, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 20887552, eval/episode_dist: 2504.067 +/- 0.000
+step: 20887552, eval/episode_reward_survive: 239.328 +/- 0.000
+step: 20887552, eval/episode_success: 0.000 +/- 0.000
+step: 20887552, eval/episode_success_easy: 0.949 +/- 0.000
+step: 20887552, eval/episode_success_any: 0.000 +/- 0.000
+step: 20887552, eval/episode_success_hard: 0.000 +/- 0.000
+step: 20887552, training/actor_loss: -457671500340840912155706593902592.000 +/- 0.000
+step: 20887552, training/fb_loss: -63.867 +/- 0.000
+step: 20887552, training/critic_loss: 0.000 +/- 0.000
+step: 20887552, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 21712896, eval/episode_dist: 2507.061 +/- 0.000
+step: 21712896, eval/episode_reward_survive: 233.207 +/- 0.000
+step: 21712896, eval/episode_success: 0.180 +/- 0.000
+step: 21712896, eval/episode_success_easy: 0.859 +/- 0.000
+step: 21712896, eval/episode_success_any: 0.004 +/- 0.000
+step: 21712896, eval/episode_success_hard: 0.000 +/- 0.000
+step: 21712896, training/actor_loss: -483207611414341053461924956602368.000 +/- 0.000
+step: 21712896, training/fb_loss: -63.863 +/- 0.000
+step: 21712896, training/critic_loss: 0.000 +/- 0.000
+step: 21712896, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 22538240, eval/episode_dist: 2472.495 +/- 0.000
+step: 22538240, eval/episode_reward_survive: 234.062 +/- 0.000
+step: 22538240, eval/episode_success: 0.000 +/- 0.000
+step: 22538240, eval/episode_success_easy: 1.246 +/- 0.000
+step: 22538240, eval/episode_success_any: 0.000 +/- 0.000
+step: 22538240, eval/episode_success_hard: 0.000 +/- 0.000
+step: 22538240, training/actor_loss: -480960247329897128577246368366592.000 +/- 0.000
+step: 22538240, training/fb_loss: -63.865 +/- 0.000
+step: 22538240, training/critic_loss: 0.000 +/- 0.000
+step: 22538240, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 23363584, eval/episode_dist: 2230.665 +/- 0.000
+step: 23363584, eval/episode_reward_survive: 209.863 +/- 0.000
+step: 23363584, eval/episode_success: 0.000 +/- 0.000
+step: 23363584, eval/episode_success_easy: 0.633 +/- 0.000
+step: 23363584, eval/episode_success_any: 0.000 +/- 0.000
+step: 23363584, eval/episode_success_hard: 0.000 +/- 0.000
+step: 23363584, training/actor_loss: -570094019182260802449197204766720.000 +/- 0.000
+step: 23363584, training/fb_loss: -63.867 +/- 0.000
+step: 23363584, training/critic_loss: 0.000 +/- 0.000
+step: 23363584, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 24188928, eval/episode_dist: 2350.682 +/- 0.000
+step: 24188928, eval/episode_reward_survive: 218.797 +/- 0.000
+step: 24188928, eval/episode_success: 0.102 +/- 0.000
+step: 24188928, eval/episode_success_easy: 0.922 +/- 0.000
+step: 24188928, eval/episode_success_any: 0.004 +/- 0.000
+step: 24188928, eval/episode_success_hard: 0.000 +/- 0.000
+step: 24188928, training/actor_loss: -524498830625321318854250110910464.000 +/- 0.000
+step: 24188928, training/fb_loss: -63.862 +/- 0.000
+step: 24188928, training/critic_loss: 0.000 +/- 0.000
+step: 24188928, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 25014272, eval/episode_dist: 2048.270 +/- 0.000
+step: 25014272, eval/episode_reward_survive: 196.926 +/- 0.000
+step: 25014272, eval/episode_success: 0.000 +/- 0.000
+step: 25014272, eval/episode_success_easy: 0.785 +/- 0.000
+step: 25014272, eval/episode_success_any: 0.000 +/- 0.000
+step: 25014272, eval/episode_success_hard: 0.000 +/- 0.000
+step: 25014272, training/actor_loss: -525235327577443664781547908628480.000 +/- 0.000
+step: 25014272, training/fb_loss: -63.864 +/- 0.000
+step: 25014272, training/critic_loss: 0.000 +/- 0.000
+step: 25014272, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 25839616, eval/episode_dist: 2393.553 +/- 0.000
+step: 25839616, eval/episode_reward_survive: 229.766 +/- 0.000
+step: 25839616, eval/episode_success: 0.000 +/- 0.000
+step: 25839616, eval/episode_success_easy: 0.000 +/- 0.000
+step: 25839616, eval/episode_success_any: 0.000 +/- 0.000
+step: 25839616, eval/episode_success_hard: 0.000 +/- 0.000
+step: 25839616, training/actor_loss: -447574435838540846284159840157696.000 +/- 0.000
+step: 25839616, training/fb_loss: -63.853 +/- 0.000
+step: 25839616, training/critic_loss: 0.000 +/- 0.000
+step: 25839616, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 26664960, eval/episode_dist: 2388.283 +/- 0.000
+step: 26664960, eval/episode_reward_survive: 236.449 +/- 0.000
+step: 26664960, eval/episode_success: 0.000 +/- 0.000
+step: 26664960, eval/episode_success_easy: 0.000 +/- 0.000
+step: 26664960, eval/episode_success_any: 0.000 +/- 0.000
+step: 26664960, eval/episode_success_hard: 0.000 +/- 0.000
+step: 26664960, training/actor_loss: -355071610169262009994071037181952.000 +/- 0.000
+step: 26664960, training/fb_loss: -63.849 +/- 0.000
+step: 26664960, training/critic_loss: 0.000 +/- 0.000
+step: 26664960, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 27490304, eval/episode_dist: 2753.520 +/- 0.000
+step: 27490304, eval/episode_reward_survive: 274.133 +/- 0.000
+step: 27490304, eval/episode_success: 0.000 +/- 0.000
+step: 27490304, eval/episode_success_easy: 0.000 +/- 0.000
+step: 27490304, eval/episode_success_any: 0.000 +/- 0.000
+step: 27490304, eval/episode_success_hard: 0.000 +/- 0.000
+step: 27490304, training/actor_loss: -301356463409639895830991862759424.000 +/- 0.000
+step: 27490304, training/fb_loss: -63.861 +/- 0.000
+step: 27490304, training/critic_loss: 0.000 +/- 0.000
+step: 27490304, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 28315648, eval/episode_dist: 2962.779 +/- 0.000
+step: 28315648, eval/episode_reward_survive: 289.078 +/- 0.000
+step: 28315648, eval/episode_success: 0.000 +/- 0.000
+step: 28315648, eval/episode_success_easy: 0.000 +/- 0.000
+step: 28315648, eval/episode_success_any: 0.000 +/- 0.000
+step: 28315648, eval/episode_success_hard: 0.000 +/- 0.000
+step: 28315648, training/actor_loss: -260292193424924245544375949459456.000 +/- 0.000
+step: 28315648, training/fb_loss: -63.858 +/- 0.000
+step: 28315648, training/critic_loss: 0.000 +/- 0.000
+step: 28315648, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 29140992, eval/episode_dist: 2384.793 +/- 0.000
+step: 29140992, eval/episode_reward_survive: 239.406 +/- 0.000
+step: 29140992, eval/episode_success: 0.000 +/- 0.000
+step: 29140992, eval/episode_success_easy: 0.000 +/- 0.000
+step: 29140992, eval/episode_success_any: 0.000 +/- 0.000
+step: 29140992, eval/episode_success_hard: 0.000 +/- 0.000
+step: 29140992, training/actor_loss: -291036801814025827518764810240000.000 +/- 0.000
+step: 29140992, training/fb_loss: -63.855 +/- 0.000
+step: 29140992, training/critic_loss: 0.000 +/- 0.000
+step: 29140992, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 29966336, eval/episode_dist: 2581.159 +/- 0.000
+step: 29966336, eval/episode_reward_survive: 258.238 +/- 0.000
+step: 29966336, eval/episode_success: 0.000 +/- 0.000
+step: 29966336, eval/episode_success_easy: 0.000 +/- 0.000
+step: 29966336, eval/episode_success_any: 0.000 +/- 0.000
+step: 29966336, eval/episode_success_hard: 0.000 +/- 0.000
+step: 29966336, training/actor_loss: -170513203355522408706334330454016.000 +/- 0.000
+step: 29966336, training/fb_loss: -63.849 +/- 0.000
+step: 29966336, training/critic_loss: 0.000 +/- 0.000
+step: 29966336, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 30791680, eval/episode_dist: 2393.539 +/- 0.000
+step: 30791680, eval/episode_reward_survive: 241.160 +/- 0.000
+step: 30791680, eval/episode_success: 0.000 +/- 0.000
+step: 30791680, eval/episode_success_easy: 0.000 +/- 0.000
+step: 30791680, eval/episode_success_any: 0.000 +/- 0.000
+step: 30791680, eval/episode_success_hard: 0.000 +/- 0.000
+step: 30791680, training/actor_loss: -91583394062132404676074466705408.000 +/- 0.000
+step: 30791680, training/fb_loss: -63.853 +/- 0.000
+step: 30791680, training/critic_loss: 0.000 +/- 0.000
+step: 30791680, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 31617024, eval/episode_dist: 3137.765 +/- 0.000
+step: 31617024, eval/episode_reward_survive: 311.121 +/- 0.000
+step: 31617024, eval/episode_success: 0.000 +/- 0.000
+step: 31617024, eval/episode_success_easy: 0.000 +/- 0.000
+step: 31617024, eval/episode_success_any: 0.000 +/- 0.000
+step: 31617024, eval/episode_success_hard: 0.000 +/- 0.000
+step: 31617024, training/actor_loss: -83551745472720983539896322883584.000 +/- 0.000
+step: 31617024, training/fb_loss: -63.843 +/- 0.000
+step: 31617024, training/critic_loss: 0.000 +/- 0.000
+step: 31617024, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 32442368, eval/episode_dist: 3052.966 +/- 0.000
+step: 32442368, eval/episode_reward_survive: 304.738 +/- 0.000
+step: 32442368, eval/episode_success: 0.000 +/- 0.000
+step: 32442368, eval/episode_success_easy: 0.000 +/- 0.000
+step: 32442368, eval/episode_success_any: 0.000 +/- 0.000
+step: 32442368, eval/episode_success_hard: 0.000 +/- 0.000
+step: 32442368, training/actor_loss: -80875580235763028145466152845312.000 +/- 0.000
+step: 32442368, training/fb_loss: -63.851 +/- 0.000
+step: 32442368, training/critic_loss: 0.000 +/- 0.000
+step: 32442368, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 33267712, eval/episode_dist: 2923.968 +/- 0.000
+step: 33267712, eval/episode_reward_survive: 292.375 +/- 0.000
+step: 33267712, eval/episode_success: 0.000 +/- 0.000
+step: 33267712, eval/episode_success_easy: 0.000 +/- 0.000
+step: 33267712, eval/episode_success_any: 0.000 +/- 0.000
+step: 33267712, eval/episode_success_hard: 0.000 +/- 0.000
+step: 33267712, training/actor_loss: -86555606978046958776939047813120.000 +/- 0.000
+step: 33267712, training/fb_loss: -63.845 +/- 0.000
+step: 33267712, training/critic_loss: 0.000 +/- 0.000
+step: 33267712, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 34093056, eval/episode_dist: 3116.447 +/- 0.000
+step: 34093056, eval/episode_reward_survive: 310.809 +/- 0.000
+step: 34093056, eval/episode_success: 0.000 +/- 0.000
+step: 34093056, eval/episode_success_easy: 0.000 +/- 0.000
+step: 34093056, eval/episode_success_any: 0.000 +/- 0.000
+step: 34093056, eval/episode_success_hard: 0.000 +/- 0.000
+step: 34093056, training/actor_loss: -108937021289559446793244945416192.000 +/- 0.000
+step: 34093056, training/fb_loss: -63.860 +/- 0.000
+step: 34093056, training/critic_loss: 0.000 +/- 0.000
+step: 34093056, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 34918400, eval/episode_dist: 2590.001 +/- 0.000
+step: 34918400, eval/episode_reward_survive: 258.633 +/- 0.000
+step: 34918400, eval/episode_success: 0.000 +/- 0.000
+step: 34918400, eval/episode_success_easy: 0.000 +/- 0.000
+step: 34918400, eval/episode_success_any: 0.000 +/- 0.000
+step: 34918400, eval/episode_success_hard: 0.000 +/- 0.000
+step: 34918400, training/actor_loss: -135769110513093027491781726437376.000 +/- 0.000
+step: 34918400, training/fb_loss: -63.864 +/- 0.000
+step: 34918400, training/critic_loss: 0.000 +/- 0.000
+step: 34918400, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 35743744, eval/episode_dist: 2839.753 +/- 0.000
+step: 35743744, eval/episode_reward_survive: 283.887 +/- 0.000
+step: 35743744, eval/episode_success: 0.000 +/- 0.000
+step: 35743744, eval/episode_success_easy: 0.000 +/- 0.000
+step: 35743744, eval/episode_success_any: 0.000 +/- 0.000
+step: 35743744, eval/episode_success_hard: 0.000 +/- 0.000
+step: 35743744, training/actor_loss: -147092180538987238019014905036800.000 +/- 0.000
+step: 35743744, training/fb_loss: -63.877 +/- 0.000
+step: 35743744, training/critic_loss: 0.000 +/- 0.000
+step: 35743744, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 36569088, eval/episode_dist: 2610.095 +/- 0.000
+step: 36569088, eval/episode_reward_survive: 260.648 +/- 0.000
+step: 36569088, eval/episode_success: 0.000 +/- 0.000
+step: 36569088, eval/episode_success_easy: 0.000 +/- 0.000
+step: 36569088, eval/episode_success_any: 0.000 +/- 0.000
+step: 36569088, eval/episode_success_hard: 0.000 +/- 0.000
+step: 36569088, training/actor_loss: -184280334532415122743487490949120.000 +/- 0.000
+step: 36569088, training/fb_loss: -63.880 +/- 0.000
+step: 36569088, training/critic_loss: 0.000 +/- 0.000
+step: 36569088, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 37394432, eval/episode_dist: 2518.375 +/- 0.000
+step: 37394432, eval/episode_reward_survive: 251.504 +/- 0.000
+step: 37394432, eval/episode_success: 0.000 +/- 0.000
+step: 37394432, eval/episode_success_easy: 0.000 +/- 0.000
+step: 37394432, eval/episode_success_any: 0.000 +/- 0.000
+step: 37394432, eval/episode_success_hard: 0.000 +/- 0.000
+step: 37394432, training/actor_loss: -217802512856223935207480875810816.000 +/- 0.000
+step: 37394432, training/fb_loss: -63.879 +/- 0.000
+step: 37394432, training/critic_loss: 0.000 +/- 0.000
+step: 37394432, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 38219776, eval/episode_dist: 2351.333 +/- 0.000
+step: 38219776, eval/episode_reward_survive: 234.855 +/- 0.000
+step: 38219776, eval/episode_success: 0.000 +/- 0.000
+step: 38219776, eval/episode_success_easy: 0.000 +/- 0.000
+step: 38219776, eval/episode_success_any: 0.000 +/- 0.000
+step: 38219776, eval/episode_success_hard: 0.000 +/- 0.000
+step: 38219776, training/actor_loss: -241767078392664400088781595607040.000 +/- 0.000
+step: 38219776, training/fb_loss: -63.893 +/- 0.000
+step: 38219776, training/critic_loss: 0.000 +/- 0.000
+step: 38219776, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 39045120, eval/episode_dist: 2610.042 +/- 0.000
+step: 39045120, eval/episode_reward_survive: 261.309 +/- 0.000
+step: 39045120, eval/episode_success: 0.000 +/- 0.000
+step: 39045120, eval/episode_success_easy: 0.000 +/- 0.000
+step: 39045120, eval/episode_success_any: 0.000 +/- 0.000
+step: 39045120, eval/episode_success_hard: 0.000 +/- 0.000
+step: 39045120, training/actor_loss: -299547117328158743388892816211968.000 +/- 0.000
+step: 39045120, training/fb_loss: -63.891 +/- 0.000
+step: 39045120, training/critic_loss: 0.000 +/- 0.000
+step: 39045120, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 39870464, eval/episode_dist: 2312.970 +/- 0.000
+step: 39870464, eval/episode_reward_survive: 231.234 +/- 0.000
+step: 39870464, eval/episode_success: 0.000 +/- 0.000
+step: 39870464, eval/episode_success_easy: 0.000 +/- 0.000
+step: 39870464, eval/episode_success_any: 0.000 +/- 0.000
+step: 39870464, eval/episode_success_hard: 0.000 +/- 0.000
+step: 39870464, training/actor_loss: -332266317451172962238012961325056.000 +/- 0.000
+step: 39870464, training/fb_loss: -63.891 +/- 0.000
+step: 39870464, training/critic_loss: 0.000 +/- 0.000
+step: 39870464, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 40695808, eval/episode_dist: 2365.788 +/- 0.000
+step: 40695808, eval/episode_reward_survive: 237.551 +/- 0.000
+step: 40695808, eval/episode_success: 0.000 +/- 0.000
+step: 40695808, eval/episode_success_easy: 0.000 +/- 0.000
+step: 40695808, eval/episode_success_any: 0.000 +/- 0.000
+step: 40695808, eval/episode_success_hard: 0.000 +/- 0.000
+step: 40695808, training/actor_loss: -394187884788096545247799202021376.000 +/- 0.000
+step: 40695808, training/fb_loss: -63.891 +/- 0.000
+step: 40695808, training/critic_loss: 0.000 +/- 0.000
+step: 40695808, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 8)
+step: 41521152, eval/episode_dist: 2563.642 +/- 0.000
+step: 41521152, eval/episode_reward_survive: 255.246 +/- 0.000
+step: 41521152, eval/episode_success: 0.000 +/- 0.000
+step: 41521152, eval/episode_success_easy: 0.000 +/- 0.000
+step: 41521152, eval/episode_success_any: 0.000 +/- 0.000
+step: 41521152, eval/episode_success_hard: 0.000 +/- 0.000
+step: 41521152, training/actor_loss: -467880056817929117588261450022912.000 +/- 0.000
+step: 41521152, training/fb_loss: -63.897 +/- 0.000
+step: 41521152, training/critic_loss: 0.000 +/- 0.000
+step: 41521152, training/value_loss: 0.000 +/- 0.000
+
+  _     ._   __/__   _ _  _  _ _/_   Recorded: 08:35:20  Samples:  10576
+ /_//_/// /_\ / //_// / //_'/ //     Duration: 4917.237  CPU time: 5095.829
+/   _/                      v4.6.2
+
+Program: training_fb.py --project_name test --group_name first_run --exp_name ant-fb-della_1_with_eval_40000000_512_1024_50_1 --num_evals 50 --seed 1 --num_timesteps 40000000 --batch_size 512 --num_envs 1024 --discounting 0.99 --action_repeat 1 --env_name ant --episode_length 1025 --unroll_length 62 --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 --train_step_multiplier 1 --log_wandb
+
+4917.217 <module>  training_fb.py:1
+└─ 4917.217 main  training_fb.py:15
+   └─ 4914.711 train  src/train_fb.py:393
+      ├─ 3401.246 training_epoch_with_timing  src/train_fb.py:703
+      │  ├─ 3305.324 [self]  src/train_fb.py
+      │  └─ 95.922 cache_miss  jax/_src/api.py:1788
+      │        [3 frames hidden]  jax
+      ├─ 1340.326 MetricsRecorder.progress  utils.py:309
+      │  └─ 1327.062 render  utils.py:328
+      │     ├─ 519.552 render  brax/io/html.py:56
+      │     │     [33 frames hidden]  brax, jax
+      │     ├─ 467.426 cache_miss  jax/_src/pjit.py:246
+      │     │     [35 frames hidden]  jax
+      │     │        108.154 WrappedFun.call_wrapped  jax/_src/linear_util.py:178
+      │     │        └─ 87.833 Ant.step  envs/ant.py:161
+      │     │           └─ 87.833 DynamicJaxprTracer.pipeline_step  brax/envs/base.py:121
+      │     │                 [11 frames hidden]  brax, jax
+      │     ├─ 147.832 [self]  utils.py
+      │     └─ 108.312 ArrayImpl.__getitem__  jax/_src/array.py:309
+      │           [3 frames hidden]  jax
+      ├─ 108.679 CrlEvaluator.run_evaluation  src/evaluator.py:22
+      │  └─ 96.918 [self]  src/evaluator.py
+      └─ 55.901 cache_miss  jax/_src/api.py:1788
+
+
+[1;34mwandb[0m: 
+[1;34mwandb[0m: You can sync this run to the cloud by running:
+[1;34mwandb[0m: [1mwandb sync /home/kw2960/JaxGCRL/wandb/offline-run-20250908_083518-h15csygm[0m
+[1;34mwandb[0m: Find logs at: [1;35mwandb/offline-run-20250908_083518-h15csygm/logs[0m

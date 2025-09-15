@@ -1,0 +1,122 @@
+Arguments:
+{
+    "action_repeat": 1,
+    "alpha_lr": 0.0003,
+    "backend": null,
+    "batch_size": 256,
+    "contrastive_loss_fn": "symmetric_infonce",
+    "critic_lr": 0.0003,
+    "disable_entropy_actor": false,
+    "discounting": 0.99,
+    "discriminator_lr": 0.0003,
+    "energy_fn": "l2",
+    "entropy_alpha": 1e-06,
+    "env_name": "pusher_easy",
+    "episode_length": 1025,
+    "eval_env": null,
+    "exp_name": "pusher_easy-fb-della_1_with_eval_80000000_256_512_50_1",
+    "generator_lr": 0.0003,
+    "group_name": "first_run",
+    "h_dim": 256,
+    "l2_penalty": 0.0,
+    "log_wandb": true,
+    "logsumexp_penalty": 0.0,
+    "max_replay_size": 10000,
+    "min_replay_size": 1000,
+    "n_hidden": 8,
+    "no_resubs": false,
+    "noise_dim": 4,
+    "num_envs": 512,
+    "num_eval_envs": 256,
+    "num_evals": 50,
+    "num_timesteps": 80000000,
+    "policy_lr": 0.0003,
+    "project_name": "test",
+    "random_goals": 0.0,
+    "repr_dim": 64,
+    "saved_ckpt_path": null,
+    "seed": 1,
+    "train_step_multiplier": 1,
+    "unroll_length": 62,
+    "use_dense_reward": false,
+    "use_generator_for_targets": false,
+    "use_her": false,
+    "use_ln": false,
+    "var_post": "meanfield",
+    "visualization_interval": 5
+}
+Updates per environment step: 0.06457913306451613
+Backward network parameter shapes: {'params': {'Dense_0': {'bias': (256,), 'kernel': (3, 256)}, 'Dense_1': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_2': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_3': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_4': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_5': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_6': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_7': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_8': {'bias': (64,), 'kernel': (256, 64)}}}
+fb: env_state.obs.shape (512, 23)
+fb: goal shape (512, 3)
+fb: backward_reprs_goal shape (512, 64)
+fb: policy_obs shape (512, 84)
+ACTION SHAPE (256, 7)
+ACTION SHAPE (1, 7)
+step: 0, eval/episode_success: 30.355 +/- 0.000
+step: 0, eval/episode_success_hard: 0.000 +/- 0.000
+step: 0, eval/episode_success_any: 0.031 +/- 0.000
+step: 0, eval/episode_success_easy: 0.000 +/- 0.000
+step: 0, eval/episode_dist: 0.000 +/- 0.000
+step: 0, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 0, training/actor_loss: 0.000 +/- 0.000
+step: 0, training/fb_loss: 0.000 +/- 0.000
+step: 0, training/critic_loss: 0.000 +/- 0.000
+step: 0, training/value_loss: 0.000 +/- 0.000
+fb: env_state.obs.shape (512, 23)
+fb: goal shape (512, 3)
+fb: backward_reprs_goal shape (512, 64)
+fb: policy_obs shape (512, 84)
+ENVS IDXS (512,)
+transitions (512, 1025, 84)
+SEQ LEN (1025, 84)
+traj_id (1025,)
+SINGLE TRAJECTORIES (1025, 1025)
+probs shape (1025, 1025)
+goal index Traced<ShapedArray(int32[1025])>with<DynamicJaxprTrace(level=3/1)>
+goal index shape (1025,)
+state, target, noise (1024, 20) (1024, 64) (1,)
+next state (1024, 20)
+fb: next_states shape (256, 20)
+fb: next_states[:, goal_indices] shape (256, 3)
+fb: goals shape (256, 3)
+fb: latents shape (256, 64)
+fb: goals before backward repr (256, 3)
+fb: goals after backward repr (256, 64)
+ACTION SHAPE (1, 7)
+step: 2190336, eval/episode_success: 8.008 +/- 0.000
+step: 2190336, eval/episode_success_hard: 0.000 +/- 0.000
+step: 2190336, eval/episode_success_any: 0.008 +/- 0.000
+step: 2190336, eval/episode_success_easy: 0.000 +/- 0.000
+step: 2190336, eval/episode_dist: 0.000 +/- 0.000
+step: 2190336, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 2190336, training/actor_loss: -4824850985132977074770804736.000 +/- 0.000
+step: 2190336, training/fb_loss: -35.972 +/- 0.000
+step: 2190336, training/critic_loss: 0.000 +/- 0.000
+step: 2190336, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 7)
+step: 3841024, eval/episode_success: 16.016 +/- 0.000
+step: 3841024, eval/episode_success_hard: 0.000 +/- 0.000
+step: 3841024, eval/episode_success_any: 0.016 +/- 0.000
+step: 3841024, eval/episode_success_easy: 0.000 +/- 0.000
+step: 3841024, eval/episode_dist: 0.000 +/- 0.000
+step: 3841024, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 3841024, training/actor_loss: -50282193959585400905282938208256.000 +/- 0.000
+step: 3841024, training/fb_loss: -63.546 +/- 0.000
+step: 3841024, training/critic_loss: 0.000 +/- 0.000
+step: 3841024, training/value_loss: 0.000 +/- 0.000
+ACTION SHAPE (1, 7)
+step: 5491712, eval/episode_success: 20.020 +/- 0.000
+step: 5491712, eval/episode_success_hard: 0.000 +/- 0.000
+step: 5491712, eval/episode_success_any: 0.020 +/- 0.000
+step: 5491712, eval/episode_success_easy: 0.000 +/- 0.000
+step: 5491712, eval/episode_dist: 0.000 +/- 0.000
+step: 5491712, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 5491712, training/actor_loss: -778037035966848781793511186890752.000 +/- 0.000
+step: 5491712, training/fb_loss: -62.878 +/- 0.000
+step: 5491712, training/critic_loss: 0.000 +/- 0.000
+step: 5491712, training/value_loss: 0.000 +/- 0.000
+[1;34mwandb[0m: 
+[1;34mwandb[0m: You can sync this run to the cloud by running:
+[1;34mwandb[0m: [1mwandb sync /home/kw2960/JaxGCRL/wandb/offline-run-20250908_083520-9psu3jrf[0m
+[1;34mwandb[0m: Find logs at: [1;35mwandb/offline-run-20250908_083520-9psu3jrf/logs[0m

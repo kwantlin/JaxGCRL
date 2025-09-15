@@ -1,0 +1,18 @@
+wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
+wandb: Tracking run with wandb version 0.19.2
+wandb: W&B syncing is set to `offline` in this directory.  
+wandb: Run `wandb online` or set WANDB_MODE=online to enable cloud syncing.
+Traceback (most recent call last):
+  File "/home/kw2960/JaxGCRL/training_ppo.py", line 118, in <module>
+    main(args)
+  File "/home/kw2960/JaxGCRL/training_ppo.py", line 96, in main
+    make_policy, params, _ = train_fn(environment=env, progress_fn=metrics_recorder.progress)
+  File "/home/kw2960/JaxGCRL/src/train_ppo.py", line 562, in train
+AssertionError
+Traceback (most recent call last):
+  File "/home/kw2960/JaxGCRL/training_ppo.py", line 118, in <module>
+    main(args)
+  File "/home/kw2960/JaxGCRL/training_ppo.py", line 96, in main
+    make_policy, params, _ = train_fn(environment=env, progress_fn=metrics_recorder.progress)
+  File "/home/kw2960/JaxGCRL/src/train_ppo.py", line 562, in train
+AssertionError

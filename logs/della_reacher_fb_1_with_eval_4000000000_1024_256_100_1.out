@@ -1,0 +1,89 @@
+Arguments:
+{
+    "action_repeat": 1,
+    "alpha_lr": 0.0003,
+    "backend": null,
+    "batch_size": 1024,
+    "contrastive_loss_fn": "symmetric_infonce",
+    "critic_lr": 0.0003,
+    "disable_entropy_actor": false,
+    "discounting": 0.99,
+    "discriminator_lr": 0.0003,
+    "energy_fn": "l2",
+    "entropy_alpha": 1e-06,
+    "env_name": "reacher",
+    "episode_length": 1025,
+    "eval_env": null,
+    "exp_name": "reacher-fb-della_1_with_eval_4000000000_1024_256_100_1",
+    "generator_lr": 0.0003,
+    "group_name": "first_run",
+    "h_dim": 256,
+    "l2_penalty": 0.0,
+    "log_wandb": true,
+    "logsumexp_penalty": 0.0,
+    "max_replay_size": 10000,
+    "min_replay_size": 1000,
+    "n_hidden": 8,
+    "no_resubs": false,
+    "noise_dim": 4,
+    "num_envs": 256,
+    "num_eval_envs": 256,
+    "num_evals": 100,
+    "num_timesteps": 4000000000,
+    "policy_lr": 0.0003,
+    "project_name": "test",
+    "random_goals": 0.0,
+    "repr_dim": 64,
+    "saved_ckpt_path": null,
+    "seed": 1,
+    "train_step_multiplier": 1,
+    "unroll_length": 62,
+    "use_dense_reward": false,
+    "use_generator_for_targets": false,
+    "use_her": false,
+    "use_ln": false,
+    "var_post": "meanfield",
+    "visualization_interval": 5
+}
+Updates per environment step: 0.01614478326612903
+Backward network parameter shapes: {'params': {'Dense_0': {'bias': (256,), 'kernel': (3, 256)}, 'Dense_1': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_2': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_3': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_4': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_5': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_6': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_7': {'bias': (256,), 'kernel': (256, 256)}, 'Dense_8': {'bias': (64,), 'kernel': (256, 64)}}}
+fb: env_state.obs.shape (256, 13)
+fb: goal shape (256, 3)
+fb: backward_reprs_goal shape (256, 64)
+fb: policy_obs shape (256, 74)
+ACTION SHAPE (256, 2)
+ACTION SHAPE (1, 2)
+step: 0, eval/episode_dist: 157.843 +/- 0.000
+step: 0, eval/episode_success: 102.992 +/- 0.000
+step: 0, eval/episode_success_any: 1.000 +/- 0.000
+step: 0, eval/episode_success_hard: 0.000 +/- 0.000
+step: 0, eval/episode_success_easy: 0.000 +/- 0.000
+step: 0, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 0, training/actor_loss: 0.000 +/- 0.000
+step: 0, training/fb_loss: 0.000 +/- 0.000
+step: 0, training/critic_loss: 0.000 +/- 0.000
+step: 0, training/value_loss: 0.000 +/- 0.000
+fb: env_state.obs.shape (256, 13)
+fb: goal shape (256, 3)
+fb: backward_reprs_goal shape (256, 64)
+fb: policy_obs shape (256, 74)
+ENVS IDXS (256,)
+transitions (256, 1025, 74)
+SEQ LEN (1025, 74)
+traj_id (1025,)
+SINGLE TRAJECTORIES (1025, 1025)
+probs shape (1025, 1025)
+goal index Traced<ShapedArray(int32[1025])>with<DynamicJaxprTrace(level=3/1)>
+goal index shape (1025,)
+state, target, noise (1024, 10) (1024, 64) (1,)
+next state (1024, 10)
+fb: next_states shape (1024, 10)
+fb: next_states[:, goal_indices] shape (1024, 3)
+fb: goals shape (1024, 3)
+fb: latents shape (1024, 64)
+fb: goals before backward repr (1024, 3)
+fb: goals after backward repr (1024, 64)
+[1;34mwandb[0m: 
+[1;34mwandb[0m: You can sync this run to the cloud by running:
+[1;34mwandb[0m: [1mwandb sync /home/kw2960/JaxGCRL/wandb/offline-run-20250908_100745-1tdwa8dh[0m
+[1;34mwandb[0m: Find logs at: [1;35mwandb/offline-run-20250908_100745-1tdwa8dh/logs[0m

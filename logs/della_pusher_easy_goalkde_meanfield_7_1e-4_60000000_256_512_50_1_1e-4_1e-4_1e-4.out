@@ -1,0 +1,892 @@
+Arguments:
+{
+    "action_repeat": 1,
+    "alpha_lr": 0.0001,
+    "backend": null,
+    "batch_size": 256,
+    "contrastive_loss_fn": "infonce_backward",
+    "critic_lr": 0.0001,
+    "disable_entropy_actor": false,
+    "discounting": 0.99,
+    "discriminator_lr": 0.0003,
+    "energy_fn": "l2",
+    "entropy_alpha": 1e-06,
+    "env_name": "pusher_easy",
+    "episode_length": 1025,
+    "eval_env": null,
+    "exp_name": "pusher_easy-goalkde-meanfield-1x-60000000-256-512-1e-4-1e-4-1e-4-7-della-maxent-gaussianmlp-1e-4",
+    "generator_lr": 0.0003,
+    "group_name": "first_run",
+    "h_dim": 256,
+    "l2_penalty": 0.0,
+    "log_wandb": true,
+    "logsumexp_penalty": 0.0,
+    "max_replay_size": 10000,
+    "min_replay_size": 1000,
+    "n_hidden": 8,
+    "no_resubs": false,
+    "noise_dim": 4,
+    "num_envs": 512,
+    "num_eval_envs": 256,
+    "num_evals": 50,
+    "num_timesteps": 60000000,
+    "policy_lr": 0.0001,
+    "project_name": "test",
+    "random_goals": 0.0,
+    "repr_dim": 64,
+    "saved_ckpt_path": null,
+    "seed": 7,
+    "train_step_multiplier": 1,
+    "unroll_length": 62,
+    "use_dense_reward": false,
+    "use_generator_for_targets": false,
+    "use_her": false,
+    "use_ln": false,
+    "var_post": "meanfield",
+    "visualization_interval": 5
+}
+Updates per environment step: 0.06457913306451613
+Calculated env_steps_per_actor_step as action_repeat (1) * num_envs (512) * unroll_length (62) = 31744
+Calculated num_prefill_actor_steps as min_replay_size (1000) // unroll_length (62) + 1 = 17
+Num_prefill_actor_steps:  17
+Calculated num_prefill_env_steps as num_prefill_actor_steps (17) * env_steps_per_actor_step (31744) = 539648
+Num prefill env steps: 539648
+obs_size 23
+action_size 7
+state_dim 20
+env keys (1, 512, 2)
+original env reset observation shape (1, 512, 23)
+current num_prefill_actor_steps 17
+replay size after prefill 10000
+replay buffer.size <bound method QueueBase.size of <src.replay_buffer.TrajectoryUniformSamplingQueue object at 0x1496663d80a0>>
+jax process count 1
+obs shape (256, 23)
+LOGITS (256, 14)
+ACTION SHAPE (256, 7)
+obs shape (1, 23)
+LOGITS (1, 14)
+ACTION SHAPE (1, 7)
+step: 0, eval/episode_success: 20.020 +/- 0.000
+step: 0, eval/episode_success_hard: 0.000 +/- 0.000
+step: 0, eval/episode_success_any: 0.020 +/- 0.000
+step: 0, eval/episode_success_easy: 0.000 +/- 0.000
+step: 0, eval/episode_dist: 0.000 +/- 0.000
+step: 0, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 0, eval/episode_success_pos: 0.000 +/- 0.000
+step: 0, eval/episode_success_rot: 0.000 +/- 0.000
+step: 0, eval/episode_success_vel: 0.000 +/- 0.000
+step: 0, eval/episode_success_ang: 0.000 +/- 0.000
+step: 0, training/crl_critic_loss: 0.000 +/- 0.000
+step: 0, training/actor_loss: 0.000 +/- 0.000
+step: 0, training/binary_accuracy: 0.000 +/- 0.000
+step: 0, training/categorical_accuracy: 0.000 +/- 0.000
+step: 0, training/logits_pos: 0.000 +/- 0.000
+step: 0, training/logits_neg: 0.000 +/- 0.000
+step: 0, training/logsumexp: 0.000 +/- 0.000
+step: 0, training/sps: 0.000 +/- 0.000
+step: 0, training/entropy: 0.000 +/- 0.000
+step: 0, training/alpha: 0.000 +/- 0.000
+step: 0, training/alpha_loss: 0.000 +/- 0.000
+step: 0, training/sa_repr_mean: 0.000 +/- 0.000
+step: 0, training/g_repr_mean: 0.000 +/- 0.000
+step: 0, training/sa_repr_std: 0.000 +/- 0.000
+step: 0, training/g_repr_std: 0.000 +/- 0.000
+step: 0, training/l_align: 0.000 +/- 0.000
+step: 0, training/l_unif: 0.000 +/- 0.000
+step: 0, training/context_info_loss: 0.000 +/- 0.000
+step: 0, training/context_mean_norm: 0.000 +/- 0.000
+step: 0, training/context_std_mean: 0.000 +/- 0.000
+ENVS IDXS (512,)
+transitions (512, 1025, 23)
+SEQ LEN (1025, 23)
+traj_id (1025,)
+SINGLE TRAJECTORIES (1025, 1025)
+probs shape (1025, 1025)
+goal index Traced<ShapedArray(int32[1025])>with<DynamicJaxprTrace(level=3/1)>
+goal index shape (1025,)
+state, target, noise (1024, 20) (1024, 3) (1,)
+next state (1024, 20)
+kde: transitions shape before permutation (524288, 23)
+kde: permutation shape (524288,)
+kde: transitions shape after permutation (524288, 23)
+kde: data_to_kde shape (10000, 3)
+kde: buffer_goals shape (512, 1024, 3)
+kde: exploration_goals shape (512, 3)
+TRANSITIONS SHAPE AFTER PROCESSING (512, 1024, 23)
+TRAJECTORIES SHAPE (1, 512, 1024, 23)
+TRANSITIONS SHAPE AFTER RESHAPING (524288, 23)
+next_state.shape, goal.shape, action.shape (256, 20) (256, 3) (256, 7)
+actor_loss ()
+actor_loss (256,)
+env_keys shape: (512, 2)
+get experience context env_state observation shape (512, 23)
+data shape before flipping (1025, 512, 23)
+data shape (512, 1025, 23)
+trajectories before slice (1, 512, 1025, 23)
+trajectories before update step context (1, 512, 1024, 23)
+transitions (512, 1024, 23) (512, 1024)
+targets (512, 3)
+sa_pairs_flat (524288, 27)
+context output shape (524288, 6)
+context output shape (512, 1024, 6)
+context mean shape (512, 1024, 3)
+context log_std shape (512, 1024, 3)
+pair_log_likelihood shape (512, 1024)
+log_likelihood shape (512,)
+obs shape (1, 23)
+LOGITS (1, 14)
+ACTION SHAPE (1, 7)
+step: 1777664, eval/episode_success: 12.012 +/- 0.000
+step: 1777664, eval/episode_success_hard: 0.000 +/- 0.000
+step: 1777664, eval/episode_success_any: 0.012 +/- 0.000
+step: 1777664, eval/episode_success_easy: 0.000 +/- 0.000
+step: 1777664, eval/episode_dist: 0.000 +/- 0.000
+step: 1777664, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 1777664, eval/episode_success_pos: 0.000 +/- 0.000
+step: 1777664, eval/episode_success_rot: 0.000 +/- 0.000
+step: 1777664, eval/episode_success_vel: 0.000 +/- 0.000
+step: 1777664, eval/episode_success_ang: 0.000 +/- 0.000
+step: 1777664, training/crl_critic_loss: 0.000 +/- 0.000
+step: 1777664, training/actor_loss: 2.328 +/- 0.000
+step: 1777664, training/binary_accuracy: 0.996 +/- 0.000
+step: 1777664, training/categorical_accuracy: 0.752 +/- 0.000
+step: 1777664, training/logits_pos: -2.978 +/- 0.000
+step: 1777664, training/logits_neg: -79.670 +/- 0.000
+step: 1777664, training/logsumexp: 119.557 +/- 0.000
+step: 1777664, training/sps: 866.066 +/- 0.000
+step: 1777664, training/entropy: 2.712 +/- 0.000
+step: 1777664, training/alpha: 0.136 +/- 0.000
+step: 1777664, training/alpha_loss: 1.119 +/- 0.000
+step: 1777664, training/sa_repr_mean: 104.522 +/- 0.000
+step: 1777664, training/g_repr_mean: 105.032 +/- 0.000
+step: 1777664, training/sa_repr_std: 67.680 +/- 0.000
+step: 1777664, training/g_repr_std: 69.630 +/- 0.000
+step: 1777664, training/l_align: 2.978 +/- 0.000
+step: 1777664, training/l_unif: -2.349 +/- 0.000
+step: 1777664, training/context_info_loss: 2543.665 +/- 0.000
+step: 1777664, training/context_mean_norm: 0.204 +/- 0.000
+step: 1777664, training/context_std_mean: 0.864 +/- 0.000
+kde: transitions shape before permutation (524288, 23)
+kde: permutation shape (524288,)
+kde: transitions shape after permutation (524288, 23)
+kde: data_to_kde shape (10000, 3)
+kde: buffer_goals shape (512, 1024, 3)
+kde: exploration_goals shape (512, 3)
+TRANSITIONS SHAPE AFTER PROCESSING (512, 1024, 23)
+TRAJECTORIES SHAPE (1, 512, 1024, 23)
+TRANSITIONS SHAPE AFTER RESHAPING (524288, 23)
+next_state.shape, goal.shape, action.shape (256, 20) (256, 3) (256, 7)
+actor_loss ()
+actor_loss (256,)
+env_keys shape: (512, 2)
+get experience context env_state observation shape (512, 23)
+data shape before flipping (1025, 512, 23)
+data shape (512, 1025, 23)
+trajectories before slice (1, 512, 1025, 23)
+trajectories before update step context (1, 512, 1024, 23)
+step: 3015680, eval/episode_success: 25.758 +/- 0.000
+step: 3015680, eval/episode_success_hard: 0.000 +/- 0.000
+step: 3015680, eval/episode_success_any: 0.027 +/- 0.000
+step: 3015680, eval/episode_success_easy: 0.000 +/- 0.000
+step: 3015680, eval/episode_dist: 0.000 +/- 0.000
+step: 3015680, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 3015680, eval/episode_success_pos: 0.000 +/- 0.000
+step: 3015680, eval/episode_success_rot: 0.000 +/- 0.000
+step: 3015680, eval/episode_success_vel: 0.000 +/- 0.000
+step: 3015680, eval/episode_success_ang: 0.000 +/- 0.000
+step: 3015680, training/crl_critic_loss: 0.000 +/- 0.000
+step: 3015680, training/actor_loss: 39.663 +/- 0.000
+step: 3015680, training/binary_accuracy: 0.996 +/- 0.000
+step: 3015680, training/categorical_accuracy: 0.747 +/- 0.000
+step: 3015680, training/logits_pos: -39.678 +/- 0.000
+step: 3015680, training/logits_neg: -195.527 +/- 0.000
+step: 3015680, training/logsumexp: 5398.550 +/- 0.000
+step: 3015680, training/sps: 890.049 +/- 0.000
+step: 3015680, training/entropy: -3.537 +/- 0.000
+step: 3015680, training/alpha: 0.002 +/- 0.000
+step: 3015680, training/alpha_loss: -0.000 +/- 0.000
+step: 3015680, training/sa_repr_mean: 168.579 +/- 0.000
+step: 3015680, training/g_repr_mean: 194.766 +/- 0.000
+step: 3015680, training/sa_repr_std: 143.163 +/- 0.000
+step: 3015680, training/g_repr_std: 299.628 +/- 0.000
+step: 3015680, training/l_align: 39.678 +/- 0.000
+step: 3015680, training/l_unif: -39.265 +/- 0.000
+step: 3015680, training/context_info_loss: 592.166 +/- 0.000
+step: 3015680, training/context_mean_norm: 0.618 +/- 0.000
+step: 3015680, training/context_std_mean: 0.444 +/- 0.000
+step: 4253696, eval/episode_success: 8.359 +/- 0.000
+step: 4253696, eval/episode_success_hard: 0.000 +/- 0.000
+step: 4253696, eval/episode_success_any: 0.012 +/- 0.000
+step: 4253696, eval/episode_success_easy: 0.000 +/- 0.000
+step: 4253696, eval/episode_dist: 0.000 +/- 0.000
+step: 4253696, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 4253696, eval/episode_success_pos: 0.000 +/- 0.000
+step: 4253696, eval/episode_success_rot: 0.000 +/- 0.000
+step: 4253696, eval/episode_success_vel: 0.000 +/- 0.000
+step: 4253696, eval/episode_success_ang: 0.000 +/- 0.000
+step: 4253696, training/crl_critic_loss: 0.000 +/- 0.000
+step: 4253696, training/actor_loss: 99.908 +/- 0.000
+step: 4253696, training/binary_accuracy: 0.996 +/- 0.000
+step: 4253696, training/categorical_accuracy: 0.610 +/- 0.000
+step: 4253696, training/logits_pos: -99.993 +/- 0.000
+step: 4253696, training/logits_neg: -186.254 +/- 0.000
+step: 4253696, training/logsumexp: 15718.625 +/- 0.000
+step: 4253696, training/sps: 914.139 +/- 0.000
+step: 4253696, training/entropy: -3.519 +/- 0.000
+step: 4253696, training/alpha: 0.003 +/- 0.000
+step: 4253696, training/alpha_loss: -0.000 +/- 0.000
+step: 4253696, training/sa_repr_mean: 98.964 +/- 0.000
+step: 4253696, training/g_repr_mean: 160.461 +/- 0.000
+step: 4253696, training/sa_repr_std: 129.839 +/- 0.000
+step: 4253696, training/g_repr_std: 420.247 +/- 0.000
+step: 4253696, training/l_align: 99.993 +/- 0.000
+step: 4253696, training/l_unif: -99.359 +/- 0.000
+step: 4253696, training/context_info_loss: -1686.856 +/- 0.000
+step: 4253696, training/context_mean_norm: 0.616 +/- 0.000
+step: 4253696, training/context_std_mean: 0.207 +/- 0.000
+step: 5491712, eval/episode_success: 16.016 +/- 0.000
+step: 5491712, eval/episode_success_hard: 0.000 +/- 0.000
+step: 5491712, eval/episode_success_any: 0.016 +/- 0.000
+step: 5491712, eval/episode_success_easy: 0.000 +/- 0.000
+step: 5491712, eval/episode_dist: 0.000 +/- 0.000
+step: 5491712, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 5491712, eval/episode_success_pos: 0.000 +/- 0.000
+step: 5491712, eval/episode_success_rot: 0.000 +/- 0.000
+step: 5491712, eval/episode_success_vel: 0.000 +/- 0.000
+step: 5491712, eval/episode_success_ang: 0.000 +/- 0.000
+step: 5491712, training/crl_critic_loss: 0.000 +/- 0.000
+step: 5491712, training/actor_loss: 172.145 +/- 0.000
+step: 5491712, training/binary_accuracy: 0.996 +/- 0.000
+step: 5491712, training/categorical_accuracy: 0.560 +/- 0.000
+step: 5491712, training/logits_pos: -172.266 +/- 0.000
+step: 5491712, training/logits_neg: -271.430 +/- 0.000
+step: 5491712, training/logsumexp: 25865.377 +/- 0.000
+step: 5491712, training/sps: 913.540 +/- 0.000
+step: 5491712, training/entropy: -3.513 +/- 0.000
+step: 5491712, training/alpha: 0.004 +/- 0.000
+step: 5491712, training/alpha_loss: -0.000 +/- 0.000
+step: 5491712, training/sa_repr_mean: 113.062 +/- 0.000
+step: 5491712, training/g_repr_mean: 228.636 +/- 0.000
+step: 5491712, training/sa_repr_std: 169.997 +/- 0.000
+step: 5491712, training/g_repr_std: 721.819 +/- 0.000
+step: 5491712, training/l_align: 172.266 +/- 0.000
+step: 5491712, training/l_unif: -171.758 +/- 0.000
+step: 5491712, training/context_info_loss: -2634.216 +/- 0.000
+step: 5491712, training/context_mean_norm: 0.637 +/- 0.000
+step: 5491712, training/context_std_mean: 0.131 +/- 0.000
+step: 6729728, eval/episode_success: 12.148 +/- 0.000
+step: 6729728, eval/episode_success_hard: 0.000 +/- 0.000
+step: 6729728, eval/episode_success_any: 0.016 +/- 0.000
+step: 6729728, eval/episode_success_easy: 0.000 +/- 0.000
+step: 6729728, eval/episode_dist: 0.000 +/- 0.000
+step: 6729728, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 6729728, eval/episode_success_pos: 0.000 +/- 0.000
+step: 6729728, eval/episode_success_rot: 0.000 +/- 0.000
+step: 6729728, eval/episode_success_vel: 0.000 +/- 0.000
+step: 6729728, eval/episode_success_ang: 0.000 +/- 0.000
+step: 6729728, training/crl_critic_loss: 0.000 +/- 0.000
+step: 6729728, training/actor_loss: 377.817 +/- 0.000
+step: 6729728, training/binary_accuracy: 0.996 +/- 0.000
+step: 6729728, training/categorical_accuracy: 0.544 +/- 0.000
+step: 6729728, training/logits_pos: -377.957 +/- 0.000
+step: 6729728, training/logits_neg: -479.609 +/- 0.000
+step: 6729728, training/logsumexp: 60204.719 +/- 0.000
+step: 6729728, training/sps: 913.697 +/- 0.000
+step: 6729728, training/entropy: -3.506 +/- 0.000
+step: 6729728, training/alpha: 0.004 +/- 0.000
+step: 6729728, training/alpha_loss: -0.000 +/- 0.000
+step: 6729728, training/sa_repr_mean: 123.969 +/- 0.000
+step: 6729728, training/g_repr_mean: 421.464 +/- 0.000
+step: 6729728, training/sa_repr_std: 234.848 +/- 0.000
+step: 6729728, training/g_repr_std: 1717.172 +/- 0.000
+step: 6729728, training/l_align: 377.957 +/- 0.000
+step: 6729728, training/l_unif: -377.469 +/- 0.000
+step: 6729728, training/context_info_loss: -3463.847 +/- 0.000
+step: 6729728, training/context_mean_norm: 0.694 +/- 0.000
+step: 6729728, training/context_std_mean: 0.101 +/- 0.000
+obs shape (1, 23)
+LOGITS (1, 14)
+ACTION SHAPE (1, 7)
+step: 7967744, eval/episode_success: 42.824 +/- 0.000
+step: 7967744, eval/episode_success_hard: 1.645 +/- 0.000
+step: 7967744, eval/episode_success_any: 0.113 +/- 0.000
+step: 7967744, eval/episode_success_easy: 0.000 +/- 0.000
+step: 7967744, eval/episode_dist: 0.000 +/- 0.000
+step: 7967744, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 7967744, eval/episode_success_pos: 0.000 +/- 0.000
+step: 7967744, eval/episode_success_rot: 0.000 +/- 0.000
+step: 7967744, eval/episode_success_vel: 0.000 +/- 0.000
+step: 7967744, eval/episode_success_ang: 0.000 +/- 0.000
+step: 7967744, training/crl_critic_loss: 0.000 +/- 0.000
+step: 7967744, training/actor_loss: 995.540 +/- 0.000
+step: 7967744, training/binary_accuracy: 0.996 +/- 0.000
+step: 7967744, training/categorical_accuracy: 0.448 +/- 0.000
+step: 7967744, training/logits_pos: -995.747 +/- 0.000
+step: 7967744, training/logits_neg: -1125.327 +/- 0.000
+step: 7967744, training/logsumexp: 156515.516 +/- 0.000
+step: 7967744, training/sps: 913.597 +/- 0.000
+step: 7967744, training/entropy: -3.524 +/- 0.000
+step: 7967744, training/alpha: 0.007 +/- 0.000
+step: 7967744, training/alpha_loss: -0.000 +/- 0.000
+step: 7967744, training/sa_repr_mean: 172.876 +/- 0.000
+step: 7967744, training/g_repr_mean: 1033.985 +/- 0.000
+step: 7967744, training/sa_repr_std: 361.465 +/- 0.000
+step: 7967744, training/g_repr_std: 4200.238 +/- 0.000
+step: 7967744, training/l_align: 995.747 +/- 0.000
+step: 7967744, training/l_unif: -995.230 +/- 0.000
+step: 7967744, training/context_info_loss: -3805.374 +/- 0.000
+step: 7967744, training/context_mean_norm: 0.693 +/- 0.000
+step: 7967744, training/context_std_mean: 0.098 +/- 0.000
+step: 9205760, eval/episode_success: 374.188 +/- 0.000
+step: 9205760, eval/episode_success_hard: 9.758 +/- 0.000
+step: 9205760, eval/episode_success_any: 0.574 +/- 0.000
+step: 9205760, eval/episode_success_easy: 0.000 +/- 0.000
+step: 9205760, eval/episode_dist: 0.000 +/- 0.000
+step: 9205760, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 9205760, eval/episode_success_pos: 0.000 +/- 0.000
+step: 9205760, eval/episode_success_rot: 0.000 +/- 0.000
+step: 9205760, eval/episode_success_vel: 0.000 +/- 0.000
+step: 9205760, eval/episode_success_ang: 0.000 +/- 0.000
+step: 9205760, training/crl_critic_loss: 0.000 +/- 0.000
+step: 9205760, training/actor_loss: 2290.113 +/- 0.000
+step: 9205760, training/binary_accuracy: 0.996 +/- 0.000
+step: 9205760, training/categorical_accuracy: 0.164 +/- 0.000
+step: 9205760, training/logits_pos: -2290.443 +/- 0.000
+step: 9205760, training/logits_neg: -2477.944 +/- 0.000
+step: 9205760, training/logsumexp: 465162.156 +/- 0.000
+step: 9205760, training/sps: 913.217 +/- 0.000
+step: 9205760, training/entropy: -3.519 +/- 0.000
+step: 9205760, training/alpha: 0.011 +/- 0.000
+step: 9205760, training/alpha_loss: -0.000 +/- 0.000
+step: 9205760, training/sa_repr_mean: 297.165 +/- 0.000
+step: 9205760, training/g_repr_mean: 2317.339 +/- 0.000
+step: 9205760, training/sa_repr_std: 556.404 +/- 0.000
+step: 9205760, training/g_repr_std: 8625.972 +/- 0.000
+step: 9205760, training/l_align: 2290.443 +/- 0.000
+step: 9205760, training/l_unif: -2289.688 +/- 0.000
+step: 9205760, training/context_info_loss: -4107.172 +/- 0.000
+step: 9205760, training/context_mean_norm: 0.697 +/- 0.000
+step: 9205760, training/context_std_mean: 0.092 +/- 0.000
+step: 10443776, eval/episode_success: 276.238 +/- 0.000
+step: 10443776, eval/episode_success_hard: 25.098 +/- 0.000
+step: 10443776, eval/episode_success_any: 0.504 +/- 0.000
+step: 10443776, eval/episode_success_easy: 0.000 +/- 0.000
+step: 10443776, eval/episode_dist: 0.000 +/- 0.000
+step: 10443776, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 10443776, eval/episode_success_pos: 0.000 +/- 0.000
+step: 10443776, eval/episode_success_rot: 0.000 +/- 0.000
+step: 10443776, eval/episode_success_vel: 0.000 +/- 0.000
+step: 10443776, eval/episode_success_ang: 0.000 +/- 0.000
+step: 10443776, training/crl_critic_loss: 0.000 +/- 0.000
+step: 10443776, training/actor_loss: 2843.350 +/- 0.000
+step: 10443776, training/binary_accuracy: 0.996 +/- 0.000
+step: 10443776, training/categorical_accuracy: 0.116 +/- 0.000
+step: 10443776, training/logits_pos: -2843.713 +/- 0.000
+step: 10443776, training/logits_neg: -3070.777 +/- 0.000
+step: 10443776, training/logsumexp: 1598576.750 +/- 0.000
+step: 10443776, training/sps: 913.640 +/- 0.000
+step: 10443776, training/entropy: -3.502 +/- 0.000
+step: 10443776, training/alpha: 0.012 +/- 0.000
+step: 10443776, training/alpha_loss: -0.000 +/- 0.000
+step: 10443776, training/sa_repr_mean: 333.996 +/- 0.000
+step: 10443776, training/g_repr_mean: 2870.573 +/- 0.000
+step: 10443776, training/sa_repr_std: 979.027 +/- 0.000
+step: 10443776, training/g_repr_std: 16797.889 +/- 0.000
+step: 10443776, training/l_align: 2843.713 +/- 0.000
+step: 10443776, training/l_unif: -2842.864 +/- 0.000
+step: 10443776, training/context_info_loss: -4167.227 +/- 0.000
+step: 10443776, training/context_mean_norm: 0.702 +/- 0.000
+step: 10443776, training/context_std_mean: 0.090 +/- 0.000
+step: 11681792, eval/episode_success: 421.914 +/- 0.000
+step: 11681792, eval/episode_success_hard: 45.258 +/- 0.000
+step: 11681792, eval/episode_success_any: 0.793 +/- 0.000
+step: 11681792, eval/episode_success_easy: 0.000 +/- 0.000
+step: 11681792, eval/episode_dist: 0.000 +/- 0.000
+step: 11681792, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 11681792, eval/episode_success_pos: 0.000 +/- 0.000
+step: 11681792, eval/episode_success_rot: 0.000 +/- 0.000
+step: 11681792, eval/episode_success_vel: 0.000 +/- 0.000
+step: 11681792, eval/episode_success_ang: 0.000 +/- 0.000
+step: 11681792, training/crl_critic_loss: 0.000 +/- 0.000
+step: 11681792, training/actor_loss: 3302.936 +/- 0.000
+step: 11681792, training/binary_accuracy: 0.996 +/- 0.000
+step: 11681792, training/categorical_accuracy: 0.147 +/- 0.000
+step: 11681792, training/logits_pos: -3303.314 +/- 0.000
+step: 11681792, training/logits_neg: -3532.297 +/- 0.000
+step: 11681792, training/logsumexp: 2071269.750 +/- 0.000
+step: 11681792, training/sps: 913.755 +/- 0.000
+step: 11681792, training/entropy: -3.493 +/- 0.000
+step: 11681792, training/alpha: 0.013 +/- 0.000
+step: 11681792, training/alpha_loss: 0.000 +/- 0.000
+step: 11681792, training/sa_repr_mean: 321.852 +/- 0.000
+step: 11681792, training/g_repr_mean: 3328.885 +/- 0.000
+step: 11681792, training/sa_repr_std: 1102.684 +/- 0.000
+step: 11681792, training/g_repr_std: 24495.006 +/- 0.000
+step: 11681792, training/l_align: 3303.314 +/- 0.000
+step: 11681792, training/l_unif: -3302.464 +/- 0.000
+step: 11681792, training/context_info_loss: -4700.371 +/- 0.000
+step: 11681792, training/context_mean_norm: 0.701 +/- 0.000
+step: 11681792, training/context_std_mean: 0.080 +/- 0.000
+step: 12919808, eval/episode_success: 536.086 +/- 0.000
+step: 12919808, eval/episode_success_hard: 41.730 +/- 0.000
+step: 12919808, eval/episode_success_any: 0.707 +/- 0.000
+step: 12919808, eval/episode_success_easy: 0.000 +/- 0.000
+step: 12919808, eval/episode_dist: 0.000 +/- 0.000
+step: 12919808, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 12919808, eval/episode_success_pos: 0.000 +/- 0.000
+step: 12919808, eval/episode_success_rot: 0.000 +/- 0.000
+step: 12919808, eval/episode_success_vel: 0.000 +/- 0.000
+step: 12919808, eval/episode_success_ang: 0.000 +/- 0.000
+step: 12919808, training/crl_critic_loss: 0.000 +/- 0.000
+step: 12919808, training/actor_loss: 3732.375 +/- 0.000
+step: 12919808, training/binary_accuracy: 0.996 +/- 0.000
+step: 12919808, training/categorical_accuracy: 0.166 +/- 0.000
+step: 12919808, training/logits_pos: -3732.726 +/- 0.000
+step: 12919808, training/logits_neg: -3959.826 +/- 0.000
+step: 12919808, training/logsumexp: 2347528.500 +/- 0.000
+step: 12919808, training/sps: 913.644 +/- 0.000
+step: 12919808, training/entropy: -3.495 +/- 0.000
+step: 12919808, training/alpha: 0.013 +/- 0.000
+step: 12919808, training/alpha_loss: 0.000 +/- 0.000
+step: 12919808, training/sa_repr_mean: 309.348 +/- 0.000
+step: 12919808, training/g_repr_mean: 3756.245 +/- 0.000
+step: 12919808, training/sa_repr_std: 1166.708 +/- 0.000
+step: 12919808, training/g_repr_std: 31110.209 +/- 0.000
+step: 12919808, training/l_align: 3732.726 +/- 0.000
+step: 12919808, training/l_unif: -3731.887 +/- 0.000
+step: 12919808, training/context_info_loss: -4621.080 +/- 0.000
+step: 12919808, training/context_mean_norm: 0.710 +/- 0.000
+step: 12919808, training/context_std_mean: 0.082 +/- 0.000
+obs shape (1, 23)
+LOGITS (1, 14)
+ACTION SHAPE (1, 7)
+step: 14157824, eval/episode_success: 426.438 +/- 0.000
+step: 14157824, eval/episode_success_hard: 36.477 +/- 0.000
+step: 14157824, eval/episode_success_any: 0.762 +/- 0.000
+step: 14157824, eval/episode_success_easy: 0.000 +/- 0.000
+step: 14157824, eval/episode_dist: 0.000 +/- 0.000
+step: 14157824, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 14157824, eval/episode_success_pos: 0.000 +/- 0.000
+step: 14157824, eval/episode_success_rot: 0.000 +/- 0.000
+step: 14157824, eval/episode_success_vel: 0.000 +/- 0.000
+step: 14157824, eval/episode_success_ang: 0.000 +/- 0.000
+step: 14157824, training/crl_critic_loss: 0.000 +/- 0.000
+step: 14157824, training/actor_loss: 4255.740 +/- 0.000
+step: 14157824, training/binary_accuracy: 0.996 +/- 0.000
+step: 14157824, training/categorical_accuracy: 0.168 +/- 0.000
+step: 14157824, training/logits_pos: -4256.084 +/- 0.000
+step: 14157824, training/logits_neg: -4483.945 +/- 0.000
+step: 14157824, training/logsumexp: 2598925.250 +/- 0.000
+step: 14157824, training/sps: 913.721 +/- 0.000
+step: 14157824, training/entropy: -3.497 +/- 0.000
+step: 14157824, training/alpha: 0.013 +/- 0.000
+step: 14157824, training/alpha_loss: 0.000 +/- 0.000
+step: 14157824, training/sa_repr_mean: 307.783 +/- 0.000
+step: 14157824, training/g_repr_mean: 4279.106 +/- 0.000
+step: 14157824, training/sa_repr_std: 1219.449 +/- 0.000
+step: 14157824, training/g_repr_std: 39584.211 +/- 0.000
+step: 14157824, training/l_align: 4256.084 +/- 0.000
+step: 14157824, training/l_unif: -4255.319 +/- 0.000
+step: 14157824, training/context_info_loss: -2591.289 +/- 0.000
+step: 14157824, training/context_mean_norm: 0.711 +/- 0.000
+step: 14157824, training/context_std_mean: 0.077 +/- 0.000
+step: 15395840, eval/episode_success: 566.738 +/- 0.000
+step: 15395840, eval/episode_success_hard: 50.582 +/- 0.000
+step: 15395840, eval/episode_success_any: 0.848 +/- 0.000
+step: 15395840, eval/episode_success_easy: 0.000 +/- 0.000
+step: 15395840, eval/episode_dist: 0.000 +/- 0.000
+step: 15395840, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 15395840, eval/episode_success_pos: 0.000 +/- 0.000
+step: 15395840, eval/episode_success_rot: 0.000 +/- 0.000
+step: 15395840, eval/episode_success_vel: 0.000 +/- 0.000
+step: 15395840, eval/episode_success_ang: 0.000 +/- 0.000
+step: 15395840, training/crl_critic_loss: 0.000 +/- 0.000
+step: 15395840, training/actor_loss: 5307.517 +/- 0.000
+step: 15395840, training/binary_accuracy: 0.996 +/- 0.000
+step: 15395840, training/categorical_accuracy: 0.141 +/- 0.000
+step: 15395840, training/logits_pos: -5307.864 +/- 0.000
+step: 15395840, training/logits_neg: -5552.494 +/- 0.000
+step: 15395840, training/logsumexp: 3485642.000 +/- 0.000
+step: 15395840, training/sps: 913.033 +/- 0.000
+step: 15395840, training/entropy: -3.497 +/- 0.000
+step: 15395840, training/alpha: 0.013 +/- 0.000
+step: 15395840, training/alpha_loss: 0.000 +/- 0.000
+step: 15395840, training/sa_repr_mean: 325.652 +/- 0.000
+step: 15395840, training/g_repr_mean: 5330.200 +/- 0.000
+step: 15395840, training/sa_repr_std: 1409.079 +/- 0.000
+step: 15395840, training/g_repr_std: 54547.070 +/- 0.000
+step: 15395840, training/l_align: 5307.864 +/- 0.000
+step: 15395840, training/l_unif: -5307.094 +/- 0.000
+step: 15395840, training/context_info_loss: -3372.938 +/- 0.000
+step: 15395840, training/context_mean_norm: 0.703 +/- 0.000
+step: 15395840, training/context_std_mean: 0.123 +/- 0.000
+step: 16633856, eval/episode_success: 439.469 +/- 0.000
+step: 16633856, eval/episode_success_hard: 37.547 +/- 0.000
+step: 16633856, eval/episode_success_any: 0.699 +/- 0.000
+step: 16633856, eval/episode_success_easy: 0.000 +/- 0.000
+step: 16633856, eval/episode_dist: 0.000 +/- 0.000
+step: 16633856, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 16633856, eval/episode_success_pos: 0.000 +/- 0.000
+step: 16633856, eval/episode_success_rot: 0.000 +/- 0.000
+step: 16633856, eval/episode_success_vel: 0.000 +/- 0.000
+step: 16633856, eval/episode_success_ang: 0.000 +/- 0.000
+step: 16633856, training/crl_critic_loss: 0.000 +/- 0.000
+step: 16633856, training/actor_loss: 6742.430 +/- 0.000
+step: 16633856, training/binary_accuracy: 0.996 +/- 0.000
+step: 16633856, training/categorical_accuracy: 0.120 +/- 0.000
+step: 16633856, training/logits_pos: -6742.760 +/- 0.000
+step: 16633856, training/logits_neg: -7001.970 +/- 0.000
+step: 16633856, training/logsumexp: 3668833.750 +/- 0.000
+step: 16633856, training/sps: 913.963 +/- 0.000
+step: 16633856, training/entropy: -3.494 +/- 0.000
+step: 16633856, training/alpha: 0.013 +/- 0.000
+step: 16633856, training/alpha_loss: 0.000 +/- 0.000
+step: 16633856, training/sa_repr_mean: 347.575 +/- 0.000
+step: 16633856, training/g_repr_mean: 6764.610 +/- 0.000
+step: 16633856, training/sa_repr_std: 1452.407 +/- 0.000
+step: 16633856, training/g_repr_std: 72078.500 +/- 0.000
+step: 16633856, training/l_align: 6742.760 +/- 0.000
+step: 16633856, training/l_unif: -6742.011 +/- 0.000
+step: 16633856, training/context_info_loss: -3944.262 +/- 0.000
+step: 16633856, training/context_mean_norm: 0.709 +/- 0.000
+step: 16633856, training/context_std_mean: 0.090 +/- 0.000
+step: 17871872, eval/episode_success: 613.922 +/- 0.000
+step: 17871872, eval/episode_success_hard: 30.164 +/- 0.000
+step: 17871872, eval/episode_success_any: 0.840 +/- 0.000
+step: 17871872, eval/episode_success_easy: 0.000 +/- 0.000
+step: 17871872, eval/episode_dist: 0.000 +/- 0.000
+step: 17871872, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 17871872, eval/episode_success_pos: 0.000 +/- 0.000
+step: 17871872, eval/episode_success_rot: 0.000 +/- 0.000
+step: 17871872, eval/episode_success_vel: 0.000 +/- 0.000
+step: 17871872, eval/episode_success_ang: 0.000 +/- 0.000
+step: 17871872, training/crl_critic_loss: 0.000 +/- 0.000
+step: 17871872, training/actor_loss: 7989.015 +/- 0.000
+step: 17871872, training/binary_accuracy: 0.996 +/- 0.000
+step: 17871872, training/categorical_accuracy: 0.160 +/- 0.000
+step: 17871872, training/logits_pos: -7989.372 +/- 0.000
+step: 17871872, training/logits_neg: -8207.543 +/- 0.000
+step: 17871872, training/logsumexp: 2626604.750 +/- 0.000
+step: 17871872, training/sps: 913.703 +/- 0.000
+step: 17871872, training/entropy: -3.500 +/- 0.000
+step: 17871872, training/alpha: 0.013 +/- 0.000
+step: 17871872, training/alpha_loss: 0.000 +/- 0.000
+step: 17871872, training/sa_repr_mean: 286.865 +/- 0.000
+step: 17871872, training/g_repr_mean: 8011.135 +/- 0.000
+step: 17871872, training/sa_repr_std: 1235.268 +/- 0.000
+step: 17871872, training/g_repr_std: 93244.164 +/- 0.000
+step: 17871872, training/l_align: 7989.372 +/- 0.000
+step: 17871872, training/l_unif: -7988.620 +/- 0.000
+step: 17871872, training/context_info_loss: -4280.904 +/- 0.000
+step: 17871872, training/context_mean_norm: 0.710 +/- 0.000
+step: 17871872, training/context_std_mean: 0.079 +/- 0.000
+step: 19109888, eval/episode_success: 584.945 +/- 0.000
+step: 19109888, eval/episode_success_hard: 33.930 +/- 0.000
+step: 19109888, eval/episode_success_any: 0.785 +/- 0.000
+step: 19109888, eval/episode_success_easy: 0.000 +/- 0.000
+step: 19109888, eval/episode_dist: 0.000 +/- 0.000
+step: 19109888, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 19109888, eval/episode_success_pos: 0.000 +/- 0.000
+step: 19109888, eval/episode_success_rot: 0.000 +/- 0.000
+step: 19109888, eval/episode_success_vel: 0.000 +/- 0.000
+step: 19109888, eval/episode_success_ang: 0.000 +/- 0.000
+step: 19109888, training/crl_critic_loss: 0.000 +/- 0.000
+step: 19109888, training/actor_loss: 12182.328 +/- 0.000
+step: 19109888, training/binary_accuracy: 0.996 +/- 0.000
+step: 19109888, training/categorical_accuracy: 0.138 +/- 0.000
+step: 19109888, training/logits_pos: -12182.678 +/- 0.000
+step: 19109888, training/logits_neg: -12387.513 +/- 0.000
+step: 19109888, training/logsumexp: 2349388.250 +/- 0.000
+step: 19109888, training/sps: 913.745 +/- 0.000
+step: 19109888, training/entropy: -3.498 +/- 0.000
+step: 19109888, training/alpha: 0.014 +/- 0.000
+step: 19109888, training/alpha_loss: 0.000 +/- 0.000
+step: 19109888, training/sa_repr_mean: 269.495 +/- 0.000
+step: 19109888, training/g_repr_mean: 12204.502 +/- 0.000
+step: 19109888, training/sa_repr_std: 1175.043 +/- 0.000
+step: 19109888, training/g_repr_std: 152824.719 +/- 0.000
+step: 19109888, training/l_align: 12182.678 +/- 0.000
+step: 19109888, training/l_unif: -12181.907 +/- 0.000
+step: 19109888, training/context_info_loss: -4617.522 +/- 0.000
+step: 19109888, training/context_mean_norm: 0.712 +/- 0.000
+step: 19109888, training/context_std_mean: 0.074 +/- 0.000
+obs shape (1, 23)
+LOGITS (1, 14)
+ACTION SHAPE (1, 7)
+step: 20347904, eval/episode_success: 618.219 +/- 0.000
+step: 20347904, eval/episode_success_hard: 29.699 +/- 0.000
+step: 20347904, eval/episode_success_any: 0.789 +/- 0.000
+step: 20347904, eval/episode_success_easy: 0.000 +/- 0.000
+step: 20347904, eval/episode_dist: 0.000 +/- 0.000
+step: 20347904, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 20347904, eval/episode_success_pos: 0.000 +/- 0.000
+step: 20347904, eval/episode_success_rot: 0.000 +/- 0.000
+step: 20347904, eval/episode_success_vel: 0.000 +/- 0.000
+step: 20347904, eval/episode_success_ang: 0.000 +/- 0.000
+step: 20347904, training/crl_critic_loss: 0.000 +/- 0.000
+step: 20347904, training/actor_loss: 18866.295 +/- 0.000
+step: 20347904, training/binary_accuracy: 0.996 +/- 0.000
+step: 20347904, training/categorical_accuracy: 0.130 +/- 0.000
+step: 20347904, training/logits_pos: -18866.641 +/- 0.000
+step: 20347904, training/logits_neg: -19066.621 +/- 0.000
+step: 20347904, training/logsumexp: 2231229.250 +/- 0.000
+step: 20347904, training/sps: 913.710 +/- 0.000
+step: 20347904, training/entropy: -3.493 +/- 0.000
+step: 20347904, training/alpha: 0.014 +/- 0.000
+step: 20347904, training/alpha_loss: 0.000 +/- 0.000
+step: 20347904, training/sa_repr_mean: 264.028 +/- 0.000
+step: 20347904, training/g_repr_mean: 18887.693 +/- 0.000
+step: 20347904, training/sa_repr_std: 1145.214 +/- 0.000
+step: 20347904, training/g_repr_std: 245349.516 +/- 0.000
+step: 20347904, training/l_align: 18866.641 +/- 0.000
+step: 20347904, training/l_unif: -18865.869 +/- 0.000
+step: 20347904, training/context_info_loss: -2299.931 +/- 0.000
+step: 20347904, training/context_mean_norm: 0.711 +/- 0.000
+step: 20347904, training/context_std_mean: 0.074 +/- 0.000
+step: 21585920, eval/episode_success: 629.113 +/- 0.000
+step: 21585920, eval/episode_success_hard: 54.469 +/- 0.000
+step: 21585920, eval/episode_success_any: 0.801 +/- 0.000
+step: 21585920, eval/episode_success_easy: 0.000 +/- 0.000
+step: 21585920, eval/episode_dist: 0.000 +/- 0.000
+step: 21585920, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 21585920, eval/episode_success_pos: 0.000 +/- 0.000
+step: 21585920, eval/episode_success_rot: 0.000 +/- 0.000
+step: 21585920, eval/episode_success_vel: 0.000 +/- 0.000
+step: 21585920, eval/episode_success_ang: 0.000 +/- 0.000
+step: 21585920, training/crl_critic_loss: 0.000 +/- 0.000
+step: 21585920, training/actor_loss: 23078.115 +/- 0.000
+step: 21585920, training/binary_accuracy: 0.996 +/- 0.000
+step: 21585920, training/categorical_accuracy: 0.092 +/- 0.000
+step: 21585920, training/logits_pos: -23078.473 +/- 0.000
+step: 21585920, training/logits_neg: -23274.141 +/- 0.000
+step: 21585920, training/logsumexp: 2012189.375 +/- 0.000
+step: 21585920, training/sps: 913.335 +/- 0.000
+step: 21585920, training/entropy: -3.498 +/- 0.000
+step: 21585920, training/alpha: 0.014 +/- 0.000
+step: 21585920, training/alpha_loss: 0.000 +/- 0.000
+step: 21585920, training/sa_repr_mean: 261.839 +/- 0.000
+step: 21585920, training/g_repr_mean: 23099.520 +/- 0.000
+step: 21585920, training/sa_repr_std: 1095.334 +/- 0.000
+step: 21585920, training/g_repr_std: 303282.000 +/- 0.000
+step: 21585920, training/l_align: 23078.473 +/- 0.000
+step: 21585920, training/l_unif: -23077.719 +/- 0.000
+step: 21585920, training/context_info_loss: -2841.536 +/- 0.000
+step: 21585920, training/context_mean_norm: 0.696 +/- 0.000
+step: 21585920, training/context_std_mean: 0.120 +/- 0.000
+step: 22823936, eval/episode_success: 723.578 +/- 0.000
+step: 22823936, eval/episode_success_hard: 74.477 +/- 0.000
+step: 22823936, eval/episode_success_any: 0.887 +/- 0.000
+step: 22823936, eval/episode_success_easy: 0.000 +/- 0.000
+step: 22823936, eval/episode_dist: 0.000 +/- 0.000
+step: 22823936, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 22823936, eval/episode_success_pos: 0.000 +/- 0.000
+step: 22823936, eval/episode_success_rot: 0.000 +/- 0.000
+step: 22823936, eval/episode_success_vel: 0.000 +/- 0.000
+step: 22823936, eval/episode_success_ang: 0.000 +/- 0.000
+step: 22823936, training/crl_critic_loss: 0.000 +/- 0.000
+step: 22823936, training/actor_loss: 25159.070 +/- 0.000
+step: 22823936, training/binary_accuracy: 0.996 +/- 0.000
+step: 22823936, training/categorical_accuracy: 0.092 +/- 0.000
+step: 22823936, training/logits_pos: -25159.436 +/- 0.000
+step: 22823936, training/logits_neg: -25358.674 +/- 0.000
+step: 22823936, training/logsumexp: 2049297.250 +/- 0.000
+step: 22823936, training/sps: 913.764 +/- 0.000
+step: 22823936, training/entropy: -3.495 +/- 0.000
+step: 22823936, training/alpha: 0.014 +/- 0.000
+step: 22823936, training/alpha_loss: 0.000 +/- 0.000
+step: 22823936, training/sa_repr_mean: 267.470 +/- 0.000
+step: 22823936, training/g_repr_mean: 25180.574 +/- 0.000
+step: 22823936, training/sa_repr_std: 1109.528 +/- 0.000
+step: 22823936, training/g_repr_std: 333083.656 +/- 0.000
+step: 22823936, training/l_align: 25159.436 +/- 0.000
+step: 22823936, training/l_unif: -25158.670 +/- 0.000
+step: 22823936, training/context_info_loss: -3582.642 +/- 0.000
+step: 22823936, training/context_mean_norm: 0.706 +/- 0.000
+step: 22823936, training/context_std_mean: 0.096 +/- 0.000
+step: 24061952, eval/episode_success: 661.109 +/- 0.000
+step: 24061952, eval/episode_success_hard: 27.145 +/- 0.000
+step: 24061952, eval/episode_success_any: 0.848 +/- 0.000
+step: 24061952, eval/episode_success_easy: 0.000 +/- 0.000
+step: 24061952, eval/episode_dist: 0.000 +/- 0.000
+step: 24061952, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 24061952, eval/episode_success_pos: 0.000 +/- 0.000
+step: 24061952, eval/episode_success_rot: 0.000 +/- 0.000
+step: 24061952, eval/episode_success_vel: 0.000 +/- 0.000
+step: 24061952, eval/episode_success_ang: 0.000 +/- 0.000
+step: 24061952, training/crl_critic_loss: 0.000 +/- 0.000
+step: 24061952, training/actor_loss: 28123.391 +/- 0.000
+step: 24061952, training/binary_accuracy: 0.996 +/- 0.000
+step: 24061952, training/categorical_accuracy: 0.101 +/- 0.000
+step: 24061952, training/logits_pos: -28123.740 +/- 0.000
+step: 24061952, training/logits_neg: -28311.418 +/- 0.000
+step: 24061952, training/logsumexp: 1924431.000 +/- 0.000
+step: 24061952, training/sps: 913.752 +/- 0.000
+step: 24061952, training/entropy: -3.494 +/- 0.000
+step: 24061952, training/alpha: 0.014 +/- 0.000
+step: 24061952, training/alpha_loss: 0.000 +/- 0.000
+step: 24061952, training/sa_repr_mean: 251.029 +/- 0.000
+step: 24061952, training/g_repr_mean: 28144.105 +/- 0.000
+step: 24061952, training/sa_repr_std: 1074.299 +/- 0.000
+step: 24061952, training/g_repr_std: 374440.094 +/- 0.000
+step: 24061952, training/l_align: 28123.740 +/- 0.000
+step: 24061952, training/l_unif: -28122.980 +/- 0.000
+step: 24061952, training/context_info_loss: -3794.076 +/- 0.000
+step: 24061952, training/context_mean_norm: 0.710 +/- 0.000
+step: 24061952, training/context_std_mean: 0.084 +/- 0.000
+step: 25299968, eval/episode_success: 643.676 +/- 0.000
+step: 25299968, eval/episode_success_hard: 48.520 +/- 0.000
+step: 25299968, eval/episode_success_any: 0.809 +/- 0.000
+step: 25299968, eval/episode_success_easy: 0.000 +/- 0.000
+step: 25299968, eval/episode_dist: 0.000 +/- 0.000
+step: 25299968, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 25299968, eval/episode_success_pos: 0.000 +/- 0.000
+step: 25299968, eval/episode_success_rot: 0.000 +/- 0.000
+step: 25299968, eval/episode_success_vel: 0.000 +/- 0.000
+step: 25299968, eval/episode_success_ang: 0.000 +/- 0.000
+step: 25299968, training/crl_critic_loss: 0.000 +/- 0.000
+step: 25299968, training/actor_loss: 27165.959 +/- 0.000
+step: 25299968, training/binary_accuracy: 0.996 +/- 0.000
+step: 25299968, training/categorical_accuracy: 0.092 +/- 0.000
+step: 25299968, training/logits_pos: -27166.314 +/- 0.000
+step: 25299968, training/logits_neg: -27354.699 +/- 0.000
+step: 25299968, training/logsumexp: 1963885.125 +/- 0.000
+step: 25299968, training/sps: 913.767 +/- 0.000
+step: 25299968, training/entropy: -3.497 +/- 0.000
+step: 25299968, training/alpha: 0.015 +/- 0.000
+step: 25299968, training/alpha_loss: 0.000 +/- 0.000
+step: 25299968, training/sa_repr_mean: 253.646 +/- 0.000
+step: 25299968, training/g_repr_mean: 27186.980 +/- 0.000
+step: 25299968, training/sa_repr_std: 1082.855 +/- 0.000
+step: 25299968, training/g_repr_std: 361851.812 +/- 0.000
+step: 25299968, training/l_align: 27166.314 +/- 0.000
+step: 25299968, training/l_unif: -27165.574 +/- 0.000
+step: 25299968, training/context_info_loss: -4017.088 +/- 0.000
+step: 25299968, training/context_mean_norm: 0.714 +/- 0.000
+step: 25299968, training/context_std_mean: 0.081 +/- 0.000
+obs shape (1, 23)
+LOGITS (1, 14)
+ACTION SHAPE (1, 7)
+step: 26537984, eval/episode_success: 447.230 +/- 0.000
+step: 26537984, eval/episode_success_hard: 66.820 +/- 0.000
+step: 26537984, eval/episode_success_any: 0.676 +/- 0.000
+step: 26537984, eval/episode_success_easy: 0.000 +/- 0.000
+step: 26537984, eval/episode_dist: 0.000 +/- 0.000
+step: 26537984, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 26537984, eval/episode_success_pos: 0.000 +/- 0.000
+step: 26537984, eval/episode_success_rot: 0.000 +/- 0.000
+step: 26537984, eval/episode_success_vel: 0.000 +/- 0.000
+step: 26537984, eval/episode_success_ang: 0.000 +/- 0.000
+step: 26537984, training/crl_critic_loss: 0.000 +/- 0.000
+step: 26537984, training/actor_loss: 27377.904 +/- 0.000
+step: 26537984, training/binary_accuracy: 0.996 +/- 0.000
+step: 26537984, training/categorical_accuracy: 0.071 +/- 0.000
+step: 26537984, training/logits_pos: -27378.264 +/- 0.000
+step: 26537984, training/logits_neg: -27564.275 +/- 0.000
+step: 26537984, training/logsumexp: 1860561.500 +/- 0.000
+step: 26537984, training/sps: 913.651 +/- 0.000
+step: 26537984, training/entropy: -3.498 +/- 0.000
+step: 26537984, training/alpha: 0.015 +/- 0.000
+step: 26537984, training/alpha_loss: 0.000 +/- 0.000
+step: 26537984, training/sa_repr_mean: 252.688 +/- 0.000
+step: 26537984, training/g_repr_mean: 27399.330 +/- 0.000
+step: 26537984, training/sa_repr_std: 1052.053 +/- 0.000
+step: 26537984, training/g_repr_std: 366001.875 +/- 0.000
+step: 26537984, training/l_align: 27378.264 +/- 0.000
+step: 26537984, training/l_unif: -27377.525 +/- 0.000
+step: 26537984, training/context_info_loss: -4107.954 +/- 0.000
+step: 26537984, training/context_mean_norm: 0.711 +/- 0.000
+step: 26537984, training/context_std_mean: 0.080 +/- 0.000
+step: 27776000, eval/episode_success: 576.926 +/- 0.000
+step: 27776000, eval/episode_success_hard: 51.141 +/- 0.000
+step: 27776000, eval/episode_success_any: 0.895 +/- 0.000
+step: 27776000, eval/episode_success_easy: 0.000 +/- 0.000
+step: 27776000, eval/episode_dist: 0.000 +/- 0.000
+step: 27776000, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 27776000, eval/episode_success_pos: 0.000 +/- 0.000
+step: 27776000, eval/episode_success_rot: 0.000 +/- 0.000
+step: 27776000, eval/episode_success_vel: 0.000 +/- 0.000
+step: 27776000, eval/episode_success_ang: 0.000 +/- 0.000
+step: 27776000, training/crl_critic_loss: 0.000 +/- 0.000
+step: 27776000, training/actor_loss: 27925.699 +/- 0.000
+step: 27776000, training/binary_accuracy: 0.996 +/- 0.000
+step: 27776000, training/categorical_accuracy: 0.081 +/- 0.000
+step: 27776000, training/logits_pos: -27926.055 +/- 0.000
+step: 27776000, training/logits_neg: -28116.578 +/- 0.000
+step: 27776000, training/logsumexp: 1911630.750 +/- 0.000
+step: 27776000, training/sps: 913.331 +/- 0.000
+step: 27776000, training/entropy: -3.498 +/- 0.000
+step: 27776000, training/alpha: 0.016 +/- 0.000
+step: 27776000, training/alpha_loss: 0.000 +/- 0.000
+step: 27776000, training/sa_repr_mean: 258.779 +/- 0.000
+step: 27776000, training/g_repr_mean: 27947.654 +/- 0.000
+step: 27776000, training/sa_repr_std: 1070.498 +/- 0.000
+step: 27776000, training/g_repr_std: 373519.188 +/- 0.000
+step: 27776000, training/l_align: 27926.055 +/- 0.000
+step: 27776000, training/l_unif: -27925.320 +/- 0.000
+step: 27776000, training/context_info_loss: -4278.810 +/- 0.000
+step: 27776000, training/context_mean_norm: 0.710 +/- 0.000
+step: 27776000, training/context_std_mean: 0.076 +/- 0.000
+step: 29014016, eval/episode_success: 568.141 +/- 0.000
+step: 29014016, eval/episode_success_hard: 44.473 +/- 0.000
+step: 29014016, eval/episode_success_any: 0.820 +/- 0.000
+step: 29014016, eval/episode_success_easy: 0.000 +/- 0.000
+step: 29014016, eval/episode_dist: 0.000 +/- 0.000
+step: 29014016, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 29014016, eval/episode_success_pos: 0.000 +/- 0.000
+step: 29014016, eval/episode_success_rot: 0.000 +/- 0.000
+step: 29014016, eval/episode_success_vel: 0.000 +/- 0.000
+step: 29014016, eval/episode_success_ang: 0.000 +/- 0.000
+step: 29014016, training/crl_critic_loss: 0.000 +/- 0.000
+step: 29014016, training/actor_loss: 91215.797 +/- 0.000
+step: 29014016, training/binary_accuracy: 0.996 +/- 0.000
+step: 29014016, training/categorical_accuracy: 0.069 +/- 0.000
+step: 29014016, training/logits_pos: -91216.156 +/- 0.000
+step: 29014016, training/logits_neg: -91410.812 +/- 0.000
+step: 29014016, training/logsumexp: 2116861.500 +/- 0.000
+step: 29014016, training/sps: 913.838 +/- 0.000
+step: 29014016, training/entropy: -3.498 +/- 0.000
+step: 29014016, training/alpha: 0.016 +/- 0.000
+step: 29014016, training/alpha_loss: 0.000 +/- 0.000
+step: 29014016, training/sa_repr_mean: 264.146 +/- 0.000
+step: 29014016, training/g_repr_mean: 91237.773 +/- 0.000
+step: 29014016, training/sa_repr_std: 1121.333 +/- 0.000
+step: 29014016, training/g_repr_std: 1250154.625 +/- 0.000
+step: 29014016, training/l_align: 91216.156 +/- 0.000
+step: 29014016, training/l_unif: -91215.461 +/- 0.000
+step: 29014016, training/context_info_loss: -4394.441 +/- 0.000
+step: 29014016, training/context_mean_norm: 0.714 +/- 0.000
+step: 29014016, training/context_std_mean: 0.078 +/- 0.000
+step: 30252032, eval/episode_success: 627.586 +/- 0.000
+step: 30252032, eval/episode_success_hard: 54.285 +/- 0.000
+step: 30252032, eval/episode_success_any: 0.844 +/- 0.000
+step: 30252032, eval/episode_success_easy: 0.000 +/- 0.000
+step: 30252032, eval/episode_dist: 0.000 +/- 0.000
+step: 30252032, eval/episode_reward_survive: 0.000 +/- 0.000
+step: 30252032, eval/episode_success_pos: 0.000 +/- 0.000
+step: 30252032, eval/episode_success_rot: 0.000 +/- 0.000
+step: 30252032, eval/episode_success_vel: 0.000 +/- 0.000
+step: 30252032, eval/episode_success_ang: 0.000 +/- 0.000
+step: 30252032, training/crl_critic_loss: 0.000 +/- 0.000
+step: 30252032, training/actor_loss: 134019024.000 +/- 0.000
+step: 30252032, training/binary_accuracy: 0.996 +/- 0.000
+step: 30252032, training/categorical_accuracy: 0.063 +/- 0.000
+step: 30252032, training/logits_pos: -134019024.000 +/- 0.000
+step: 30252032, training/logits_neg: -134019464.000 +/- 0.000
+step: 30252032, training/logsumexp: 90363912.000 +/- 0.000
+step: 30252032, training/sps: 913.745 +/- 0.000
+step: 30252032, training/entropy: -3.498 +/- 0.000
+step: 30252032, training/alpha: 0.016 +/- 0.000
+step: 30252032, training/alpha_loss: 0.000 +/- 0.000
+step: 30252032, training/sa_repr_mean: 490.698 +/- 0.000
+step: 30252032, training/g_repr_mean: 134019072.000 +/- 0.000
+step: 30252032, training/sa_repr_std: 3728.333 +/- 0.000
+step: 30252032, training/g_repr_std: 1862108416.000 +/- 0.000
+step: 30252032, training/l_align: 134019024.000 +/- 0.000
+step: 30252032, training/l_unif: -134019024.000 +/- 0.000
+step: 30252032, training/context_info_loss: -4651.782 +/- 0.000
+step: 30252032, training/context_mean_norm: 0.715 +/- 0.000
+step: 30252032, training/context_std_mean: 0.073 +/- 0.000
+[1;34mwandb[0m: 
+[1;34mwandb[0m: You can sync this run to the cloud by running:
+[1;34mwandb[0m: [1mwandb sync /home/kw2960/JaxGCRL/wandb/offline-run-20250816_200215-wk6zhi7q[0m
+[1;34mwandb[0m: Find logs at: [1;35mwandb/offline-run-20250816_200215-wk6zhi7q/logs[0m
