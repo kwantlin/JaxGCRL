@@ -150,7 +150,7 @@ def train(
     action_repeat: int = 1,
     num_envs: int = 1,
     max_devices_per_host: Optional[int] = None,
-    num_eval_envs: int = 128,
+    num_eval_envs: int = 1,
     learning_rate: float = 1e-4,
     entropy_cost: float = 1e-4,
     discounting: float = 0.9,
@@ -269,7 +269,9 @@ def train(
   global_key, local_key = jax.random.split(key)
   del key
   local_key = jax.random.fold_in(local_key, process_id)
-  local_key, key_env, eval_key = jax.random.split(local_key, 3)
+  # Tie eval reset RNG to training reset RNG so goals sampled at reset match
+  local_key, key_env = jax.random.split(local_key, 2)
+  eval_key = key_env
   # key_networks should be global, so that networks are initialized the same
   # way for different processes.
   key_policy, key_value = jax.random.split(global_key)
@@ -306,6 +308,23 @@ def train(
   key_envs = jnp.reshape(key_envs,
                          (local_devices_to_use, -1) + key_envs.shape[1:])
   env_state = reset_fn(key_envs)
+
+  # For num_envs=1, capture the goal used at training reset and reuse it in eval.
+  # We extract a single example from the sharded env_state: [device, env, obs]
+  try:
+    example_obs = env_state.obs[0, 0]
+  except Exception:
+    # Fallback for different shapes
+    example_obs = jnp.reshape(env_state.obs, (-1, env_state.obs.shape[-1]))[0]
+  fixed_goal = example_obs[env.state_dim:]
+  # Log goal on host to ensure visibility
+  try:
+    goal_host = np.asarray(jax.device_get(fixed_goal))
+  except Exception:
+    goal_host = fixed_goal
+  if jax.process_index() == 0:
+    logging.info('Captured fixed training goal (first env): %s', goal_host)
+    print('Captured fixed training goal (first env):', goal_host)
 
   normalize = lambda x, y: x
   if normalize_observations:
@@ -502,9 +521,24 @@ def train(
       randomization_fn=v_randomization_fn,
   )
 
+  # Wrap eval policy to force the same goal as training by overwriting obs goals
+  def make_eval_policy(params, deterministic=False):
+    inner = make_policy(params, deterministic=deterministic)
+
+    def policy(obs, key):
+      # obs shape: [batch, obs_dim]
+      state = obs[:, :env.state_dim]
+      goal = jnp.broadcast_to(fixed_goal, (obs.shape[0], fixed_goal.shape[0]))
+      obs_fixed = jnp.concatenate([state, goal], axis=-1)
+      # Log eval goal once per call (first element)
+      # jax.debug.print('Eval goal[0]: {g}', g=goal[0])
+      return inner(obs_fixed, key)
+
+    return policy
+
   evaluator = CrlEvaluator(
       eval_env,
-      functools.partial(make_policy, deterministic=deterministic_eval),
+      functools.partial(make_eval_policy, deterministic=deterministic_eval),
       num_eval_envs=num_eval_envs,
       episode_length=episode_length,
       action_repeat=action_repeat,
