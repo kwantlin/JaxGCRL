@@ -61,6 +61,7 @@ def main(args):
         discounting=args.discounting,
         learning_rate=args.critic_lr,
         num_envs=args.num_envs,
+        num_eval_envs=args.num_eval_envs,
         batch_size=args.batch_size,
         num_minibatches=num_minibatches,
         num_updates_per_batch=1,
