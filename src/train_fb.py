@@ -191,16 +191,19 @@ def forward_backward_repr_loss(
     backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
     occ_measures = jnp.einsum('bd,td->bt', forward_reprs, backward_reprs)
 
+    print("fb: occ_measures shape", occ_measures.shape)
+    print("fb: target_occ_measures shape", target_occ_measures.shape)
     I = jnp.eye(occ_measures.shape[0])
     repr_off_diag_loss = jax.vmap(
         lambda x: (x * (1 - I)) ** 2,
         0, 0
-    )(occ_measures - discount * target_occ_measures)
+    )(occ_measures - discount * target_occ_measures[None])
+    repr_off_diag_loss = 0.5 * jnp.sum(repr_off_diag_loss, axis=-1) / (occ_measures.shape[0] - 1)
 
-    repr_diag_loss = jax.vmap(jnp.diag, 0, 0)(occ_measures)
+    repr_diag_loss = -jax.vmap(jnp.diag, 0, 0)(occ_measures)
 
     repr_loss = jnp.mean(
-        repr_diag_loss + jnp.sum(repr_off_diag_loss, axis=-1) / (occ_measures.shape[0] - 1)
+        repr_diag_loss + repr_off_diag_loss
     )
 
     # Orthonormalization loss
