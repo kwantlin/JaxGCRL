@@ -54,13 +54,20 @@ class Net(nn.Module):
         return x
 
 # The brax version of this does not take in the actor and action_distribution arguments; before we pass it to brax evaluator or return it from train(), we do a partial application.
+<<<<<<< HEAD
 def make_policy(actor, parametric_action_distribution, backward_repr, params, state_dim, repr_dim, deterministic=False):
+=======
+def make_policy(actor, parametric_action_distribution, backward_repr, params, state_dim, deterministic=False):
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
     actor_params, backward_repr_params = params
     def policy(obs, key_sample):
         state = obs[:, :state_dim]
         goal = obs[:, state_dim:]
         goal_repr = backward_repr.apply(backward_repr_params, goal)
+<<<<<<< HEAD
         goal_repr = goal_repr / jnp.linalg.norm(goal_repr, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
+=======
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
         policy_obs = jnp.concatenate([state, goal_repr], axis=-1)
         logits = actor.apply(actor_params, policy_obs)
         if deterministic:
@@ -139,7 +146,11 @@ def forward_backward_repr_loss(
     """
     states = transitions.observation[:, :state_dim]
     actions = transitions.action
+<<<<<<< HEAD
     next_states = transitions.extras["next_state"][:, :state_dim]
+=======
+    next_states = transitions.extras["future_state"][:, :state_dim]
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
     print("fb: next_states shape", next_states.shape)
     print("fb: next_states[:, goal_indices] shape", next_states[:, goal_indices].shape)
     goals = transitions.observation[:, state_dim:]
@@ -147,12 +158,16 @@ def forward_backward_repr_loss(
     batch_size = states.shape[0]
     key, key_sample = jax.random.split(key)
     gaussian_latents = sample_latents(batch_size, repr_dim, key_sample)
+<<<<<<< HEAD
     # Permute goals before computing backward-derived latents to break identity coupling
     key, key_perm = jax.random.split(key)
     perm = jax.random.permutation(key_perm, batch_size)
     permuted_goals = goals[perm]
     future_latents = backward_repr.apply(jax.lax.stop_gradient(training_state.fb_repr_state.params[1]), permuted_goals)
     future_latents = future_latents / jnp.linalg.norm(future_latents, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
+=======
+    future_latents = backward_repr.apply(jax.lax.stop_gradient(training_state.fb_repr_state.params[1]), goals)
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
     # Generate random coin flips for each batch element
     key, key_flip = jax.random.split(key)
     coin_flips = jax.random.bernoulli(key_flip, shape=(batch_size,), p=0.5)
@@ -174,6 +189,7 @@ def forward_backward_repr_loss(
     next_actions = parametric_action_distribution.sample(next_dist, subkey)
 
     # Compute target forward and backward representations using target params
+<<<<<<< HEAD
     next_forward_reprs_all = forward_repr.apply(training_state.target_forward_repr_params, jnp.concatenate([next_states, next_actions, latents], axis=-1))
     next_backward_reprs = backward_repr.apply(training_state.target_backward_repr_params, next_states[:, goal_indices])
     next_backward_reprs = next_backward_reprs / jnp.linalg.norm(next_backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
@@ -209,6 +225,41 @@ def forward_backward_repr_loss(
 
     repr_loss = jnp.mean(
         repr_diag_loss + repr_off_diag_loss
+=======
+    if training_state.target_forward_repr_params is not None:
+        next_forward_reprs = forward_repr.apply(training_state.target_forward_repr_params, jnp.concatenate([next_states, next_actions, latents], axis=-1))
+    else:
+        next_forward_reprs = forward_repr.apply(forward_params, jnp.concatenate([next_states, next_actions, latents], axis=-1))
+    if training_state.target_backward_repr_params is not None:
+        next_backward_reprs = backward_repr.apply(training_state.target_backward_repr_params, next_states[:, goal_indices])
+    else:
+        next_backward_reprs = backward_repr.apply(backward_params, next_states[:, goal_indices])
+    next_backward_reprs = next_backward_reprs / jnp.linalg.norm(next_backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
+    target_occ_measures = jnp.einsum('bd,td->bt', next_forward_reprs, next_backward_reprs)
+
+    # Aggregate target occupancy measures
+    if repr_agg == 'mean':
+        target_occ_measures = jnp.mean(target_occ_measures, axis=0)
+    else:
+        target_occ_measures = jnp.min(target_occ_measures, axis=0)
+
+    # Compute current forward and backward representations
+    forward_reprs = forward_repr.apply(forward_params, jnp.concatenate([states, actions, latents], axis=-1))
+    backward_reprs = backward_repr.apply(backward_params, next_states[:, goal_indices])
+    backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
+    occ_measures = jnp.einsum('bd,td->bt', forward_reprs, backward_reprs)
+
+    I = jnp.eye(occ_measures.shape[0])
+    repr_off_diag_loss = jax.vmap(
+        lambda x: (x * (1 - I)) ** 2,
+        0, 0
+    )(occ_measures - discount * target_occ_measures)
+
+    repr_diag_loss = jax.vmap(jnp.diag, 0, 0)(occ_measures)
+
+    repr_loss = jnp.mean(
+        repr_diag_loss + jnp.sum(repr_off_diag_loss, axis=-1) / (occ_measures.shape[0] - 1)
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
     )
 
     # Orthonormalization loss
@@ -216,13 +267,18 @@ def forward_backward_repr_loss(
     ortho_diag_loss = -2 * jnp.diag(covariance)
     ortho_off_diag_loss = (covariance * (1 - I)) ** 2
     ortho_loss = orthonorm_coef * jnp.mean(
+<<<<<<< HEAD
         ortho_diag_loss + jnp.sum(ortho_off_diag_loss, axis=-1) / (occ_measures_heads.shape[-1] - 1)
+=======
+        ortho_diag_loss + jnp.sum(ortho_off_diag_loss, axis=-1) / (occ_measures.shape[0] - 1)
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
     )
 
     total_loss = repr_loss + ortho_loss
 
     metrics = {
         'repr_loss': repr_loss,
+<<<<<<< HEAD
         # Mean across both heads and batch
         'repr_diag_loss': jnp.mean(repr_diag_loss),
         'repr_off_diag_loss': jnp.mean(repr_off_diag_loss),
@@ -232,6 +288,16 @@ def forward_backward_repr_loss(
         'occ_measure_mean': occ_measures_heads.mean(),
         'occ_measure_max': occ_measures_heads.max(),
         'occ_measure_min': occ_measures_heads.min(),
+=======
+        'repr_diag_loss': jnp.mean(jnp.sum(repr_diag_loss, axis=-1) / (occ_measures.shape[0] - 1)),
+        'repr_off_diag_loss': jnp.mean(repr_off_diag_loss),
+        'ortho_loss': ortho_loss,
+        'ortho_diag_loss': jnp.sum(ortho_diag_loss, axis=-1) / (occ_measures.shape[0] - 1),
+        'ortho_off_diag_loss': jnp.mean(ortho_off_diag_loss),
+        'occ_measure_mean': occ_measures.mean(),
+        'occ_measure_max': occ_measures.max(),
+        'occ_measure_min': occ_measures.min(),
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
     }
 
     return total_loss, metrics
@@ -243,12 +309,16 @@ def actor_loss(actor_params, training_state, actor, forward_repr, backward_repr,
     print("fb: goals before backward repr", goals.shape)
 
     goals = jax.lax.stop_gradient(backward_repr.apply(training_state.fb_repr_state.params[1], goals))
+<<<<<<< HEAD
     goals = goals / jnp.linalg.norm(goals, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
+=======
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
     print("fb: goals after backward repr", goals.shape)
     # Sample actions from the actor
     action_mean_and_SD = actor.apply(actor_params, jnp.concatenate([states, goals], axis=-1))
     actions = parametric_action_distribution.sample(action_mean_and_SD, key)
 
+<<<<<<< HEAD
     # Compute forward representations for these actions (two heads) and use mean
     F_all = forward_repr.apply(training_state.fb_repr_state.params[0], jnp.concatenate([states, actions, goals], axis=-1))
     F1, F2 = jnp.split(F_all, 2, axis=-1)
@@ -264,6 +334,25 @@ def actor_loss(actor_params, training_state, actor, forward_repr, backward_repr,
     # actor_loss = actor_loss + entropy_coef * log_prob
     # mean_log_prob = log_prob.mean()
     mean_log_prob = 0.0
+=======
+    # Compute forward representations for these actions
+    # Assume forward_repr returns (F1, F2)
+    F1= forward_repr.apply(training_state.fb_repr_state.params[0], jnp.concatenate([states, actions, goals], axis=-1))
+
+    # Q-values as dot product between F and z (goals)
+    Q1 = jnp.einsum('sd,sd->s', F1, goals)
+    # Q2 = jnp.einsum('sd,sd->s', F2, goals)
+    # Q = jnp.minimum(Q1, Q2)
+    Q = Q1
+
+    # Actor loss: negative minimum Q-value
+    actor_loss = -Q
+
+    # Entropy regularization if Gaussian
+    log_prob = parametric_action_distribution.log_prob(action_mean_and_SD, actions)
+    actor_loss = actor_loss + entropy_coef * log_prob
+    mean_log_prob = log_prob.mean()
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
 
     actor_loss = actor_loss.mean()
 
@@ -495,8 +584,12 @@ def train(
     actor = Net(action_size * 2, h_dim, num_blocks, block_size, use_ln)
     # critic = Net(1, h_dim, num_blocks, block_size, use_ln)  # Outputs a single Q-value
     # value = Net(1, h_dim, num_blocks, block_size, use_ln)   # Outputs a single V-value
+<<<<<<< HEAD
     # Double FB trick: two forward heads concatenated, aggregate with mean where needed
     forward_repr = Net(repr_dim * 2, h_dim, num_blocks, block_size, use_ln)
+=======
+    forward_repr = Net(repr_dim, h_dim, num_blocks, block_size, use_ln)
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
     backward_repr = Net(repr_dim, h_dim, num_blocks, block_size, use_ln)
     parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size)
 
@@ -590,6 +683,10 @@ def train(
             len(env.goal_indices),
             repr_dim,
             key_actor,
+<<<<<<< HEAD
+=======
+            0.1,
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
             optimizer_state=training_state.actor_state.opt_state
         )
         
@@ -649,7 +746,10 @@ def train(
         subkey, sampling_key = jax.random.split(key)
         print("fb: goal shape", env_state.obs[:, state_dim:].shape)
         backward_reprs_goals = jax.lax.stop_gradient(backward_repr.apply(backward_repr_params, env_state.obs[:, state_dim:]))
+<<<<<<< HEAD
         backward_reprs_goals = backward_reprs_goals / jnp.linalg.norm(backward_reprs_goals, axis=-1, keepdims=True) * jnp.sqrt(repr_dim)
+=======
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
         print("fb: backward_reprs_goal shape", backward_reprs_goals.shape)
         (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=episode_length)
         buffer_state = replay_buffer.insert(buffer_state, data)
@@ -754,7 +854,10 @@ def train(
         parametric_action_distribution,
         backward_repr,
         state_dim=env.state_dim,
+<<<<<<< HEAD
         repr_dim=repr_dim,
+=======
+>>>>>>> b7ef48e8277dfcc915f78d6c99a4e73a2c7376aa
     )
     evaluator = CrlEvaluator(
         eval_env,
