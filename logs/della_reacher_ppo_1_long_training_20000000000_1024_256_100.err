@@ -1,5 +1,0 @@
-wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
-wandb: Tracking run with wandb version 0.19.2
-wandb: W&B syncing is set to `offline` in this directory.  
-wandb: Run `wandb online` or set WANDB_MODE=online to enable cloud syncing.
-slurmstepd: error: *** JOB 476416 ON della-k12g3 CANCELLED AT 2025-09-09T01:46:43 DUE TO TIME LIMIT ***

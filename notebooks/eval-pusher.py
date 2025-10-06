@@ -29,13 +29,13 @@ from functools import partial
 
 env_name = 'pusher_easy'
 # Load standard CRL checkpoint. For expert demos!
-RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-main-standard-numenvs512-numtimesteps60000000-batchsize256-1-della-maxent-gaussianmlp-_s_2'
+RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_pusher_easy-main-standard-numenvs512-numtimesteps60000000-batchsize256-1-della-maxent-gaussianmlp-_s_2'
 CKPT_NAME = '/best.pkl'
 params = model.load_params(RUN_FOLDER_PATH + '/ckpt' + CKPT_NAME)
 policy_params, encoders_params, context_params = params
 
 # CRL Mean field checkpoint
-MEAN_FIELD_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-main-meanfield-numenvs512-numtimesteps60000000-batchsize256-1-della-maxent-gaussianmlp-_s_3'
+MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_pusher_easy-main-meanfield-numenvs512-numtimesteps60000000-batchsize256-1-della-maxent-gaussianmlp-_s_3'
 MEAN_FIELD_CKPT_NAME = '/best.pkl'
 mean_field_params = model.load_params(MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + MEAN_FIELD_CKPT_NAME)
 _, _, mean_field_context_params = mean_field_params
@@ -48,13 +48,13 @@ _, _, mean_field_context_params = mean_field_params
 # mean_field_encoded_sa_encoder_params, _ = mean_field_encoded_encoder_params['sa_encoder'], mean_field_encoded_encoder_params['g_encoder']
 
 # GoalKDE + CRL
-GOALKDE_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-goalkde-standard-1x-60000000-256-512-1e-4-1e-4-1e-4-6-della-maxent-gaussianmlp-1e-4_s_6'
+GOALKDE_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_pusher_easy-goalkde-standard-1x-60000000-256-512-1e-4-1e-4-1e-4-6-della-maxent-gaussianmlp-1e-4_s_6'
 GOALKDE_CKPT_NAME = '/best.pkl'
 goalkde_params = model.load_params(GOALKDE_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_CKPT_NAME)
 goalkde_policy_params, goalkde_encoder_params, goalkde_context_params = goalkde_params
 
 # GoalKDE + CRL Mean field
-GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/scratch/gpfs/kw2960/JaxGCRL/runs/run_pusher_easy-goalkde-meanfield-1x-60000000-256-512-1e-4-1e-4-1e-4-4-della-maxent-gaussianmlp-1e-4_s_4'
+GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_pusher_easy-goalkde-meanfield-1x-60000000-256-512-1e-4-1e-4-1e-4-4-della-maxent-gaussianmlp-1e-4_s_4'
 GOALKDE_MEAN_FIELD_CKPT_NAME = '/best.pkl'
 goalkde_mean_field_params = model.load_params(GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + GOALKDE_MEAN_FIELD_CKPT_NAME)
 _, _, goalkde_mean_field_context_params = goalkde_mean_field_params

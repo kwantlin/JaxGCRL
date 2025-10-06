@@ -23,6 +23,29 @@ from functools import partial
 from scipy.stats import multivariate_normal
 import shutil
 import subprocess
+from matplotlib.ticker import MaxNLocator
+
+# Increase global font sizes to improve readability across all visuals
+plt.rcParams.update({
+    'font.size': 32,
+    'axes.titlesize': 44,
+    'axes.labelsize': 42,
+    'xtick.labelsize': 38,
+    'ytick.labelsize': 38,
+    'legend.fontsize': 38,
+    'figure.titlesize': 46
+})
+try:
+    from palettable.colorbrewer.qualitative import Set2_7  # noqa: F401
+    PALETTE_COLORS = Set2_7.mpl_colors
+except Exception:
+    PALETTE_COLORS = ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494']
+
+# Standardized colors aligned with create_combined_plots
+COLOR_IMITATION = PALETTE_COLORS[0]      # teal
+COLOR_EXPERT = PALETTE_COLORS[1]         # orange
+COLOR_TRUE_GOAL = PALETTE_COLORS[4]      # green
+COLOR_INFERRED_GOAL = PALETTE_COLORS[6]  # tan
 
 # note: ant: step_11427840
 # note: reacher: step_20490752
@@ -361,38 +384,50 @@ def plot_trajectory_with_goals(filepath, expert_trajectory_obs, true_goal, infer
     dist_std_np = np.sqrt(dist_variance_np)
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
-    fig.suptitle(title, fontsize=16)
+    fig.suptitle(title, fontsize=44)
     
     # --- Subplot 1: Trajectory Plot ---
     
     # Extract (x,y) positions for expert trajectory
     expert_positions_over_time = expert_trajectory_obs_np[:, env.goal_indices]
-    num_steps = expert_positions_over_time.shape[0]
-    colors = plt.cm.Reds(np.linspace(0.3, 1, num_steps))
 
-    # Plot expert trajectory's (x,y) position over time
-    ax1.scatter(expert_positions_over_time[:, 0], expert_positions_over_time[:, 1], c=colors, label='Expert Trajectory', s=25, alpha=0.8, marker='^', zorder=3)
-    ax1.plot(expert_positions_over_time[:, 0], expert_positions_over_time[:, 1], alpha=0.6, linewidth=0.8, color=colors[0] if num_steps > 0 else 'red', linestyle='--', zorder=2)
+    # Plot expert trajectory's (x,y) position over time using Set2 palette color
+    ax1.scatter(
+        expert_positions_over_time[:, 0],
+        expert_positions_over_time[:, 1],
+        color=COLOR_EXPERT,
+        label='Expert Trajectory',
+        s=25,
+        alpha=0.9,
+        marker='^',
+        zorder=3
+    )
+    ax1.plot(
+        expert_positions_over_time[:, 0],
+        expert_positions_over_time[:, 1],
+        alpha=0.6,
+        linewidth=0.8,
+        color=COLOR_EXPERT,
+        linestyle='--',
+        zorder=2
+    )
     
     # Plot true goal
-    ax1.scatter(true_goal_np[0], true_goal_np[1], marker='X', color='limegreen', s=300, label=f'True Goal ({true_goal_np[0]:.2f}, {true_goal_np[1]:.2f})', zorder=5, edgecolors='black', linewidth=1)
+    ax1.scatter(true_goal_np[0], true_goal_np[1], marker='X', color=COLOR_TRUE_GOAL, s=300, label=f'True Goal ({true_goal_np[0]:.2f}, {true_goal_np[1]:.2f})', zorder=5, edgecolors='black', linewidth=1)
     
     # Plot inferred goal
-    ax1.scatter(inferred_goal_np[0], inferred_goal_np[1], marker='P', color='gold', s=300, label=f'Inferred Goal ({inferred_goal_np[0]:.2f}, {inferred_goal_np[1]:.2f})', zorder=5, edgecolors='black', linewidth=1)
+    ax1.scatter(inferred_goal_np[0], inferred_goal_np[1], marker='P', color=COLOR_INFERRED_GOAL, s=300, label=f'Inferred Goal ({inferred_goal_np[0]:.2f}, {inferred_goal_np[1]:.2f})', zorder=5, edgecolors='black', linewidth=1)
     
-    ax1.set_xlabel("X Position", fontsize=12)
-    ax1.set_ylabel("Y Position", fontsize=12)
-    ax1.set_title("Expert Trajectory and Goals", fontsize=14)
-    ax1.legend(loc='best', fontsize=10)
+    ax1.set_xlabel("X Position", fontsize=42)
+    ax1.set_ylabel("Y Position", fontsize=42)
+    ax1.set_title("Expert Trajectory and Goals", fontsize=44)
+    ax1.legend(loc='best', fontsize=34)
+    ax1.xaxis.set_major_locator(MaxNLocator(3))
+    ax1.yaxis.set_major_locator(MaxNLocator(3))
     ax1.axis('equal')
     ax1.grid(True, linestyle='--', alpha=0.7)
     
-    # Add a colorbar for trajectory
-    cbar = fig.colorbar(plt.cm.ScalarMappable(cmap=plt.cm.Reds, norm=plt.Normalize(vmin=0, vmax=1)), 
-                                ax=ax1, fraction=0.040, pad=0.04)
-    cbar.set_ticks([0, 0.5, 1])
-    cbar.set_ticklabels(['Start', 'Mid', 'End'])
-    cbar.set_label('Expert Trajectory Time', labelpad=-40, fontsize=9)
+    # Removed time colorbar to maintain consistent Set2 palette usage
 
     # --- Subplot 2: Heatmap of Inferred Goal Distribution ---
 
@@ -409,15 +444,17 @@ def plot_trajectory_with_goals(filepath, expert_trajectory_obs, true_goal, infer
     rv = multivariate_normal(dist_mean_np, covariance_matrix)
     Z = rv.pdf(pos)
 
-    # Plot the heatmap
-    ax2.contourf(X, Y, Z, levels=20, cmap='viridis')
-    ax2.scatter(true_goal_np[0], true_goal_np[1], marker='X', color='limegreen', s=200, label='True Goal', edgecolors='black')
-    ax2.scatter(inferred_goal_np[0], inferred_goal_np[1], marker='P', color='gold', s=200, label='Inferred Goal (Sample)', edgecolors='black')
+    # Plot the heatmap using a neutral, perceptually-uniform colormap to avoid clashing with Set2
+    ax2.contourf(X, Y, Z, levels=20, cmap='Greys')
+    ax2.scatter(true_goal_np[0], true_goal_np[1], marker='X', color=COLOR_TRUE_GOAL, s=200, label='True Goal', edgecolors='black')
+    ax2.scatter(inferred_goal_np[0], inferred_goal_np[1], marker='P', color=COLOR_INFERRED_GOAL, s=200, label='Inferred Goal (Sample)', edgecolors='black')
 
-    ax2.set_xlabel("X Position", fontsize=12)
-    ax2.set_ylabel("Y Position", fontsize=12)
-    ax2.set_title("Inferred Goal Distribution", fontsize=14)
-    ax2.legend(loc='best', fontsize=10)
+    ax2.set_xlabel("X Position", fontsize=42)
+    ax2.set_ylabel("Y Position", fontsize=42)
+    ax2.set_title("Inferred Goal Distribution", fontsize=44)
+    ax2.legend(loc='best', fontsize=34)
+    ax2.xaxis.set_major_locator(MaxNLocator(3))
+    ax2.yaxis.set_major_locator(MaxNLocator(3))
     ax2.axis('equal')
     ax2.grid(True, linestyle='--', alpha=0.7)
 
@@ -508,10 +545,13 @@ def create_summary_plot(env_idx, saved_frames_dir, frames_to_save, full_expert_o
         print(f"Found files: {saved_frame_files}")
         return
     
-    # Create the summary plot
+    # Create the summary plot with reduced spacing
     fig, axes = plt.subplots(1, frames_to_save, figsize=(5*frames_to_save, 5))
     if frames_to_save == 1:
         axes = [axes]
+    
+    # Reduce spacing between subplots
+    plt.subplots_adjust(wspace=0.05)
     
     # Plot each saved frame
     for idx, (ax, frame_file) in enumerate(zip(axes, saved_frame_files)):
@@ -528,24 +568,24 @@ def create_summary_plot(env_idx, saved_frames_dir, frames_to_save, full_expert_o
             except (IndexError, ValueError):
                 timestep_label = None
         if timestep_label is not None:
-            ax.set_title(f"Timestep {timestep_label}", fontsize=18)
+            ax.set_title(f"Timestep {timestep_label}", fontsize=24)
         else:
             ax.set_title("")
         ax.axis('off')
     
     # Add legend at the bottom (removed full expert trajectory)
     legend_elements = [
-        plt.Line2D([0], [0], marker='^', color='red', alpha=1.0, linewidth=0, markersize=8, label='Observed Expert Trajectory'),
-        plt.Line2D([0], [0], marker='o', color='blue', alpha=1.0, linewidth=0, markersize=8, label='Imitation Policy Rollout'),
-        plt.Line2D([0], [0], marker='X', color='limegreen', markersize=12, linewidth=0, label='True Goal'),
-        plt.Line2D([0], [0], marker='P', color='gold', markersize=12, linewidth=0, label='Inferred Goal')
+        plt.Line2D([0], [0], marker='^', color=COLOR_EXPERT, alpha=1.0, linewidth=0, markersize=8, label='Observed Expert Trajectory'),
+        plt.Line2D([0], [0], marker='o', color=COLOR_IMITATION, alpha=1.0, linewidth=0, markersize=8, label='Imitation Policy Rollout'),
+        plt.Line2D([0], [0], marker='X', color=COLOR_TRUE_GOAL, markersize=12, linewidth=0, label='True Goal'),
+        plt.Line2D([0], [0], marker='P', color=COLOR_INFERRED_GOAL, markersize=12, linewidth=0, label='Inferred Goal')
     ]
     
-    # Create a separate axis for the legend
-    legend_ax = fig.add_axes([0.1, 0.02, 0.8, 0.05])
+    # Create a separate axis for the legend with reduced height
+    legend_ax = fig.add_axes([0.1, 0.01, 0.8, 0.04])
     legend_ax.axis('off')
     legend = legend_ax.legend(handles=legend_elements, loc='center', ncol=4, 
-                             handlelength=3.0, handleheight=2.0, labelspacing=0.6, columnspacing=1.5, fontsize=16)
+                             handlelength=2.0, handleheight=1.5, labelspacing=0.3, columnspacing=0.8, fontsize=20)
     
     plt.tight_layout()
     summary_path = os.path.join(saved_frames_dir, f"summary_plot_env_{env_idx}.png")
@@ -574,25 +614,47 @@ def plot_posterior_frame(filepath, full_expert_obs, observed_expert_obs, imitati
     
     num_observed_steps = observed_positions.shape[0]
     if num_observed_steps > 0:
-        colors = plt.cm.Reds(np.linspace(0.3, 1, num_observed_steps))
-        ax.scatter(observed_positions[:, 0], observed_positions[:, 1], c=colors, s=35, alpha=1.0, marker='^', zorder=3, label='Observed Expert Trajectory')
+        ax.scatter(
+            observed_positions[:, 0], observed_positions[:, 1],
+            color=COLOR_EXPERT,
+            s=35,
+            alpha=0.9,
+            marker='^',
+            zorder=3,
+            label='Observed Expert Trajectory'
+        )
     
     # Add imitation trajectory (policy rollout toward inferred goal)
     num_imitation_steps = imitation_positions.shape[0]
     if num_imitation_steps > 0:
-        colors_imitation = plt.cm.Blues(np.linspace(0.3, 1, num_imitation_steps))
-        ax.scatter(imitation_positions[:, 0], imitation_positions[:, 1], c=colors_imitation, s=35, alpha=1.0, marker='o', zorder=3, label='Imitation Policy Rollout')
-        ax.plot(imitation_positions[:, 0], imitation_positions[:, 1], color='blue', alpha=0.7, linewidth=1.5, zorder=2)
+        ax.scatter(
+            imitation_positions[:, 0], imitation_positions[:, 1],
+            color=COLOR_IMITATION,
+            s=35,
+            alpha=0.9,
+            marker='o',
+            zorder=3,
+            label='Imitation Policy Rollout'
+        )
+        ax.plot(
+            imitation_positions[:, 0], imitation_positions[:, 1],
+            color=COLOR_IMITATION,
+            alpha=0.7,
+            linewidth=1.5,
+            zorder=2
+        )
     
-    ax.scatter(true_goal_np[0], true_goal_np[1], marker='X', color='limegreen', s=400, label='True Goal', zorder=5, edgecolors='black')
+    ax.scatter(true_goal_np[0], true_goal_np[1], marker='X', color=COLOR_TRUE_GOAL, s=400, label='True Goal', zorder=5, edgecolors='black')
     
     # Add inferred goal
-    ax.scatter(inferred_goal_np[0], inferred_goal_np[1], marker='P', color='gold', s=400, label='Inferred Goal (Full Traj)', zorder=5, edgecolors='black')
+    ax.scatter(inferred_goal_np[0], inferred_goal_np[1], marker='P', color=COLOR_INFERRED_GOAL, s=400, label='Inferred Goal (Full Traj)', zorder=5, edgecolors='black')
     
     # Set axis labels and properties
-    ax.set_xlabel("X Position", fontsize=20)
-    ax.set_ylabel("Y Position", fontsize=20)
-    ax.tick_params(axis='both', labelsize=18)
+    ax.set_xlabel("X Position", fontsize=42)
+    ax.set_ylabel("Y Position", fontsize=42)
+    ax.tick_params(axis='both', labelsize=38)
+    ax.xaxis.set_major_locator(MaxNLocator(3))
+    ax.yaxis.set_major_locator(MaxNLocator(3))
     if show_legend:
         ax.legend(handlelength=3.0, handleheight=2.0, labelspacing=0.6, columnspacing=1.5, fontsize=16)
     ax.axis('equal')
@@ -622,14 +684,14 @@ def plot_posterior_frame(filepath, full_expert_obs, observed_expert_obs, imitati
     rv = multivariate_normal(dist_mean_np, covariance_matrix)
     Z = rv.pdf(pos)
     
-    # Plot heatmap as background (behind everything else)
-    ax.contourf(X, Y, Z, levels=20, cmap='viridis', alpha=0.6, zorder=0)
+    # Plot heatmap as background (behind everything else) using a neutral grayscale
+    ax.contourf(X, Y, Z, levels=20, cmap='Greys', alpha=0.6, zorder=0)
 
     textstr = '\n'.join((
         f'μ = [{dist_mean_np[0]:.2f}, {dist_mean_np[1]:.2f}]',
         f'σ = [{dist_std_np[0]:.2f}, {dist_std_np[1]:.2f}]'))
     props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-    ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=22, verticalalignment='top', bbox=props)
+    ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=38, verticalalignment='top', bbox=props)
     
     plt.tight_layout()
     plt.savefig(filepath)
@@ -942,20 +1004,20 @@ def plot_trajectory_comparison(filepath, original_traj, inferred_traj, true_goal
     original_positions = original_traj_np[:, env.goal_indices]
     inferred_positions = inferred_traj_np[:, env.goal_indices]
     
-    # Plot original trajectory
-    ax1.plot(original_positions[:, 0], original_positions[:, 1], 'b-', linewidth=2, label='Original Trajectory', alpha=0.8)
-    ax1.scatter(original_positions[:, 0], original_positions[:, 1], c=plt.cm.Blues(np.linspace(0.3, 1, len(original_positions))), 
-                s=30, alpha=0.8, marker='o', zorder=3)
+    # Plot original trajectory (Observed Expert) with Set2 color
+    ax1.plot(original_positions[:, 0], original_positions[:, 1], color=COLOR_EXPERT, linewidth=2, label='Original Trajectory', alpha=0.8)
+    ax1.scatter(original_positions[:, 0], original_positions[:, 1], 
+                color=COLOR_EXPERT, s=30, alpha=0.9, marker='o', zorder=3)
     
-    # Plot inferred trajectory
-    ax1.plot(inferred_positions[:, 0], inferred_positions[:, 1], 'r-', linewidth=2, label='Inferred Goal Trajectory', alpha=0.8)
-    ax1.scatter(inferred_positions[:, 0], inferred_positions[:, 1], c=plt.cm.Reds(np.linspace(0.3, 1, len(inferred_positions))), 
-                s=30, alpha=0.8, marker='s', zorder=3)
+    # Plot inferred trajectory (Imitation rollout) with Set2 color
+    ax1.plot(inferred_positions[:, 0], inferred_positions[:, 1], color=COLOR_IMITATION, linewidth=2, label='Inferred Goal Trajectory', alpha=0.8)
+    ax1.scatter(inferred_positions[:, 0], inferred_positions[:, 1], 
+                color=COLOR_IMITATION, s=30, alpha=0.9, marker='s', zorder=3)
     
     # Plot goals
-    ax1.scatter(true_goal_np[0], true_goal_np[1], marker='X', color='limegreen', s=400, 
+    ax1.scatter(true_goal_np[0], true_goal_np[1], marker='X', color=COLOR_TRUE_GOAL, s=400, 
                 label=f'True Goal ({true_goal_np[0]:.2f}, {true_goal_np[1]:.2f})', zorder=5, edgecolors='black')
-    ax1.scatter(inferred_goal_np[0], inferred_goal_np[1], marker='P', color='gold', s=400, 
+    ax1.scatter(inferred_goal_np[0], inferred_goal_np[1], marker='P', color=COLOR_INFERRED_GOAL, s=400, 
                 label=f'Inferred Goal ({inferred_goal_np[0]:.2f}, {inferred_goal_np[1]:.2f})', zorder=5, edgecolors='black')
     
     ax1.set_xlabel("X Position")
@@ -1016,7 +1078,7 @@ def plot_trajectory_comparison(filepath, original_traj, inferred_traj, true_goal
     
     metrics_names = list(metrics_data.keys())
     metrics_values = list(metrics_data.values())
-    colors = ['blue', 'red', 'orange']
+    colors = [COLOR_EXPERT, COLOR_IMITATION, PALETTE_COLORS[1]]
     
     bars = ax4.bar(metrics_names, metrics_values, color=colors, alpha=0.7)
     ax4.set_ylabel("Final Distance")

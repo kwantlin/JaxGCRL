@@ -7,8 +7,8 @@ import wandb
 from brax.io import model
 from pyinstrument import Profiler
 
-# from src.baselines.ppo import train
-from src.train_ppo import train
+from src.baselines.ppo import train
+# from src.train_ppo import train
 from utils import MetricsRecorder, create_env, create_eval_env, create_parser
 
 

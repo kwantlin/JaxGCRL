@@ -13,8 +13,8 @@ env=ant
 
 for seed in 1 ; do
   XLA_PYTHON_CLIENT_MEM_FRACTION=.95 MUJOCO_GL=egl CUDA_VISIBLE_DEVICES=0 python training_ppo.py \
-    --project_name test --group_name first_run --exp_name ${env}-ppo-newpponet --num_evals 100 \
-    --seed ${seed} --num_timesteps 20000000 --batch_size 256 --num_envs 1 --num_eval_envs 1 \
+    --project_name test --group_name first_run --exp_name ${env}-ppo-newpponet --num_evals 10000 \
+    --seed ${seed} --num_timesteps 200000000 --batch_size 512 --num_envs 1024 --num_eval_envs 128 \
     --discounting 0.99 --action_repeat 1 --env_name ${env} --use_dense_reward \
     --episode_length 1025 --unroll_length 62  --n_hidden 8 --min_replay_size 1000 --max_replay_size 10000 --log_wandb
   done

@@ -2,17 +2,51 @@ import os
 from pathlib import Path
 import pandas as pd
 import matplotlib.pyplot as plt
+try:
+    import scienceplots  # noqa: F401
+    try:
+        plt.style.use(['science', 'ieee'])
+    except Exception:
+        try:
+            plt.style.use(['science', 'ieee', 'no-latex'])
+        except Exception:
+            pass
+except Exception:
+    pass
+try:
+    from palettable.colorbrewer.qualitative import Set2_7  # noqa: F401
+    PALETTE_COLORS = Set2_7.mpl_colors
+except Exception:
+    PALETTE_COLORS = ['#66c2a5', '#fc8d62', '#8da0cb', '#e78ac3', '#a6d854', '#ffd92f', '#e5c494']
 
-# Set global font sizes to match create_combined_plots.py
+# Set global font sizes to match create_combined_plots.py (larger fonts, same figure size)
 plt.rcParams.update({
-    'font.size': 20,
-    'axes.titlesize': 28,
-    'axes.labelsize': 26,
-    'xtick.labelsize': 24,
-    'ytick.labelsize': 24,
-    'legend.fontsize': 24,
-    'figure.titlesize': 32
+    'font.size': 32,
+    'axes.titlesize': 48,
+    'axes.labelsize': 42,
+    'xtick.labelsize': 38,
+    'ytick.labelsize': 38,
+    'legend.fontsize': 38,
+    'figure.titlesize': 50,
 })
+
+# Consistent method type colors (subset used here)
+METHOD_TYPE_ORDER = ['GCBC', 'NN', 'FB', 'CRL', 'CIRL', 'CRL + Oracle']
+METHOD_TYPE_COLOR = {t: PALETTE_COLORS[i % len(PALETTE_COLORS)] for i, t in enumerate(METHOD_TYPE_ORDER)}
+# Swap colors for NN and CIRL like in combined plots
+_nn_color = METHOD_TYPE_COLOR.get('NN')
+_cirl_color = METHOD_TYPE_COLOR.get('CIRL')
+if _nn_color is not None and _cirl_color is not None:
+    METHOD_TYPE_COLOR['NN'], METHOD_TYPE_COLOR['CIRL'] = _cirl_color, _nn_color
+
+METHOD_TYPE_ALIASES = {
+    'CRL + GoalKDE (CIRL)': 'CIRL',
+    'CRL + CIRL': 'CIRL',
+}
+
+def get_color_for_type(method_type: str):
+    canonical = METHOD_TYPE_ALIASES.get(method_type, method_type)
+    return METHOD_TYPE_COLOR.get(canonical, '#888888')
 
 
 def load_method_scores(csv_path: Path) -> pd.DataFrame:
@@ -52,8 +86,9 @@ def collect_points(env_to_csv: dict) -> pd.DataFrame:
             if mean_field_key not in df.index:
                 raise KeyError(f"Missing method '{mean_field_key}' in {csv_path}")
 
-            x_val = float(df.loc[full_tau_key, "Mean Difference"])  # imitation score (Full Tau)
-            y_val = float(df.loc[mean_field_key, "Mean Difference"])  # imitation score (Mean Field)
+            # Convert from fraction (0-1) to percentage (0-100)
+            x_val = float(df.loc[full_tau_key, "Mean Difference"]) * 100.0  # imitation score (Full Tau)
+            y_val = float(df.loc[mean_field_key, "Mean Difference"]) * 100.0  # imitation score (Mean Field)
             rows.append({
                 "environment": env_name,
                 "method_base": method_base,
@@ -75,8 +110,8 @@ def plot_scatter(points: pd.DataFrame, output_dir: Path) -> None:
 
     # Style mappings
     method_to_color = {
-        "CIRL": "#ff7f0e",  # orange
-        "GCBC": "#d62728",          # red
+        "CIRL": get_color_for_type('CIRL'),
+        "GCBC": get_color_for_type('GCBC'),
     }
     environments = sorted(points["environment"].unique())
     env_to_marker = {env: marker for env, marker in zip(environments, ["o", "^", "s", "D", "P"]) }
@@ -101,21 +136,23 @@ def plot_scatter(points: pd.DataFrame, output_dir: Path) -> None:
     pad = 0.05 * (max_val - min_val if max_val > min_val else 1.0)
     ax.plot([min_val - pad, max_val + pad], [min_val - pad, max_val + pad], linestyle="--", color="gray", linewidth=3)
 
-    # Axis labels
-    ax.set_xlabel("Imitation Score (Full Tau)")
-    ax.set_ylabel("Imitation Score (Mean Field)")
+    # Axis labels and tick label sizes
+    ax.set_xlabel("Full Tau Imitation Score (\\%)", fontsize=42)
+    ax.set_ylabel("Mean Field Imitation Score (\\%)", fontsize=42)
+    ax.tick_params(axis='x', labelsize=38)
+    ax.tick_params(axis='y', labelsize=38)
 
     # Build legends: one for methods (colors), one for environments (markers)
     from matplotlib.lines import Line2D
 
     method_handles = [
         Line2D([0], [0], marker="o", color="w", label=method,
-               markerfacecolor=color, markeredgecolor="black", markersize=16)
+               markerfacecolor=color, markeredgecolor="none", markersize=20)
         for method, color in method_to_color.items()
     ]
     env_handles = [
         Line2D([0], [0], marker=marker, color="black", label=env,
-               linestyle="None", markersize=16)
+               linestyle="None", markersize=20)
         for env, marker in env_to_marker.items()
     ]
 
@@ -123,9 +160,9 @@ def plot_scatter(points: pd.DataFrame, output_dir: Path) -> None:
     fig = plt.gcf()
 
     # Create temporary legends to measure their sizes (in figure coords)
-    tmp_env = ax.legend(handles=env_handles, title="Environment", loc="lower right")
+    tmp_env = ax.legend(handles=env_handles, title="Environment", loc="lower right", fontsize=38, title_fontsize=42)
     ax.add_artist(tmp_env)
-    tmp_method = ax.legend(handles=method_handles, title="Method", loc="lower right")
+    tmp_method = ax.legend(handles=method_handles, title="Method", loc="lower right", fontsize=38, title_fontsize=42)
     ax.add_artist(tmp_method)
 
     # Force a draw to get accurate renderer sizes
@@ -165,6 +202,8 @@ def plot_scatter(points: pd.DataFrame, output_dir: Path) -> None:
         bbox_to_anchor=(env_anchor_x_ax, env_anchor_y_ax),
         bbox_transform=ax.transAxes,
         borderaxespad=0.0,
+        fontsize=38,
+        title_fontsize=42,
     )
     ax.add_artist(env_legend)
 
@@ -175,6 +214,8 @@ def plot_scatter(points: pd.DataFrame, output_dir: Path) -> None:
         bbox_to_anchor=(method_anchor_x_ax, method_anchor_y_ax),
         bbox_transform=ax.transAxes,
         borderaxespad=0.0,
+        fontsize=38,
+        title_fontsize=42,
     )
     ax.add_artist(method_legend)
 

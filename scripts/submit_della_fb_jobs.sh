@@ -51,16 +51,16 @@ EOF
 
 # Submit jobs for each environment
 env=ant
-submit_job $env 1 4000000000 512 1024 100 1 "with_eval"
+submit_job $env 1 30000000 512 1024 100 1 "new_fb_fewertimesteps"
 
 # env=simple_u_maze
 # submit_job $env 1 40000000 1024 256 50
 
 env=reacher
-submit_job $env 1 4000000000 1024 256 100 1 "with_eval"
+submit_job $env 1 30000000 1024 256 100 1 "new_fb_fewertimesteps"
 
 env=pusher_easy
-submit_job $env 1 8000000000 256 512 100 1 "with_eval"
+submit_job $env 1 60000000 256 512 100 1 "new_fb_fewertimesteps"
 
 # env=arm_reach
 # submit_job $env 4 12000000000 1024 2048 1000 8
@@ -77,10 +77,10 @@ submit_job $env 1 8000000000 256 512 100 1 "with_eval"
 # submit_job $env 5 12000000000 256 512 500 
 
 env=ant_posvel
-submit_job $env 2 12000000000 256 512 500 1 "with_eval"
-submit_job $env 3 12000000000 256 512 500 1 "with_eval"
-submit_job $env 4 12000000000 256 512 500 1 "with_eval"
-submit_job $env 5 12000000000 256 512 500 1 "with_eval"
+submit_job $env 2 120000000 256 512 500 1 "new_fb_fewertimesteps"
+submit_job $env 3 120000000 256 512 500 1 "new_fb_fewertimesteps"
+submit_job $env 4 120000000 256 512 500 1 "new_fb_fewertimesteps"
+submit_job $env 5 120000000 256 512 500 1 "new_fb_fewertimesteps"
 
 
 

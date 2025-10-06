@@ -50,7 +50,7 @@ EOF
 
 # Submit jobs for each environment
 env=ant
-submit_job $env 1 3000000000 512 1024 100 "newpponet" 
+submit_job $env 1 30000000 512 1024 100 "oldppo" 
 
 
 # env=simple_u_maze
@@ -58,11 +58,10 @@ submit_job $env 1 3000000000 512 1024 100 "newpponet"
 
 
 env=reacher
-submit_job $env 1 2000000000 1024 256 100 "newpponet" 
+submit_job $env 1 20000000 1024 256 100 "oldppo" 
 
 env=pusher_easy
-submit_job $env 1 6000000000 256 512 100 "newpponet" 
-
+submit_job $env 1 60000000 256 512 100 "oldppo" 
 
 # Wait for all background processes to complete
 wait

@@ -575,7 +575,7 @@ def main(args):
 
     # Load GoalKDE checkpoint
     # goalkde_dir = '/scratch/gpfs/kw2960/JaxGCRL/runs/run_ant_fullobs-goalkde-meanfield-della-maxent-gaussianmlp-_s_1'
-    goalkde_dir = '/scratch/gpfs/kw2960/JaxGCRL/runs/run_ant_posvel-goalkde-meanfield-della-maxent-gaussianmlp-_s_1'
+    goalkde_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-goalkde-meanfield-della-maxent-gaussianmlp-_s_1'
     goalkde_ckpt = os.path.join(goalkde_dir, 'ckpt', 'best.pkl')
     print(f"Loading GoalKDE checkpoint: {goalkde_ckpt}")
     goalkde_params = model.load_params(goalkde_ckpt)
@@ -868,7 +868,7 @@ def main(args):
 
     # ================= FB goal inference and imitation comparison =================
     try:
-        fb_dir = '/scratch/gpfs/kw2960/JaxGCRL/runs/run_ant_posvel-fb-della_2__1200000000_512_2048_1000_s_2'
+        fb_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-fb-della_2__1200000000_512_2048_1000_s_2'
         fb_ckpt = os.path.join(fb_dir, 'ckpt', 'best.pkl')
         print(f"\nLoading FB checkpoint: {fb_ckpt}")
         fb_params = model.load_params(fb_ckpt)
@@ -972,7 +972,7 @@ def main(args):
 
     # ================= Additional mean-field checkpoint goal inference (like GoalKDE) =================
     try:
-        mainmf_dir = '/scratch/gpfs/kw2960/JaxGCRL/runs/run_ant_posvel-main-meanfield-test_s_1'
+        mainmf_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-main-meanfield-test_s_1'
         mainmf_ckpt = os.path.join(mainmf_dir, 'ckpt', 'best.pkl')
         print(f"\nLoading MainMF checkpoint: {mainmf_ckpt}")
         mainmf_params = model.load_params(mainmf_ckpt)

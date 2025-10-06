@@ -1,28 +1,0 @@
-wandb: Using wandb-core as the SDK backend.  Please refer to https://wandb.me/wandb-core for more information.
-wandb: - Waiting for wandb.init()...wandb: \ Waiting for wandb.init()...wandb: | Waiting for wandb.init()...wandb: Tracking run with wandb version 0.19.2
-wandb: W&B syncing is set to `offline` in this directory.  
-wandb: Run `wandb online` or set WANDB_MODE=online to enable cloud syncing.
-Traceback (most recent call last):
-  File "/home/kw2960/JaxGCRL/training_fb.py", line 120, in <module>
-    main(args)
-  File "/home/kw2960/JaxGCRL/training_fb.py", line 89, in main
-    make_policy, params, _ = train_fn(environment=env, progress_fn=metrics_recorder.progress)
-  File "/home/kw2960/JaxGCRL/src/train_fb.py", line 799, in train
-    progress_fn(current_step, metrics, make_policy, eval_params, unwrapped_env)
-  File "/home/kw2960/JaxGCRL/utils.py", line 311, in progress
-    self.ensure_metric(metrics, key)
-  File "/home/kw2960/JaxGCRL/utils.py", line 326, in ensure_metric
-    raise Exception(f"Metric: {key} is Nan")
-Exception: Metric: eval/episode_dist is Nan
-Traceback (most recent call last):
-  File "/home/kw2960/JaxGCRL/training_fb.py", line 120, in <module>
-    main(args)
-  File "/home/kw2960/JaxGCRL/training_fb.py", line 89, in main
-    make_policy, params, _ = train_fn(environment=env, progress_fn=metrics_recorder.progress)
-  File "/home/kw2960/JaxGCRL/src/train_fb.py", line 799, in train
-    progress_fn(current_step, metrics, make_policy, eval_params, unwrapped_env)
-  File "/home/kw2960/JaxGCRL/utils.py", line 311, in progress
-    self.ensure_metric(metrics, key)
-  File "/home/kw2960/JaxGCRL/utils.py", line 326, in ensure_metric
-    raise Exception(f"Metric: {key} is Nan")
-Exception: Metric: eval/episode_dist is Nan
