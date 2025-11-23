@@ -195,25 +195,70 @@ class TrajectoryUniformSamplingQueue(QueueBase[Sample], Generic[Sample]):
         future_state = future_state[:, :env.state_dim]
         # current state
         state = transition.observation[:-1, :env.state_dim]
+        state_goal_portion = state[:, env.goal_indices]
         new_obs = jnp.concatenate([state, goal], axis=1)
         target = transition.observation[:-1, env.state_dim:]
+        truncation = transition.extras["state_extras"]["truncation"][:-1]
+        mask = 1.0 - truncation.astype(jnp.float32)
+        
+        # Sample value_goals for HILP value loss: mix between trajectory goal and random goal
+        value_goal_key, random_goal_key = jax.random.split(goal_key, 2)
+        
+        # Already have trajectory goal from goal_index (geometric sampling)
+        traj_goal_obs = jnp.take(transition.observation, goal_index[:-1], axis=0)
+        
+        # Sample random goal: uniform over all timesteps in trajectory (0 to seq_len-1)
+        random_goal_index = jax.random.randint(random_goal_key, shape=(seq_len - 1,), minval=0, maxval=seq_len)
+        random_goal_obs = jnp.take(transition.observation, random_goal_index, axis=0)
+        
+        # Mix between trajectory goal and random goal based on probabilities
+        # Default: value_p_trajgoal=0.625, value_p_randomgoal=0.375
+        value_p_trajgoal = 0.625
+        value_p_randomgoal = 0.375
+        
+        # Sample which type of goal to use for each timestep
+        mix_key, _ = jax.random.split(value_goal_key)
+        use_traj_goal = jax.random.bernoulli(mix_key, p=value_p_trajgoal, shape=(seq_len - 1,))
+        value_goals = jnp.where(use_traj_goal[:, None], traj_goal_obs, random_goal_obs)
+        
+        # Compute relabeled_mask and relabeled_rewards
+        # Check if current agent position matches the goal position from value_goals
+        # Extract current agent positions (goal_indices refer to positions within the state vector)
+        current_positions = state[:, env.goal_indices]
+        # Extract goal positions from value_goals (value_goals are full observations)
+        value_goal_state = value_goals[:, :env.state_dim]
+        value_goal_positions = value_goal_state[:, env.goal_indices]
+        # Check if current position is close to goal position (within threshold)
+        goal_dist = jnp.linalg.norm(current_positions - value_goal_positions, axis=-1)
+        success = (goal_dist < env.goal_reach_thresh).astype(jnp.float32)
+        relabeled_mask = 1.0 - success
+        relabeled_rewards = success - 1.0  # 0 if goal achieved, -1 otherwise (gc_negative=True)
+        
         noise = transition.extras["state_extras"]["noise"][:-1] if "noise" in transition.extras["state_extras"].keys() else jnp.zeros(1)
         print("state, target, noise", state.shape, target.shape, noise.shape)
         next_state = transition.observation[1:, :env.state_dim]
+        next_state_goal_portion = next_state[:, env.goal_indices]
         next_action = transition.action[1:]
         print("next state", next_state.shape)
         extras = {
             "policy_extras": {},
             "state_extras": {
-                "truncation": jnp.squeeze(transition.extras["state_extras"]["truncation"][:-1]), 
+                "truncation": jnp.squeeze(truncation),
+                "mask": jnp.squeeze(mask),
                 "traj_id": jnp.squeeze(transition.extras["state_extras"]["traj_id"][:-1]),
                 "noise": noise,
             },
+            "mask": mask,
+            "value_goals": value_goals,
+            "relabeled_mask": relabeled_mask,
+            "relabeled_rewards": relabeled_rewards,
             "state": state,
+            "state_goal_portion": state_goal_portion,
             "future_state": future_state,
             "future_action": future_action,
             "target": target,
             "next_state": next_state,
+            "next_state_goal_portion": next_state_goal_portion,
             "next_action": next_action,
         }
 

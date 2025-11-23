@@ -60,10 +60,17 @@ goalkde_mean_field_params = model.load_params(GOALKDE_MEAN_FIELD_RUN_FOLDER_PATH
 _, _, goalkde_mean_field_context_params = goalkde_mean_field_params
 
 # FB
-FB_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-fb-della_s_1'
+FB_RUN_FOLDER_PATH = f'/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_reacher-fb-della_1_rebuttal_30000000_1024_256_100_1_s_1'
 FB_CKPT_NAME = '/best.pkl'
 fb_params = model.load_params(FB_RUN_FOLDER_PATH + '/ckpt' + FB_CKPT_NAME)
 fb_policy_params, fb_repr_params, fb_target_forward_params, fb_target_backward_params = fb_params
+
+# Offline FB
+OFFLINE_FB_RUN_FOLDER_PATH = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_offline-reacher-fb-offline-della_1_rebuttal_30000000_1024_256_100_1_s_1'
+OFFLINE_FB_CKPT_NAME = '/best.pkl'
+offline_fb_params = model.load_params(OFFLINE_FB_RUN_FOLDER_PATH + '/ckpt' + OFFLINE_FB_CKPT_NAME)
+offline_fb_policy_params, offline_fb_repr_params, offline_fb_target_forward_params, offline_fb_target_backward_params = offline_fb_params
+
 
 # BC
 BC_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-bc-standard-20000000-1024-256-50_s_1'
@@ -77,6 +84,19 @@ BC_MEAN_FIELD_RUN_FOLDER_PATH = f'/home/kw2960/JaxGCRL/runs/run_{env_name}-bc-me
 BC_MEAN_FIELD_CKPT_NAME = '/best.pkl'
 bc_mean_field_params = model.load_params(BC_MEAN_FIELD_RUN_FOLDER_PATH + '/ckpt' + BC_MEAN_FIELD_CKPT_NAME)
 _, bc_mean_field_context_params = bc_mean_field_params
+
+# Load HILP checkpoints (actor and value_state (phi))
+HILP_RUN_FOLDER_PATH = f'/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_reacher-hilp-della_1_rebuttal_30000000_1024_256_100_1_s_1'
+HILP_CKPT_NAME = '/best.pkl'  # change to a specific step file if needed, e.g., '/step_XXXXXXX.pkl'
+
+hilp_params = model.load_params(HILP_RUN_FOLDER_PATH + '/ckpt' + HILP_CKPT_NAME)
+hilp_actor_params, _, hilp_value_params, _ = hilp_params
+
+# Load PSM checkpoints (actor and representation-related params)
+PSM_RUN_FOLDER_PATH = f'/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_reacher-psm-della_1_rebuttal_30000000_1024_256_100_1_s_1'
+PSM_CKPT_NAME = '/best.pkl'
+psm_params = model.load_params(PSM_RUN_FOLDER_PATH + '/ckpt' + PSM_CKPT_NAME)
+psm_actor_params, psm_repr_params, psm_target_psm_params, psm_target_w_params = psm_params
 
 print("Loaded all models")
 
@@ -93,6 +113,41 @@ obs_size = env.observation_size
 action_size = env.action_size
 goal_size = env.observation_size - env.state_dim
 NUM_STEPS = 1024
+
+# HILP
+class MetricValueNet(nn.Module):
+    """
+    Metric value with shared representation phi:
+      v(s, g) = -||phi(s) - phi(g)||_2
+    Exposes phi via info=True.
+    """
+    latent_dim: int
+    width: int = 1024
+    num_blocks: int = 4
+    block_size: int = 2
+    use_ln: bool = True
+    def setup(self):
+        self.phi = Net(
+            output_size=self.latent_dim,
+            width=self.width,
+            num_blocks=self.num_blocks,
+            block_size=self.block_size,
+            use_ln=self.use_ln,
+        )
+    def __call__(self, observations, goals, info: bool = False, s_is_phi: bool = False, g_is_phi: bool = False):
+        if s_is_phi:
+            phi_s = observations
+        else:
+            phi_s = self.phi(observations)
+        if g_is_phi:
+            phi_g = goals
+        else:
+            phi_g = self.phi(goals)
+        v = -jnp.linalg.norm(phi_s - phi_g, axis=-1)
+        if info:
+            return v, phi_s, phi_g
+        return v
+
 
 class Net(nn.Module):
     """
@@ -165,6 +220,18 @@ goalkde_context_encoder = lambda traj: context_net.apply(goalkde_context_params,
 goalkde_mean_field_context_encoder = lambda traj: context_net.apply(goalkde_mean_field_context_params, traj)
 
 fb_inference_fn = make_policy(actor, parametric_action_distribution, fb_policy_params)
+offline_fb_inference_fn = make_policy(actor, parametric_action_distribution, offline_fb_policy_params)
+
+# Load PSM args to instantiate networks consistently
+psm_args_path = PSM_RUN_FOLDER_PATH + '/args.pkl'
+with open(psm_args_path, "rb") as f:
+    psm_args = pickle.load(f)
+
+# Recreate PSM actor (actor takes [state, goal] as input)
+psm_block_size = 2
+psm_num_blocks = max(1, psm_args.n_hidden // psm_block_size)
+psm_actor = Net(action_size * 2, psm_args.h_dim, psm_num_blocks, psm_block_size, psm_args.use_ln)
+
 
 bc_inference_fn = make_policy(actor, parametric_action_distribution, bc_policy_params)
 bc_context_encoder = lambda traj: context_net.apply(bc_context_params, traj)
@@ -178,6 +245,8 @@ jit_inference_fn = jax.jit(inference_fn)
 jit_goalkde_inference_fn = jax.jit(goalkde_inference_fn)
 jit_fb_inference_fn = jax.jit(fb_inference_fn)
 jit_bc_inference_fn = jax.jit(bc_inference_fn)
+jit_offline_fb_inference_fn = jax.jit(offline_fb_inference_fn)
+
 def collect_trajectory(rng):
     def step_fn(carry, _):
         state, rng = carry
@@ -202,6 +271,44 @@ print(observations.shape, actions.shape, rewards.shape)
 states = observations[:, :, :env.state_dim]
 goals = observations[:, 0, env.state_dim:]
 print(states.shape, actions.shape, goals.shape)
+
+# --- HILP evaluation: compute z* per demonstration with unit rewards on observed transitions ---
+# Load HILP args to recreate networks consistent with HILP training
+hilp_args_path = HILP_RUN_FOLDER_PATH + '/args.pkl'
+with open(hilp_args_path, "rb") as f:
+    hilp_args = pickle.load(f)
+
+# Recreate HILP networks (actor not used for z* computation but loaded for completeness)
+hilp_block_size = 2
+hilp_num_blocks = max(1, hilp_args.n_hidden // hilp_block_size)
+hilp_actor = Net(action_size * 2, hilp_args.h_dim, hilp_num_blocks, hilp_block_size, hilp_args.use_ln)
+hilp_value = MetricValueNet(hilp_args.repr_dim, hilp_args.h_dim, hilp_num_blocks, hilp_block_size, hilp_args.use_ln)
+
+# Compute tilde_phi(s, a, s') = phi(s') - phi(s) over goal indices of the state
+hilp_states_goal = states[:, :, env.goal_indices]           # [N, T, goal_dim]
+hilp_states_goal_t = hilp_states_goal[:, :-1, :]            # [N, T-1, goal_dim]
+hilp_states_goal_tp1 = hilp_states_goal[:, 1:, :]           # [N, T-1, goal_dim]
+
+# Flatten for batched phi evaluation, then unflatten
+hilp_sg_flat = hilp_states_goal_t.reshape((-1, hilp_states_goal_t.shape[-1]))
+hilp_sg1_flat = hilp_states_goal_tp1.reshape((-1, hilp_states_goal_tp1.shape[-1]))
+_, hilp_phi_s_flat, hilp_phi_sp_flat = hilp_value.apply(hilp_value_params, hilp_sg_flat, hilp_sg1_flat, info=True)
+hilp_delta_phi_flat = (hilp_phi_sp_flat - hilp_phi_s_flat)  # [N*(T-1), repr_dim]
+hilp_delta_phi = hilp_delta_phi_flat.reshape((hilp_states_goal_t.shape[0], hilp_states_goal_t.shape[1], -1))  # [N, T-1, repr_dim]
+
+# Solve least-squares z* with unit rewards for observed transitions
+def solve_z_unit_reward(phis_seq):
+    # phis_seq: [T-1, repr_dim]
+    A = phis_seq
+    b = jnp.ones((A.shape[0],), dtype=A.dtype)
+    G = A.T @ A
+    eps = 1e-6  # small ridge for numerical stability
+    return jnp.linalg.solve(G + eps * jnp.eye(G.shape[0], dtype=G.dtype), A.T @ b)
+
+hilp_z_stars = jax.vmap(solve_z_unit_reward)(hilp_delta_phi)  # [N, repr_dim]
+print("HILP z* (per episode) shape:", hilp_z_stars.shape)
+print("HILP z* norms (mean ± stderr):", jnp.mean(jnp.linalg.norm(hilp_z_stars, axis=1)),
+      jnp.std(jnp.linalg.norm(hilp_z_stars, axis=1)) / jnp.sqrt(NUM_ENVS))
 
 # Calculate mean true goal
 mean_true_goal = jnp.mean(goals, axis=0)
@@ -715,8 +822,319 @@ print("Mean difference between total rewards and FB inferred goal rewards (stand
 print("Standard error of difference between total rewards and FB inferred goal rewards (standard):", fb_reward_diff_inferred_stderror)
 
 
+### Offline FB Evaluation ###
 
 
+def offline_fb_infer_latent(backward_repr, backward_params, states):
+    goal_portion_of_state = states[:, env.goal_indices]
+    backward_reprs = backward_repr.apply(backward_params, goal_portion_of_state)
+    backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(args.repr_dim)
+    avg_backward_repr = jnp.mean(backward_reprs, axis=0)
+    latent = avg_backward_repr / jnp.linalg.norm(avg_backward_repr) * jnp.sqrt(args.repr_dim)
+    return latent
+
+def offline_fb_infer_latent_from_last_state(backward_repr, backward_params, states):
+    goal_portion_of_state = states[:, env.goal_indices]
+    backward_reprs = backward_repr.apply(backward_params, goal_portion_of_state)
+    backward_reprs = backward_reprs / jnp.linalg.norm(backward_reprs, axis=-1, keepdims=True) * jnp.sqrt(args.repr_dim)
+    latent = backward_reprs[-1]
+    return latent
+
+offline_fb_infer_latent = jax.jit(offline_fb_infer_latent, static_argnums=0)
+offline_fb_infer_latent_from_last_state = jax.jit(offline_fb_infer_latent_from_last_state, static_argnums=0)
+
+# Sample NUM_SAMPLES times from each episode's context distribution
+sample_rng = jax.random.PRNGKey(0)
+sample_rngs = jax.random.split(sample_rng, NUM_ENVS)
+
+offline_fb_infer_latent_partial = partial(offline_fb_infer_latent, backward_repr)
+offline_fb_infer_latent_from_last_state_partial = partial(offline_fb_infer_latent_from_last_state, backward_repr)
+offline_fb_inferred_goals = jax.vmap(offline_fb_infer_latent_partial, in_axes=(None, 0))(offline_fb_target_backward_params, states)
+offline_fb_inferred_goals_from_last_state = jax.vmap(offline_fb_infer_latent_from_last_state_partial, in_axes=(None, 0))(offline_fb_target_backward_params, states)
+
+print("Offline FB inferred goals shape:", offline_fb_inferred_goals.shape)
+print("Offline FB inferred goals from last state shape:", offline_fb_inferred_goals_from_last_state.shape)
+
+# Add an extra dimension at axis 1 to fb_inferred_goals
+# This transforms the shape from [NUM_ENVS, repr_dim] to [NUM_ENVS, 1, repr_dim]
+offline_fb_inferred_goals = offline_fb_inferred_goals[:, None, :]
+offline_fb_inferred_goals_from_last_state = offline_fb_inferred_goals_from_last_state[:, None, :]
+print("Offline FB inferred goals shape after adding dimension:", offline_fb_inferred_goals.shape)
+print("Offline FB inferred goals from last state shape after adding dimension:", offline_fb_inferred_goals_from_last_state.shape)
+
+
+# # Remove the extra dimension for comparison
+# fb_inferred_goals_flat = jnp.squeeze(fb_inferred_goals, axis=1)  # shape: [NUM_ENVS, goal_size]
+
+# Check if all elements are (almost) equal
+# are_equal = jnp.allclose(fb_inferred_goals, last_states, atol=1e-5)
+# print("Are FB inferred goals the same as last states?", are_equal)
+
+# Optionally, print the mean absolute difference
+# mean_abs_diff = jnp.mean(jnp.abs(fb_inferred_goals - last_states))
+# print("Mean absolute difference between FB inferred goals and last states:", mean_abs_diff)
+
+# Calculate distances between true goals and inferred latents
+# goal_to_fb_inferred_goal_distances = jnp.linalg.norm(goals - fb_inferred_goals, axis=1)
+# print("Mean goal to FB inferred goal distance:", jnp.mean(goal_to_fb_inferred_goal_distances))
+
+# print("FB inferred goals shape:", fb_inferred_goals.shape)
+# print("last states shape:", last_states.shape)
+# print("true goals shape:", goals.shape)
+
+def offline_fb_collect_trajectory_with_target(rng, target, true_goal):
+    def step_fn(carry, _):
+        state, rng = carry
+        act_rng, next_rng = jax.random.split(rng)
+        obs = jnp.concatenate((state.obs[:env.state_dim], target), axis=-1)
+        act, _ = jit_offline_fb_inference_fn(obs, act_rng)
+        next_state = jit_env_step(state, act)
+        
+        # Compute distance-based reward
+        current_pos = next_state.obs[env.goal_indices]
+        dist_to_goal = jnp.linalg.norm(current_pos - true_goal)
+        reward = jnp.where(dist_to_goal < env.goal_reach_thresh, 1.0, 0.0)
+        
+        return (next_state, next_rng), reward
+    
+    init_state = jit_env_reset(rng=rng)
+    (final_state, _), rewards = jax.lax.scan(
+        step_fn, 
+        (init_state, rng), 
+        None, 
+        length=NUM_STEPS
+    )
+    return rewards
+
+# # Collect trajectories using true goals as targets
+# last_state_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS)
+# fb_true_goal_rews = jax.vmap(fb_collect_trajectory_with_target)(
+#     last_state_rngs,
+#     goals,
+#     goals
+# )
+
+
+# # Collect trajectories using last states as targets
+# last_state_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS)
+# fb_last_state_rews = jax.vmap(fb_collect_trajectory_with_target)(
+#     last_state_rngs,
+#     last_states,
+#     goals
+# )
+
+# Compute euclidean distances between goals and last states
+# goalkde_goal_distances = jnp.linalg.norm(last_states - goals, axis=2)
+# print("mean goal to goal distance:", jnp.mean(goalkde_goal_distances))
+
+# print(fb_last_state_rews.shape)
+
+# fb_total_rewards_true_goal = jnp.sum(fb_true_goal_rews, axis=1)
+
+# fb_total_rewards_last_state = jnp.sum(fb_last_state_rews, axis=1)  # Sum rewards along trajectory dimension
+
+# Collect trajectories using inferred goals as targets from standard context encoder
+offline_fb_inferred_goal_rngs = jax.random.split(jax.random.PRNGKey(1), NUM_ENVS * NUM_SAMPLES)
+offline_fb_inferred_goal_rngs = offline_fb_inferred_goal_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
+
+offline_fb_inferred_goal_rews = jax.vmap(
+    jax.vmap(offline_fb_collect_trajectory_with_target, in_axes=(0, 0, None)),
+    in_axes=(0, 0, 0)
+)(
+    offline_fb_inferred_goal_rngs,
+    offline_fb_inferred_goals,
+    goals
+)
+
+offline_fb_inferred_goal_rews_from_last_state = jax.vmap(
+    jax.vmap(offline_fb_collect_trajectory_with_target, in_axes=(0, 0, None)),
+    in_axes=(0, 0, 0)
+)(
+    offline_fb_inferred_goal_rngs,
+    offline_fb_inferred_goals_from_last_state,
+    goals
+)
+
+print("offline fb inferred_goal_rews shape:", offline_fb_inferred_goal_rews.shape)
+print("offline fb inferred_goal_rews_from_last_state shape:", offline_fb_inferred_goal_rews_from_last_state.shape)
+offline_fb_total_rewards_inferred_goal_mean = jnp.mean(jnp.sum(offline_fb_inferred_goal_rews, axis=2), axis=1)
+offline_fb_total_rewards_inferred_goal_std = jnp.std(jnp.sum(offline_fb_inferred_goal_rews, axis=2), axis=1)
+offline_fb_total_rewards_inferred_goal_from_last_state_mean = jnp.mean(jnp.sum(offline_fb_inferred_goal_rews_from_last_state, axis=2), axis=1)
+offline_fb_total_rewards_inferred_goal_from_last_state_std = jnp.std(jnp.sum(offline_fb_inferred_goal_rews_from_last_state, axis=2), axis=1)
+
+# # Compute differences and their statistics for total rewards vs true goal rewards
+# fb_reward_diff_true_goal = total_rewards - fb_total_rewards_true_goal
+# fb_reward_diff_true_goal_mean = jnp.mean(fb_reward_diff_true_goal)
+# fb_reward_diff_true_goal_stderror = jnp.std(fb_reward_diff_true_goal) / jnp.sqrt(NUM_ENVS)
+
+# Compute differences and their statistics for total rewards vs last state rewards
+offline_fb_reward_diff_inferred = total_rewards - offline_fb_total_rewards_inferred_goal_mean
+offline_fb_reward_diff_inferred_mean = jnp.mean(offline_fb_reward_diff_inferred)
+offline_fb_reward_diff_inferred_stderror = jnp.std(offline_fb_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
+
+offline_fb_reward_diff_inferred_from_last_state = total_rewards - offline_fb_total_rewards_inferred_goal_from_last_state_mean
+offline_fb_reward_diff_inferred_from_last_state_mean = jnp.mean(offline_fb_reward_diff_inferred_from_last_state)
+offline_fb_reward_diff_inferred_from_last_state_stderror = jnp.std(offline_fb_reward_diff_inferred_from_last_state) / jnp.sqrt(NUM_ENVS)
+
+
+offline_fb_reward_diff_inferred_pct = offline_fb_total_rewards_inferred_goal_mean / (total_rewards + epsilon)
+offline_fb_reward_diff_inferred_pct_mean = jnp.mean(offline_fb_reward_diff_inferred_pct)
+offline_fb_reward_diff_inferred_pct_stderror = jnp.std(offline_fb_reward_diff_inferred_pct) / jnp.sqrt(NUM_ENVS)
+
+print("Mean difference between total rewards and offline FB inferred goal rewards (standard):", offline_fb_reward_diff_inferred_mean)
+print("Standard error of difference between total rewards and offline FB inferred goal rewards (standard):", offline_fb_reward_diff_inferred_stderror)
+
+
+
+
+
+### HILP Evaluation ###
+
+# Build HILP policy and evaluate returns using latents inferred from demonstrations
+hilp_inference_fn = make_policy(hilp_actor, parametric_action_distribution, hilp_actor_params)
+jit_hilp_inference_fn = jax.jit(hilp_inference_fn)
+
+def hilp_collect_trajectory_with_latent(rng, latent, true_goal):
+    def step_fn(carry, _):
+        state, rng = carry
+        act_rng, next_rng = jax.random.split(rng)
+        obs = jnp.concatenate((state.obs[:env.state_dim], latent), axis=-1)
+        act, _ = jit_hilp_inference_fn(obs, act_rng)
+        next_state = jit_env_step(state, act)
+        # Compute distance-based reward to match other evals
+        current_pos = next_state.obs[env.goal_indices]
+        dist_to_goal = jnp.linalg.norm(current_pos - true_goal)
+        reward = jnp.where(dist_to_goal < env.goal_reach_thresh, 1.0, 0.0)
+        return (next_state, next_rng), reward
+    init_state = jit_env_reset(rng=rng)
+    (final_state, _), rewards = jax.lax.scan(
+        step_fn,
+        (init_state, rng),
+        None,
+        length=NUM_STEPS
+    )
+    return rewards
+
+# Prepare HILP latents inferred from demonstrations
+# 1) Full-trajectory z* (solve LS with unit rewards on observed transitions), normalized to sqrt(repr_dim)
+hilp_inferred_latents = hilp_z_stars
+hilp_inferred_latents = hilp_inferred_latents / (jnp.linalg.norm(hilp_inferred_latents, axis=-1, keepdims=True) + 1e-8) * jnp.sqrt(hilp_args.repr_dim)
+hilp_inferred_latents = hilp_inferred_latents[:, None, :]  # [N, 1, repr_dim]
+
+# 2) Last-step latent using tilde_phi at the final transition, normalized
+hilp_last_step_latents = hilp_delta_phi[:, -1, :]
+hilp_last_step_latents = hilp_last_step_latents / (jnp.linalg.norm(hilp_last_step_latents, axis=-1, keepdims=True) + 1e-8) * jnp.sqrt(hilp_args.repr_dim)
+hilp_last_step_latents = hilp_last_step_latents[:, None, :]  # [N, 1, repr_dim]
+
+# Evaluate HILP with full-trajectory inferred latent
+hilp_inferred_latent_rngs = jax.random.split(jax.random.PRNGKey(50), NUM_ENVS * NUM_SAMPLES)
+hilp_inferred_latent_rngs = hilp_inferred_latent_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
+
+hilp_inferred_latent_rews = jax.vmap(
+    jax.vmap(hilp_collect_trajectory_with_latent, in_axes=(0, 0, None)),
+    in_axes=(0, 0, 0)
+)(
+    hilp_inferred_latent_rngs,
+    hilp_inferred_latents,
+    goals
+)
+
+print("hilp inferred_latent_rews shape:", hilp_inferred_latent_rews.shape)
+hilp_total_rewards_inferred_latent_mean = jnp.mean(jnp.sum(hilp_inferred_latent_rews, axis=2), axis=1)
+hilp_total_rewards_inferred_latent_std = jnp.std(jnp.sum(hilp_inferred_latent_rews, axis=2), axis=1)
+
+# Evaluate HILP with last-step latent
+hilp_last_step_latent_rngs = jax.random.split(jax.random.PRNGKey(51), NUM_ENVS * NUM_SAMPLES)
+hilp_last_step_latent_rngs = hilp_last_step_latent_rngs.reshape(NUM_ENVS, NUM_SAMPLES, -1)
+
+hilp_last_step_latent_rews = jax.vmap(
+    jax.vmap(hilp_collect_trajectory_with_latent, in_axes=(0, 0, None)),
+    in_axes=(0, 0, 0)
+)(
+    hilp_last_step_latent_rngs,
+    hilp_last_step_latents,
+    goals
+)
+
+print("hilp last_step_latent_rews shape:", hilp_last_step_latent_rews.shape)
+hilp_total_rewards_last_step_latent_mean = jnp.mean(jnp.sum(hilp_last_step_latent_rews, axis=2), axis=1)
+hilp_total_rewards_last_step_latent_std = jnp.std(jnp.sum(hilp_last_step_latent_rews, axis=2), axis=1)
+
+# Compare to expert demonstration totals (same metrics printed as FB)
+epsilon = 1e-8
+hilp_reward_diff_inferred = total_rewards - hilp_total_rewards_inferred_latent_mean
+hilp_reward_diff_inferred_mean = jnp.mean(hilp_reward_diff_inferred)
+hilp_reward_diff_inferred_stderror = jnp.std(hilp_reward_diff_inferred) / jnp.sqrt(NUM_ENVS)
+hilp_reward_diff_inferred_pct = hilp_total_rewards_inferred_latent_mean / (total_rewards + epsilon)
+hilp_reward_diff_inferred_pct_mean = jnp.mean(hilp_reward_diff_inferred_pct)
+hilp_reward_diff_inferred_pct_stderror = jnp.std(hilp_reward_diff_inferred_pct) / jnp.sqrt(NUM_ENVS)
+
+print("Mean difference between total rewards and HILP inferred latent rewards (full-trajectory):", hilp_reward_diff_inferred_mean)
+print("Standard error of difference between total rewards and HILP inferred latent rewards (full-trajectory):", hilp_reward_diff_inferred_stderror)
+print("HILP imitation score (percentage of expert, full-trajectory):", hilp_reward_diff_inferred_pct_mean)
+print("HILP imitation score stderr (full-trajectory):", hilp_reward_diff_inferred_pct_stderror)
+
+hilp_reward_diff_last_step = total_rewards - hilp_total_rewards_last_step_latent_mean
+hilp_reward_diff_last_step_mean = jnp.mean(hilp_reward_diff_last_step)
+hilp_reward_diff_last_step_stderror = jnp.std(hilp_reward_diff_last_step) / jnp.sqrt(NUM_ENVS)
+hilp_reward_diff_last_step_pct = hilp_total_rewards_last_step_latent_mean / (total_rewards + epsilon)
+hilp_reward_diff_last_step_pct_mean = jnp.mean(hilp_reward_diff_last_step_pct)
+hilp_reward_diff_last_step_pct_stderror = jnp.std(hilp_reward_diff_last_step_pct) / jnp.sqrt(NUM_ENVS)
+
+print("Mean difference between total rewards and HILP last-step latent rewards:", hilp_reward_diff_last_step_mean)
+print("Standard error of difference between total rewards and HILP last-step latent rewards:", hilp_reward_diff_last_step_stderror)
+print("HILP imitation score (percentage of expert, last-step):", hilp_reward_diff_last_step_pct_mean)
+print("HILP imitation score stderr (last-step):", hilp_reward_diff_last_step_pct_stderror)
+
+### PSM Evaluation ###
+
+psm_inference_fn = make_policy(psm_actor, parametric_action_distribution, psm_actor_params)
+jit_psm_inference_fn = jax.jit(psm_inference_fn)
+
+def psm_collect_trajectory_with_goal(rng, goal, true_goal):
+    def step_fn(carry, _):
+        state, rng = carry
+        act_rng, next_rng = jax.random.split(rng)
+        # PSM actor expects [state, goal] as its observation
+        obs = jnp.concatenate((state.obs[:env.state_dim], goal), axis=-1)
+        act, _ = jit_psm_inference_fn(obs, act_rng)
+        next_state = jit_env_step(state, act)
+        # Sparse success reward relative to true goal (consistent with other evals)
+        current_pos = next_state.obs[env.goal_indices]
+        dist_to_goal = jnp.linalg.norm(current_pos - true_goal)
+        reward = jnp.where(dist_to_goal < env.goal_reach_thresh, 1.0, 0.0)
+        return (next_state, next_rng), reward
+    init_state = jit_env_reset(rng=rng)
+    (final_state, _), rewards = jax.lax.scan(
+        step_fn,
+        (init_state, rng),
+        None,
+        length=NUM_STEPS
+    )
+    return rewards
+
+# Evaluate PSM using the last state in the demo as the goal
+psm_last_state_rngs = jax.random.split(jax.random.PRNGKey(61), NUM_ENVS)
+psm_last_state_rews = jax.vmap(psm_collect_trajectory_with_goal)(
+    psm_last_state_rngs,
+    last_states,
+    goals
+)
+
+psm_total_rewards_last_state = jnp.sum(psm_last_state_rews, axis=1)
+
+psm_reward_diff_last_state = total_rewards - psm_total_rewards_last_state
+psm_reward_diff_last_state_mean = jnp.mean(psm_reward_diff_last_state)
+psm_reward_diff_last_state_stderror = jnp.std(psm_reward_diff_last_state) / jnp.sqrt(NUM_ENVS)
+psm_reward_diff_last_state_pct = psm_total_rewards_last_state / (total_rewards + 1e-8)
+psm_reward_diff_last_state_pct_mean = jnp.mean(psm_reward_diff_last_state_pct)
+psm_reward_diff_last_state_pct_stderror = jnp.std(psm_reward_diff_last_state_pct) / jnp.sqrt(NUM_ENVS)
+
+print("PSM last_state_rews shape:", psm_last_state_rews.shape)
+print("Mean difference between total rewards and PSM last state rewards:", psm_reward_diff_last_state_mean)
+print("Standard error of difference between total rewards and PSM last state rewards:", psm_reward_diff_last_state_stderror)
+print("PSM imitation score (percentage of expert, last-state goal):", psm_reward_diff_last_state_pct_mean)
+print("PSM imitation score stderr (last-state goal):", psm_reward_diff_last_state_pct_stderror)
 
 
 
@@ -1004,9 +1422,6 @@ print("Standard error of difference between total rewards and FB with true goal 
 
 
 
-
-
-
 ### BC ###
 
 # Process with standard context encoder
@@ -1194,6 +1609,9 @@ methods = [
     'CRL + GoalKDE + True Goal', 'CRL + GoalKDE + Last State', 'CRL + GoalKDE + Full Tau', 'CRL + GoalKDE + Mean Field',
     'Nearest Neighbor',
     'FB',
+    'FB (Offline)',
+    'HILP',
+    'PSM',
     'GCBC + True Goal', 'GCBC + Last State', 'GCBC + Full Tau', 'GCBC + Mean Field',
     
 ]
@@ -1208,6 +1626,9 @@ mean_diffs = [
     float(goalkde_mf_reward_diff_inferred_mean),
     float(nn_expert_reward_diff_mean),
     float(fb_reward_diff_inferred_mean),
+    float(offline_fb_reward_diff_inferred_mean),
+    float(hilp_reward_diff_inferred_mean),
+    float(psm_reward_diff_last_state_mean),
     float(bc_reward_diff_true_goal_mean),
     float(bc_reward_diff_last_state_mean),
     float(bc_reward_diff_inferred_mean),
@@ -1224,6 +1645,9 @@ std_errors = [
     float(goalkde_mf_reward_diff_inferred_stderror),
     float(nn_expert_reward_diff_stderror),
     float(fb_reward_diff_inferred_stderror),
+    float(offline_fb_reward_diff_inferred_stderror),
+    float(hilp_reward_diff_inferred_stderror),
+    float(psm_reward_diff_last_state_stderror),
     float(bc_reward_diff_true_goal_stderror),
     float(bc_reward_diff_last_state_stderror),
     float(bc_reward_diff_inferred_stderror),
@@ -1231,7 +1655,7 @@ std_errors = [
     
 ]
 
-method_types = ['CRL']*3 + ['GoalKDE']*4 + ['NN']*1 + ['FB']*1 + ['BC']*4 
+method_types = ['CRL']*3 + ['GoalKDE']*4 + ['NN']*1 + ['FB']*2 + ['HILP']*1 + ['PSM']*1 + ['BC']*4 
 
 df = pd.DataFrame({
     'Method': methods,
@@ -1249,7 +1673,7 @@ ax = sns.barplot(
     y='Mean Difference', 
     hue='Method Type',
     data=df,
-    palette=['#1f77b4', '#ff7f0e', 'purple', '#2ca02c', '#d62728']  # Blue for CRL, Orange for GoalKDE, Purple for NN, Green for FB, Red for BC
+    palette=['#1f77b4', '#ff7f0e', 'purple', '#2ca02c', '#17becf', '#8c564b', '#d62728']  # CRL, GoalKDE, NN, FB, HILP, PSM, BC
 )
 
 # Add error bars
@@ -1481,26 +1905,38 @@ methods = [
     'GCBC + Mean Field',
     'Nearest Neighbor',
     'FB',
+    'FB (Offline)',
+    'HILP',
+    'PSM',
     'CRL + GoalKDE + Mean Field',
     
+
 ]
 
 mean_diffs = [
     float(1.0 - bc_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
     float(1.0 - nn_expert_reward_diff_mean/jnp.mean(total_rewards)),
     float(1.0 - fb_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - offline_fb_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - hilp_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    float(1.0 - psm_reward_diff_last_state_mean/jnp.mean(total_rewards)),
     float(1.0 - goalkde_mf_reward_diff_inferred_mean/jnp.mean(total_rewards)),
+    
 ]
 
 std_errors = [
     float(bc_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
     float(nn_expert_reward_diff_stderror/jnp.mean(total_rewards)),
     float(fb_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(offline_fb_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(hilp_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    float(psm_reward_diff_last_state_stderror/jnp.mean(total_rewards)),
     float(goalkde_mf_reward_diff_inferred_stderror/jnp.mean(total_rewards)),
+    
     
 ]
 
-method_types = ['BC']*1 + ['NN']*1 + ['FB']*1 + ['GoalKDE']*1 
+method_types = ['BC']*1 + ['NN']*1 + ['FB']*2 + ['HILP']*1 + ['PSM']*1 + ['GoalKDE']*1 
 
 df = pd.DataFrame({
     'Method': methods,
@@ -1515,7 +1951,7 @@ ax = sns.barplot(
     y='Mean Difference', 
     hue='Method Type',
     data=df,
-    palette=['#d62728', 'purple', '#2ca02c', '#ff7f0e']
+    palette=['#d62728', 'purple', '#2ca02c', '#17becf', '#8c564b', '#ff7f0e']
 )
 
 # Add error bars
@@ -1568,21 +2004,26 @@ plt.figure(figsize=(8,6))
 # Prepare data for plotting
 methods = [
     'FB + Last State',
+    'FB (Offline) + Last State',
     'CRL + GoalKDE + Last State',
+    
 ]
 
 mean_diffs = [
     float(1.0 - fb_reward_diff_inferred_from_last_state_mean/jnp.mean(total_rewards)),
+    float(1.0 - offline_fb_reward_diff_inferred_from_last_state_mean/jnp.mean(total_rewards)),
     float(1.0 - goalkde_reward_diff_last_state_mean/jnp.mean(total_rewards)),
 ]
 
 std_errors = [
     float(fb_reward_diff_inferred_from_last_state_stderror/jnp.mean(total_rewards)),
+    float(offline_fb_reward_diff_inferred_from_last_state_stderror/jnp.mean(total_rewards)),
     float(goalkde_reward_diff_last_state_stderror/jnp.mean(total_rewards)),
+    
     
 ]
 
-method_types = ['FB']*1 + ['GoalKDE']*1 
+method_types = ['FB']*2 + ['GoalKDE']*1 
 
 df = pd.DataFrame({
     'Method': methods,
@@ -1597,7 +2038,7 @@ ax = sns.barplot(
     y='Mean Difference', 
     hue='Method Type',
     data=df,
-    palette=['#2ca02c', '#ff7f0e']  # Blue for CRL, Orange for GoalKDE, Purple for NN, Green for BC, Red for FB
+    palette=['#2ca02c', '#2ca02c', '#ff7f0e']  # FB entries share color, GoalKDE distinct
 )
 
 # Add error bars

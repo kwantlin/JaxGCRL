@@ -3,11 +3,11 @@ Reacher,CRL + GoalKDE + Full Tau,CIRL,23.7 ± 0.8
 Reacher,CRL + GoalKDE + Mean Field,CIRL,100.4 ± 0.2
 Reacher,GCBC + Full Tau,GCBC,81.8 ± 0.8
 Reacher,GCBC + Mean Field,GCBC,103.3 ± 0.2
-Pusher,CRL + GoalKDE + Full Tau,CIRL,17.5 ± 1.6
-Pusher,CRL + GoalKDE + Mean Field,CIRL,20.8 ± 1.6
-Pusher,GCBC + Full Tau,GCBC,18.2 ± 1.6
-Pusher,GCBC + Mean Field,GCBC,44.6 ± 1.8
-Ant,CRL + GoalKDE + Full Tau,CIRL,15.9 ± 1.1
-Ant,CRL + GoalKDE + Mean Field,CIRL,44.9 ± 1.1
-Ant,GCBC + Full Tau,GCBC,29.8 ± 1.4
-Ant,GCBC + Mean Field,GCBC,95.0 ± 1.0
+Pusher,CRL + GoalKDE + Full Tau,CIRL,17.1 ± 1.5
+Pusher,CRL + GoalKDE + Mean Field,CIRL,22.0 ± 1.6
+Pusher,GCBC + Full Tau,GCBC,17.4 ± 1.6
+Pusher,GCBC + Mean Field,GCBC,44.2 ± 1.7
+Ant,CRL + GoalKDE + Full Tau,CIRL,16.6 ± 1.1
+Ant,CRL + GoalKDE + Mean Field,CIRL,46.0 ± 1.1
+Ant,GCBC + Full Tau,GCBC,27.9 ± 1.4
+Ant,GCBC + Mean Field,GCBC,93.9 ± 1.1

@@ -34,7 +34,7 @@ plt.rcParams.update({
 })
 
 # Global, consistent color map for method types across all figures
-METHOD_TYPE_ORDER = ['GCBC', 'NN', 'FB', 'CRL', 'CIRL', 'CRL + Oracle']
+METHOD_TYPE_ORDER = ['GCBC', 'NN', 'FB', 'CRL', 'CIRL', 'CRL + Oracle', 'HILP', 'PSM']
 METHOD_TYPE_COLOR = {t: PALETTE_COLORS[i % len(PALETTE_COLORS)] for i, t in enumerate(METHOD_TYPE_ORDER)}
 
 # Swap colors for NN and CIRL as requested
@@ -54,6 +54,7 @@ except Exception:
 METHOD_TYPE_ALIASES = {
     'CRL + GoalKDE (CIRL)': 'CIRL',
     'CRL + CIRL': 'CIRL',
+    'FB (Offline)': 'FB',
 }
 
 def get_color_for_type(method_type: str) -> str:
@@ -186,7 +187,13 @@ print(f"Combined figure saved as '{output_dir}/fb_vs_goalkde_last_state_combined
 summary_data = []
 for env_name, data in [('Reacher', reacher_data), ('Pusher', pusher_data), ('Ant', ant_data)]:
     for _, row in data.iterrows():
-        method_short = 'FB' if 'FB' in row['Method'] else 'CIRL'
+        m = str(row['Method'])
+        if 'FB (Offline' in m:
+            method_short = 'FB (Offline)'
+        elif m.startswith('FB'):
+            method_short = 'FB'
+        else:
+            method_short = 'CIRL'
         summary_data.append({
             'Environment': env_name,
             'Method': method_short,
@@ -383,7 +390,9 @@ pretrain_colors = {
     'NN': get_color_for_type('NN'),
     'FB': get_color_for_type('FB'),
     'CRL': get_color_for_type('CRL'),
-    'CIRL': get_color_for_type('CIRL')
+    'CIRL': get_color_for_type('CIRL'),
+    'HILP': get_color_for_type('HILP'),
+    'PSM': get_color_for_type('PSM'),
 }
 
 ant_pre_plot = ant_pretrain_data.copy().assign(Environment='Ant')
@@ -397,13 +406,13 @@ pre_combined_plot = pre_combined_plot[pre_combined_plot['Method Type'] != 'GCBC'
 environments = ['Reacher', 'Pusher', 'Ant']
 method_to_type = pre_combined_plot.dropna(subset=['Method']).drop_duplicates('Method').set_index('Method')['Method Type'].to_dict()
 # Order methods by desired Method Type order
-type_order = ['GCBC', 'NN', 'FB', 'CIRL']
+type_order = ['GCBC', 'NN', 'FB', 'HILP', 'PSM', 'CRL', 'CIRL']
 all_methods = pre_combined_plot['Method'].unique().tolist()
 def _method_sort_key(m):
     t = method_to_type.get(m, '')
     return (type_order.index(t) if t in type_order else len(type_order), str(m))
 methods = sorted(all_methods, key=_method_sort_key)
-method_palette = {m: pretrain_colors.get(method_to_type.get(m, ''), '#888888') for m in methods}
+method_palette = {m: get_color_for_type(method_to_type.get(m, '')) for m in methods}
 
 env_positions = np.arange(len(environments))
 max_methods_per_env = max((pre_combined_plot[pre_combined_plot['Environment'] == env]['Method'].nunique() for env in environments))
@@ -422,7 +431,17 @@ for i, env in enumerate(environments):
         height = row['Mean Difference']
         err = row['Std Error']
         xpos = env_positions[i] + offset
-        ax.bar(xpos, height, width=bar_width * 0.9, color=method_palette[m], edgecolor='none', linewidth=0)
+        # Draw bar; if FB (Offline) has zero height, render a thin visible bar
+        draw_height = height
+        is_fb_offline = isinstance(m, str) and 'FB (Offline' in m
+        if is_fb_offline and (not np.isfinite(draw_height) or draw_height <= 0.0):
+            draw_height = 0.5  # small visible height in percent units for clarity
+        bar = ax.bar(xpos, draw_height, width=bar_width * 0.9, color=method_palette[m], edgecolor='none', linewidth=0)
+        # Visually distinguish FB (Offline) with white diagonal hatch while keeping FB color
+        if is_fb_offline:
+            bar[0].set_hatch('////')
+            bar[0].set_edgecolor('white')
+            bar[0].set_linewidth(2.0)
         ax.errorbar(xpos, height, yerr=err, fmt='none', ecolor='black', capsize=5, linewidth=1.0)
 
 ax.set_xticks(env_positions)
@@ -448,23 +467,43 @@ ymax = float(int(np.ceil(ymax / 10.0)) * 10)
 ax.set_ylim(0, ymax)
 
 from matplotlib.patches import Patch
-type_to_color = {t: pretrain_colors[t] for t in pretrain_colors.keys() if t in set(method_to_type.values())}
-ordered_types = [t for t in type_order if t in type_to_color] + [t for t in type_to_color.keys() if t not in type_order]
-legend_handles = [Patch(facecolor=type_to_color[t], edgecolor='none', label=t) for t in ordered_types]
+type_to_color = {t: get_color_for_type(t) for t in set(method_to_type.values())}
+# Desired legend order: two columns x three rows
+desired_order = ['NN', 'FB', 'FB (Offline)', 'HILP', 'PSM', 'CIRL']
+# Determine if FB (Offline) is present in the data
+_has_fb_offline = any(isinstance(m, str) and 'FB (Offline' in m for m in pre_combined_plot['Method'].unique())
+# Build handles in the desired order, skipping entries not present in the data
+legend_handles = []
+for label in desired_order:
+    if label == 'FB (Offline)':
+        if _has_fb_offline:
+            legend_handles.append(Patch(facecolor=get_color_for_type('FB'),
+                                        edgecolor='white',
+                                        linewidth=2.0,
+                                        hatch='////',
+                                        label='FB (Offline)'))
+    else:
+        if label in type_to_color:
+            legend_handles.append(Patch(facecolor=type_to_color[label],
+                                        edgecolor='none',
+                                        label=label))
 if legend_handles:
     existing_legend = ax.get_legend()
     if existing_legend is not None:
         existing_legend.remove()
-    ax.legend(
-        handles=legend_handles,
-        loc='upper right',
-        bbox_to_anchor=(0.99, 0.99),
-        bbox_transform=ax.transAxes,
-        fontsize=38,
-        title=None,
-        borderaxespad=0.0,
-        frameon=True
-    )
+    ax.legend(handles=legend_handles,
+              loc='upper right',
+              bbox_to_anchor=(0.99, 0.99),
+              bbox_transform=ax.transAxes,
+              fontsize=38,
+              title=None,
+              borderaxespad=0.0,
+              frameon=True,
+              ncol=2,
+              columnspacing=0.25,
+              handletextpad=0.3,
+              labelspacing=0.2,
+              handlelength=1.2)
 
 plt.tight_layout()
 

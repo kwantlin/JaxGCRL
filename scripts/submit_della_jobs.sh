@@ -25,7 +25,7 @@ submit_job() {
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH -t 30:00:00
+#SBATCH -t 6:00:00
 #SBATCH --partition=pli 
 #SBATCH --account=buildstuff
 #SBATCH --constraint=h100
@@ -61,7 +61,18 @@ env=ant
 env=simple_u_maze
 # submit_job $env 1 standard 20000000 1024 256 50
 # submit_job $env 1 meanfield 20000000 1024 256 50
-# submit_job $env 1 meanfield_encoded 20000000 1024 256 50
+
+env=simple_custom_maze
+submit_job $env 2 standard 20000000 1024 256 50 1 1e-4 1e-4 1e-4
+submit_job $env 2 meanfield 20000000 1024 256 50 1 1e-4 1e-4 1e-4
+
+env=simple_big_maze
+submit_job $env 2 standard 40000000 1024 256 50 1 1e-4 1e-4 1e-4
+submit_job $env 2 meanfield 40000000 1024 256 50 1 1e-4 1e-4 1e-4
+
+env=simple_hardest_maze
+submit_job $env 2 standard 60000000 1024 256 50 1 1e-4 1e-4 1e-4
+submit_job $env 2 meanfield 60000000 1024 256 50 1 1e-4 1e-4 1e-4
 
 env=reacher
 # submit_job $env 1 standard 20000000 1024 256 50
@@ -111,20 +122,28 @@ env=reacher
 # submit_job $env 1 meanfield 12000000000 1024 2048 1000 8
 # submit_job $env 1 meanfield_encoded 12000000000 1024 2048 1000 8
 
-
-env=ant_fullobs
-submit_job $env 1 standard 12000000000 256 512 50
-
-
-submit_job $env 1 meanfield 12000000000 256 512 50
+env=ant_u_maze
+# submit_job $env 1 standard 30000000 512 1024 50
+# submit_job $env 1 meanfield 30000000 512 1024 50
+# submit_job $env 1 meanfield_encoded 30000000 512 1024 50
 
 
+# env=ant_fullobs
+# submit_job $env 1 standard 12000000000 256 512 50
+# submit_job $env 1 meanfield 12000000000 256 512 50
 
-env=ant_posvel
-submit_job $env 1 standard 12000000000 256 512 50
 
-submit_job $env 1 meanfield 12000000000 256 512 50
 
+# env=ant_posvel
+# submit_job $env 1 standard 12000000000 256 512 50
+
+# submit_job $env 1 meanfield 12000000000 256 512 50
+
+# env=ant_angvel
+# submit_job $env 1 standard 120000000 256 512 50
+# submit_job $env 1 meanfield 120000000 256 512 50
+# submit_job $env 2 standard 120000000 256 512 50
+# submit_job $env 2 meanfield 120000000 256 512 50
 
 
 # Wait for all background processes to complete

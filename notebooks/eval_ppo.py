@@ -575,7 +575,8 @@ def main(args):
 
     # Load GoalKDE checkpoint
     # goalkde_dir = '/scratch/gpfs/kw2960/JaxGCRL/runs/run_ant_fullobs-goalkde-meanfield-della-maxent-gaussianmlp-_s_1'
-    goalkde_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-goalkde-meanfield-della-maxent-gaussianmlp-_s_1'
+    # goalkde_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-goalkde-meanfield-della-maxent-gaussianmlp-_s_1'
+    goalkde_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_angvel-goalkde-meanfield-1x-120000000-256-512-1e-4-1e-4-1e-4-1-della-maxent-gaussianmlp-_s_1'
     goalkde_ckpt = os.path.join(goalkde_dir, 'ckpt', 'best.pkl')
     print(f"Loading GoalKDE checkpoint: {goalkde_ckpt}")
     goalkde_params = model.load_params(goalkde_ckpt)
@@ -608,6 +609,8 @@ def main(args):
             goal_dim = 9
         if 'posvel' in env_name_g.lower():
             goal_dim = 6
+        if 'angvel' in env_name_g.lower():
+            goal_dim = 3
     except Exception:
         pass
 
@@ -868,7 +871,8 @@ def main(args):
 
     # ================= FB goal inference and imitation comparison =================
     try:
-        fb_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-fb-della_2__1200000000_512_2048_1000_s_2'
+        # fb_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-fb-della_2__1200000000_512_2048_1000_s_2'
+        fb_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_angvel-fb-della_1_rebuttal_120000000_256_512_50_1_s_1'
         fb_ckpt = os.path.join(fb_dir, 'ckpt', 'best.pkl')
         print(f"\nLoading FB checkpoint: {fb_ckpt}")
         fb_params = model.load_params(fb_ckpt)
@@ -972,7 +976,8 @@ def main(args):
 
     # ================= Additional mean-field checkpoint goal inference (like GoalKDE) =================
     try:
-        mainmf_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-main-meanfield-test_s_1'
+        # mainmf_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-main-meanfield-test_s_1'
+        mainmf_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_angvel-main-meanfield-numenvs512-numtimesteps120000000-batchsize256-1-della-maxent-gaussianmlp-_s_1'
         mainmf_ckpt = os.path.join(mainmf_dir, 'ckpt', 'best.pkl')
         print(f"\nLoading MainMF checkpoint: {mainmf_ckpt}")
         mainmf_params = model.load_params(mainmf_ckpt)
@@ -1046,9 +1051,10 @@ def main(args):
     try:
         # Extract expert policy name and inference method for file naming
         expert_policy = 'antforward' if 'antforward' in model_path else 'antjump' if 'antjump' in model_path else 'antflip'
-        inference_method = 'ant_fullobs' if 'fullobs' in goalkde_dir else 'ant_posvel' if 'posvel' in goalkde_dir else 'unknown'
+        inference_method = 'ant_fullobs' if 'fullobs' in goalkde_dir else 'ant_posvel' if 'posvel' in goalkde_dir else 'angvel'
+        print("inference_method: ", inference_method)
         
-        if expert_policy in ['antforward', 'antjump'] and ('fb_regret_mean' in locals() and 'fb_regret_stderr' in locals()):
+        if expert_policy in ['antforward', 'antjump', 'antflip'] and ('fb_regret_mean' in locals() and 'fb_regret_stderr' in locals()):
             labels = []
             means = []
             stderrs = []
@@ -1103,7 +1109,7 @@ def main(args):
     try:
         # Extract expert policy name and inference method for file naming
         expert_policy = 'antforward' if 'antforward' in model_path else 'antjump' if 'antjump' in model_path else 'antflip'
-        inference_method = 'ant_fullobs' if 'fullobs' in goalkde_dir else 'ant_posvel' if 'posvel' in goalkde_dir else 'unknown'
+        inference_method = 'ant_fullobs' if 'fullobs' in goalkde_dir else 'ant_posvel' if 'posvel' in goalkde_dir else 'angvel'
         
         # Compute means and stderr for expert and imitation (GoalKDE)
         exp_mean = float(jp.mean(expert_total_trunc))
@@ -1116,7 +1122,7 @@ def main(args):
             fb_mean = float(jp.mean(fb_total_rewards))
             fb_stderr = float(jp.std(fb_total_rewards, ddof=1) / jp.sqrt(fb_total_rewards.shape[0]))
 
-        if expert_policy in ['antforward', 'antjump']:
+        if expert_policy in ['antforward', 'antjump', 'antflip']:
             # Build grouped bars: [GoalKDE Expert, GoalKDE Imit, FB Expert, FB Imit]
             labels = ['GoalKDE Expert', 'GoalKDE Imit']
             means = [exp_mean, gkde_mean]
@@ -1190,7 +1196,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--model_path',
         type=str,
-        default='simple_ppo/antforward/ppo_antforward_vel0.5_model.pkl',
+        default='simple_ppo/antflip/ppo_antflip_flipvel1.0_model.pkl',
         help='Path to the trained PPO model file.'
     )
     parser.add_argument(

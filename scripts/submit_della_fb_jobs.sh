@@ -24,7 +24,7 @@ submit_job() {
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH -t 12:00:00
+#SBATCH -t 16:00:00
 #SBATCH --partition=pli 
 #SBATCH --account=buildstuff
 #SBATCH --constraint=h100
@@ -51,16 +51,16 @@ EOF
 
 # Submit jobs for each environment
 env=ant
-submit_job $env 1 30000000 512 1024 100 1 "new_fb_fewertimesteps"
+# submit_job $env 1 30000000 512 1024 100 1 "rebuttal"
 
 # env=simple_u_maze
 # submit_job $env 1 40000000 1024 256 50
 
 env=reacher
-submit_job $env 1 30000000 1024 256 100 1 "new_fb_fewertimesteps"
+# submit_job $env 1 30000000 1024 256 100 1 "rebuttal"
 
 env=pusher_easy
-submit_job $env 1 60000000 256 512 100 1 "new_fb_fewertimesteps"
+# submit_job $env 1 60000000 256 512 100 1 "rebuttal"
 
 # env=arm_reach
 # submit_job $env 4 12000000000 1024 2048 1000 8
@@ -76,13 +76,18 @@ submit_job $env 1 60000000 256 512 100 1 "new_fb_fewertimesteps"
 # submit_job $env 4 12000000000 256 512 500 
 # submit_job $env 5 12000000000 256 512 500 
 
-env=ant_posvel
-submit_job $env 2 120000000 256 512 500 1 "new_fb_fewertimesteps"
-submit_job $env 3 120000000 256 512 500 1 "new_fb_fewertimesteps"
-submit_job $env 4 120000000 256 512 500 1 "new_fb_fewertimesteps"
-submit_job $env 5 120000000 256 512 500 1 "new_fb_fewertimesteps"
+# env=ant_posvel
+# submit_job $env 2 120000000 256 512 500 1 "new_fb_fewertimesteps"
+# submit_job $env 3 120000000 256 512 500 1 "new_fb_fewertimesteps"
+# submit_job $env 4 120000000 256 512 500 1 "new_fb_fewertimesteps"
+# submit_job $env 5 120000000 256 512 500 1 "new_fb_fewertimesteps"
 
 
+env=ant_u_maze
+# submit_job $env 1 30000000 512 1024 50 1 "rebuttal"
+
+env=ant_angvel
+submit_job $env 1 120000000 256 512 50 1 "rebuttal"
 
 
 # Wait for all background processes to complete

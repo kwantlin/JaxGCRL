@@ -15,6 +15,7 @@ from envs.ant import Ant
 from envs.ant_3d import Ant3D
 from envs.ant_fullobs import AntFullObs
 from envs.ant_posvel import AntPosVel
+from envs.ant_angvel import AntAngVel
 from envs.half_cheetah import Halfcheetah
 from envs.reacher import Reacher
 from envs.pusher import Pusher, PusherReacher
@@ -86,6 +87,7 @@ def create_parser():
     parser.add_argument('--visualization_interval', type=int, default=5, help="Number of evals between each visualization of trajectories")
     parser.add_argument('--saved_ckpt_path', type=str, default=None, help="Path to the saved checkpoint")
     parser.add_argument('--entropy_alpha', type=float, default=1e-6, help="Coefficient for entropy loss in actor")
+    parser.add_argument('--dataset_path', type=str, default=None, help="Path to offline dataset (.npz) for offline training runs")
 
     # GoalGAN parameters
     parser.add_argument('--generator_lr', type=float, default=3e-4, help="Learning rate for generator network")
@@ -121,6 +123,8 @@ def create_env(env_name: str, backend: str = None, **kwargs) -> object:
         env = AntFullObs(backend=backend or "spring", dense_reward=kwargs.get("use_dense_reward", False))
     elif env_name == "ant_posvel":
         env = AntPosVel(backend=backend or "spring", dense_reward=kwargs.get("use_dense_reward", False))
+    elif env_name == "ant_angvel":
+        env = AntAngVel(backend=backend or "spring", dense_reward=kwargs.get("use_dense_reward", False))
     elif env_name == "ant_random_start":
         env = Ant(backend=backend or "spring", randomize_start=True)
     elif env_name == "ant_ball":
@@ -139,7 +143,7 @@ def create_env(env_name: str, backend: str = None, **kwargs) -> object:
             # Possible env_name = {'humanoid_u_maze', 'humanoid_big_maze', 'humanoid_hardest_maze'}
             env = HumanoidMaze(backend=backend or "spring", maze_layout_name=env_name[9:])
         else:
-            # Possible env_name = {'simple_u_maze', 'simple_big_maze', 'simple_hardest_maze'}
+            # Possible env_name = {'simple_u_maze', 'simple_custom_maze', 'simple_big_maze', 'simple_hardest_maze'}
             env = SimpleMaze(backend=backend or "spring", maze_layout_name=env_name[7:])
     elif env_name == "cheetah":
         env = Halfcheetah()
@@ -217,7 +221,7 @@ def get_env_config(args: argparse.Namespace):
         contain the word 'maze'.
     """
     legal_envs = ["reacher", "cheetah", "pusher_easy", "pusher_hard", "pusher_reacher", "pusher2",
-                  "ant", "ant_3d", "ant_fullobs", "ant_posvel", "ant_push", "ant_ball", "humanoid", "arm_reach", "arm_grasp",
+                  "ant", "ant_3d", "ant_fullobs", "ant_posvel", "ant_angvel", "ant_push", "ant_ball", "humanoid", "arm_reach", "arm_grasp",
                   "arm_push_easy", "arm_push_hard", "arm_binpick_easy", "arm_binpick_hard"]
     if args.env_name not in legal_envs and "maze" not in args.env_name:
         raise ValueError(f"Unknown environment: {args.env_name}")

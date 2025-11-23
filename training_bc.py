@@ -36,8 +36,8 @@ def main(args):
     config = get_env_config(args)
 
 
-    os.makedirs('/scratch/gpfs/kw2960/JaxGCRL/runs', exist_ok=True)
-    run_dir = '/scratch/gpfs/kw2960/JaxGCRL/runs/run_{name}_s_{seed}'.format(name=args.exp_name, seed=args.seed)
+    os.makedirs('/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs', exist_ok=True)
+    run_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_{name}_s_{seed}'.format(name=args.exp_name, seed=args.seed)
     ckpt_dir = run_dir + '/ckpt'
     os.makedirs(run_dir, exist_ok=True)
     os.makedirs(ckpt_dir, exist_ok=True)
