@@ -34,7 +34,7 @@ plt.rcParams.update({
 })
 
 # Global, consistent color map for method types across all figures
-METHOD_TYPE_ORDER = ['GCBC', 'NN', 'FB', 'CRL', 'CIRL', 'CRL + Oracle', 'HILP', 'PSM']
+METHOD_TYPE_ORDER = ['GCBC', 'NN', 'FB', 'CRL', 'CIRL', 'CRL + Oracle', 'HILP']
 METHOD_TYPE_COLOR = {t: PALETTE_COLORS[i % len(PALETTE_COLORS)] for i, t in enumerate(METHOD_TYPE_ORDER)}
 
 # Swap colors for NN and CIRL as requested
@@ -49,6 +49,8 @@ try:
 except Exception:
     # Fallback to a non-yellow Set2 color if palette shorter
     METHOD_TYPE_COLOR['CRL + Oracle'] = '#e5c494'
+# Ensure HILP has a distinct color from CRL + Oracle
+METHOD_TYPE_COLOR['HILP'] = '#9467bd'
 
 # Aliases to ensure semantically equivalent labels share the same color
 METHOD_TYPE_ALIASES = {
@@ -392,7 +394,6 @@ pretrain_colors = {
     'CRL': get_color_for_type('CRL'),
     'CIRL': get_color_for_type('CIRL'),
     'HILP': get_color_for_type('HILP'),
-    'PSM': get_color_for_type('PSM'),
 }
 
 ant_pre_plot = ant_pretrain_data.copy().assign(Environment='Ant')
@@ -400,13 +401,13 @@ reacher_pre_plot = reacher_pretrain_data.copy().assign(Environment='Reacher')
 pusher_pre_plot = pusher_pretrain_data.copy().assign(Environment='Pusher')
 pre_combined_plot = pd.concat([ant_pre_plot, reacher_pre_plot, pusher_pre_plot], ignore_index=True)
 
-# Remove GCBC from the plot as requested
-pre_combined_plot = pre_combined_plot[pre_combined_plot['Method Type'] != 'GCBC']
+# Remove GCBC and PSM from the plot as requested
+pre_combined_plot = pre_combined_plot[~pre_combined_plot['Method Type'].isin(['GCBC', 'PSM'])]
 
 environments = ['Reacher', 'Pusher', 'Ant']
 method_to_type = pre_combined_plot.dropna(subset=['Method']).drop_duplicates('Method').set_index('Method')['Method Type'].to_dict()
 # Order methods by desired Method Type order
-type_order = ['GCBC', 'NN', 'FB', 'HILP', 'PSM', 'CRL', 'CIRL']
+type_order = ['GCBC', 'NN', 'FB', 'HILP', 'CRL', 'CIRL']
 all_methods = pre_combined_plot['Method'].unique().tolist()
 def _method_sort_key(m):
     t = method_to_type.get(m, '')
@@ -469,7 +470,7 @@ ax.set_ylim(0, ymax)
 from matplotlib.patches import Patch
 type_to_color = {t: get_color_for_type(t) for t in set(method_to_type.values())}
 # Desired legend order: two columns x three rows
-desired_order = ['NN', 'FB', 'FB (Offline)', 'HILP', 'PSM', 'CIRL']
+desired_order = ['NN', 'FB', 'FB (Offline)', 'HILP', 'CIRL']
 # Determine if FB (Offline) is present in the data
 _has_fb_offline = any(isinstance(m, str) and 'FB (Offline' in m for m in pre_combined_plot['Method'].unique())
 # Build handles in the desired order, skipping entries not present in the data
@@ -686,6 +687,9 @@ print(f"CRL Oracle vs CRL GoalKDE combined data saved as '{output_dir}/crl_oracl
 
 plt.show()
 
+
+
+
 # ============================================================================
 # CRL + GoalKDE Error Analysis Combined Plot
 # ============================================================================
@@ -712,7 +716,7 @@ reacher_err_plot = reacher_error_data.copy().assign(Environment='Reacher')
 pusher_err_plot = pusher_error_data.copy().assign(Environment='Pusher')
 err_combined_plot = pd.concat([ant_err_plot, reacher_err_plot, pusher_err_plot], ignore_index=True)
 
-environments = ['Ant', 'Reacher', 'Pusher']
+environments = ['Reacher', 'Pusher', 'Ant']
 all_methods = err_combined_plot['Method'].unique().tolist()
 method_to_type = err_combined_plot.dropna(subset=['Method']).drop_duplicates('Method').set_index('Method')['Method Type'].to_dict()
 
@@ -785,7 +789,7 @@ legend_handles = [
     Patch(facecolor=error_colors['CRL + CIRL'], edgecolor='white', linewidth=2.0, hatch='o', alpha=0.7, label='Last State'),
     Patch(facecolor=error_colors['CRL + CIRL'], edgecolor='none', linewidth=1.0, label='CIRL')
 ]
-ax.legend(handles=legend_handles, loc='upper left', fontsize=34, title=None)
+ax.legend(handles=legend_handles, loc='upper right', fontsize=34, title=None)
 
 plt.tight_layout()
 
@@ -821,5 +825,154 @@ error_combined_data = pd.concat([
 ], ignore_index=True)
 error_combined_data.to_csv(f'{output_dir}/crl_goalkde_error_analysis_combined_data.csv', index=False)
 print(f"CRL + GoalKDE error analysis combined data saved as '{output_dir}/crl_goalkde_error_analysis_combined_data.csv'")
+
+plt.show()
+
+
+# ============================================================================
+# CRL Oracle vs CRL GoalKDE Combined Plot on Simple Mazes
+# ============================================================================
+try:
+    plt.rcParams['text.usetex'] = False
+except Exception:
+    pass
+# Read the data for each environment
+u_maze_oracle_data = pd.read_csv('results_simple_u_maze/crl_oracle_vs_crl_goalkde_simple_u_maze.csv')
+big_maze_oracle_data = pd.read_csv('results_simple_big_maze/crl_oracle_vs_crl_goalkde_simple_big_maze.csv')
+hardest_maze_oracle_data = pd.read_csv('results_simple_hardest_maze/crl_oracle_vs_crl_goalkde_simple_hardest_maze.csv')
+
+# Replace "GoalKDE" with "CIRL" and "CRL" with more descriptive labels in the data and convert to percentages
+for data in [u_maze_oracle_data, big_maze_oracle_data, hardest_maze_oracle_data]:
+    data['Method Type'] = data['Method Type'].replace('GoalKDE', 'CRL + GoalKDE (CIRL)')
+    data['Method Type'] = data['Method Type'].replace('CRL', 'CRL + Oracle')
+    # Convert from proportions (0-1) to percentages (0-100)
+    data['Mean Difference'] = data['Mean Difference'] * 100
+    data['Std Error'] = data['Std Error'] * 100
+
+
+
+# Single-axis combined plot for CRL Oracle vs CRL GoalKDE
+fig, ax = plt.subplots(figsize=(14, 8))
+
+
+oracle_colors = {
+    'CRL + Oracle': get_color_for_type('CRL + Oracle'),
+    'CRL + GoalKDE (CIRL)': get_color_for_type('CIRL')
+}
+
+u_maze_oracle_plot = u_maze_oracle_data.copy().assign(Environment='U-Maze')
+big_maze_oracle_plot = big_maze_oracle_data.copy().assign(Environment='Big Maze')
+hardest_maze_oracle_plot = hardest_maze_oracle_data.copy().assign(Environment='Hardest Maze')
+oracle_combined_plot_ax = pd.concat([u_maze_oracle_plot, big_maze_oracle_plot, hardest_maze_oracle_plot], ignore_index=True)
+
+environments = ['U-Maze', 'Big Maze', 'Hardest Maze']
+all_methods = oracle_combined_plot_ax['Method'].unique().tolist()
+method_to_type = oracle_combined_plot_ax.dropna(subset=['Method']).drop_duplicates('Method').set_index('Method')['Method Type'].to_dict()
+def _is_cirl_type(t):
+    return (t == 'CIRL') or (isinstance(t, str) and 'CIRL' in t)
+methods = sorted(all_methods, key=lambda m: (1 if _is_cirl_type(method_to_type.get(m, '')) else 0, str(m)))
+method_palette = {m: oracle_colors.get(method_to_type.get(m, ''), '#888888') for m in methods}
+
+env_positions = np.arange(len(environments))
+max_methods_per_env = max((oracle_combined_plot_ax[oracle_combined_plot_ax['Environment'] == env]['Method'].nunique() for env in environments))
+group_width = 0.8
+bar_width = group_width / max_methods_per_env if max_methods_per_env > 0 else 0.4
+
+for i, env in enumerate(environments):
+    env_df = oracle_combined_plot_ax[oracle_combined_plot_ax['Environment'] == env]
+    env_methods = [m for m in methods if m in env_df['Method'].values]
+    num_env_methods = len(env_methods)
+    if num_env_methods == 0:
+        continue
+    offsets = (np.arange(num_env_methods) - (num_env_methods - 1) / 2.0) * bar_width
+    for offset, m in zip(offsets, env_methods):
+        row = env_df[env_df['Method'] == m].iloc[0]
+        height = row['Mean Difference']
+        err = row['Std Error']
+        xpos = env_positions[i] + offset
+        ax.bar(xpos, height, width=bar_width * 0.9, color=method_palette[m], edgecolor='none', linewidth=0)
+        ax.errorbar(xpos, height, yerr=err, fmt='none', ecolor='black', capsize=5, linewidth=1.0)
+
+ax.set_xticks(env_positions)
+ax.set_xticklabels(environments, fontsize=38, rotation=0)
+ax.set_xlabel('')
+
+from matplotlib.ticker import FixedLocator, AutoMinorLocator
+ax.yaxis.set_major_locator(FixedLocator([0, 50, 100]))
+ax.yaxis.set_minor_locator(AutoMinorLocator(5))
+ax.set_ylabel('Imitation Score (%)', fontsize=42)
+ax.tick_params(axis='y', labelsize=38)
+ax.grid(axis='y', which='major', linestyle='--', alpha=0.7)
+ax.grid(axis='y', which='minor', linestyle=':', alpha=0.3)
+
+# Y limits with headroom for error bars
+if not oracle_combined_plot_ax.empty:
+    top_val = float(np.nanmax(oracle_combined_plot_ax['Mean Difference'] + oracle_combined_plot_ax['Std Error']))
+else:
+    top_val = 100.0
+pad = 0.05 * max(1.0, top_val)
+ymax = max(100.0, top_val + pad)
+ymax = float(int(np.ceil(ymax / 10.0)) * 10)
+ax.set_ylim(0, ymax)
+
+from matplotlib.patches import Patch
+type_to_color = {}
+for m, t in method_to_type.items():
+    if t in oracle_colors and t not in type_to_color:
+        type_to_color[t] = oracle_colors[t]
+ordered_types = sorted(type_to_color.keys(), key=lambda t: (1 if _is_cirl_type(t) else 0, str(t)))
+legend_handles = [Patch(facecolor=type_to_color[t], edgecolor='none', label=t) for t in ordered_types]
+if legend_handles:
+    existing_legend = ax.get_legend()
+    if existing_legend is not None:
+        existing_legend.remove()
+    ax.legend(
+        handles=legend_handles,
+        loc='upper right',
+        bbox_to_anchor=(0.99, 0.995),
+        bbox_transform=ax.transAxes,
+        fontsize=38,
+        title=None,
+        borderaxespad=0.0,
+        frameon=False
+    )
+
+plt.tight_layout()
+
+# Save the figure
+plt.savefig(f'{output_dir}/crl_oracle_vs_crl_goalkde_simple_mazes_combined.png', dpi=300, bbox_inches='tight')
+print(f"CRL Oracle vs CRL GoalKDE combined figure saved as '{output_dir}/crl_oracle_vs_crl_goalkde_simple_mazes_combined.png'")
+
+# Also save as PDF for publication quality
+plt.savefig(f'{output_dir}/crl_oracle_vs_crl_goalkde_simple_mazes_combined.pdf', bbox_inches='tight')
+print(f"CRL Oracle vs CRL GoalKDE combined figure saved as '{output_dir}/crl_oracle_vs_crl_goalkde_simple_mazes_combined.pdf'")
+
+# Create and save summary table for CRL Oracle vs CRL GoalKDE
+oracle_summary_data = []
+for env_name, data in [('U-Maze', u_maze_oracle_data), ('Big Maze', big_maze_oracle_data), ('Hardest Maze', hardest_maze_oracle_data)]:
+    for _, row in data.iterrows():
+        method_short = 'CRL + Oracle' if 'Oracle' in row['Method'] else 'CRL + GoalKDE (CIRL)'
+        oracle_summary_data.append({
+            'Environment': env_name,
+            'Method': method_short,
+            'Imitation Score (%)': f"{row['Mean Difference']:.1f} ± {row['Std Error']:.1f}"
+        })
+
+# Create DataFrame and pivot for better formatting
+oracle_summary_df = pd.DataFrame(oracle_summary_data)
+oracle_pivot_df = oracle_summary_df.pivot(index='Environment', columns='Method', values='Imitation Score (%)')
+
+# Save the summary table
+oracle_pivot_df.to_csv(f'{output_dir}/crl_oracle_vs_crl_goalkde_simple_mazes_summary_table.csv')
+print(f"CRL Oracle vs CRL GoalKDE summary table saved as '{output_dir}/crl_oracle_vs_crl_goalkde_simple_mazes_summary_table.csv'")
+
+# Also save the raw combined data
+oracle_combined_data = pd.concat([
+    u_maze_oracle_data.assign(Environment='U-Maze'),
+    big_maze_oracle_data.assign(Environment='Big Maze'),
+    hardest_maze_oracle_data.assign(Environment='Hardest Maze')
+], ignore_index=True)
+oracle_combined_data.to_csv(f'{output_dir}/crl_oracle_vs_crl_goalkde_simple_mazes_combined_data.csv', index=False)
+print(f"CRL Oracle vs CRL GoalKDE combined data saved as '{output_dir}/crl_oracle_vs_crl_goalkde_simple_mazes_combined_data.csv'")
 
 plt.show()
