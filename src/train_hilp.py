@@ -1,6 +1,6 @@
 import functools
 import time
-from typing import Callable, Optional, NamedTuple
+from typing import Callable, Optional, NamedTuple, Any
 
 import flax
 import flax.linen as nn
@@ -135,52 +135,62 @@ class TrainingState:
     gradient_steps: jnp.ndarray
     env_steps: jnp.ndarray
     skill_actor_state: TrainState
-    skill_critic_state: TrainState
+    skill_critic1_state: TrainState
+    skill_critic2_state: TrainState
     skill_value_state: TrainState
-    value_state: TrainState
+    value1_state: TrainState
+    value2_state: TrainState
+    # Target params (no optimizer state needed)
+    value1_target_params: Any = None
+    value2_target_params: Any = None
+    skill_critic1_target_params: Any = None
+    skill_critic2_target_params: Any = None
 
-def _init_training_state(key, skill_actor, value, skill_critic, skill_value, state_dim, goal_dim, action_dim, repr_dim, actor_lr, critic_lr, num_local_devices_to_use):
+def _init_training_state(key, skill_actor, value1, value2, skill_critic1, skill_critic2, skill_value, state_dim, goal_dim, action_dim, repr_dim, actor_lr, critic_lr, num_local_devices_to_use):
     """
     Initializes the training state for a forward-backward representation learning model.
     """
-    skill_actor_key, value_key, skill_critic_key, skill_value_key = jax.random.split(key, 4)
+    skill_actor_key, value1_key, value2_key, skill_critic1_key, skill_critic2_key, skill_value_key = jax.random.split(key, 6)
     
     # Actor
     skill_actor_params = skill_actor.init(skill_actor_key, jnp.ones([1, state_dim + repr_dim]))
     skill_actor_state = TrainState.create(apply_fn=skill_actor.apply, params=skill_actor_params, tx=optax.adam(learning_rate=actor_lr))
 
     # Critic and Value
-    skill_critic_params = skill_critic.init(skill_critic_key, jnp.ones([1, state_dim + action_dim + repr_dim]))
+    skill_critic1_params = skill_critic1.init(skill_critic1_key, jnp.ones([1, state_dim + action_dim + repr_dim]))
+    skill_critic2_params = skill_critic2.init(skill_critic2_key, jnp.ones([1, state_dim + action_dim + repr_dim]))
     skill_value_params = skill_value.init(skill_value_key, jnp.ones([1, state_dim + repr_dim]))
     # MetricValueNet requires both observations and goals
-    value_params = value.init(value_key, jnp.ones([1, goal_dim]), jnp.ones([1, goal_dim]))
+    value1_params = value1.init(value1_key, jnp.ones([1, goal_dim]), jnp.ones([1, goal_dim]))
+    value2_params = value2.init(value2_key, jnp.ones([1, goal_dim]), jnp.ones([1, goal_dim]))
     
-    skill_critic_state = TrainState.create(apply_fn=skill_critic.apply, params=skill_critic_params, tx=optax.adam(learning_rate=critic_lr))
+    skill_critic1_state = TrainState.create(apply_fn=skill_critic1.apply, params=skill_critic1_params, tx=optax.adam(learning_rate=critic_lr))
+    skill_critic2_state = TrainState.create(apply_fn=skill_critic2.apply, params=skill_critic2_params, tx=optax.adam(learning_rate=critic_lr))
     skill_value_state = TrainState.create(apply_fn=skill_value.apply, params=skill_value_params, tx=optax.adam(learning_rate=critic_lr))
-    value_state = TrainState.create(apply_fn=value.apply, params=value_params, tx=optax.adam(learning_rate=critic_lr))
+    value1_state = TrainState.create(apply_fn=value1.apply, params=value1_params, tx=optax.adam(learning_rate=critic_lr))
+    value2_state = TrainState.create(apply_fn=value2.apply, params=value2_params, tx=optax.adam(learning_rate=critic_lr))
 
     training_state = TrainingState(
         env_steps=jnp.zeros(()), 
         gradient_steps=jnp.zeros(()), 
         skill_actor_state=skill_actor_state,
-        skill_critic_state=skill_critic_state,
+        skill_critic1_state=skill_critic1_state,
+        skill_critic2_state=skill_critic2_state,
         skill_value_state=skill_value_state,
-        value_state=value_state,
+        value1_state=value1_state,
+        value2_state=value2_state,
+        value1_target_params=value1_params,
+        value2_target_params=value2_params,
+        skill_critic1_target_params=skill_critic1_params,
+        skill_critic2_target_params=skill_critic2_params,
     )
     
     training_state = jax.device_put_replicated(training_state, jax.local_devices()[:num_local_devices_to_use])
     return training_state
 
 
-def value_loss(value_params, value, transitions, state_dim, discount=0.99, expectile=0.9):
-    """Compute the IVL value loss (matching HILP reference).
-    
-    This value loss is similar to the original IQL value loss, but involves additional tricks to stabilize training.
-    For example, when computing the expectile loss, we separate the advantage part (which is used to compute the
-    weight) and the difference part (which is used to compute the loss), where we use the target value function to
-    compute the former and the current value function to compute the latter. This is similar to how double DQN
-    mitigates overestimation bias.
-    """
+def value_head_loss(value_head_params, value_head, value1_target_params, value1_target_head, value2_target_params, value2_target_head, transitions, state_dim, discount=0.99, expectile=0.9):
+    """Per-head value loss using target ensemble for advantages and per-head target for q."""
     # Extract observations, next_observations, value_goals, relabeled_rewards, relabeled_masks
     state_goal_portion = transitions.extras["state_goal_portion"]
     next_state_goal_portion = transitions.extras["next_state_goal_portion"]
@@ -193,13 +203,18 @@ def value_loss(value_params, value, transitions, state_dim, discount=0.99, expec
     # Compute next_v using value network
     print("hilp: next_state_goal_portion shape", next_state_goal_portion.shape)
     print("hilp: value_goals shape", value_goals.shape)
-    next_v_t = value.apply(value_params, next_state_goal_portion, value_goals[:, state_dim:], s_is_phi=False, g_is_phi=True)
+    # Targets for next state
+    next_v1_t = value1_target_head.apply(value1_target_params, next_state_goal_portion, value_goals[:, state_dim:], s_is_phi=False, g_is_phi=False)
+    next_v2_t = value2_target_head.apply(value2_target_params, next_state_goal_portion, value_goals[:, state_dim:], s_is_phi=False, g_is_phi=False)
+    next_v_min = jnp.minimum(next_v1_t, next_v2_t)
     
     # Compute Q using relabeled rewards and masks
-    q = relabeled_rewards + discount * relabeled_masks * next_v_t
+    q = relabeled_rewards + discount * relabeled_masks * next_v_min
     
     # Compute v_t using target value network (for advantage computation)
-    v_t = value.apply(value_params, state_goal_portion, value_goals[:, state_dim:], s_is_phi=False, g_is_phi=True)
+    v1_t = value1_target_head.apply(value1_target_params, state_goal_portion, value_goals[:, state_dim:], s_is_phi=False, g_is_phi=False)
+    v2_t = value2_target_head.apply(value2_target_params, state_goal_portion, value_goals[:, state_dim:], s_is_phi=False, g_is_phi=False)
+    v_t = (v1_t + v2_t) / 2.0
     adv = q - v_t
     
     # Expectile loss: use advantage (from target) as weight, but difference (from current) for loss
@@ -207,21 +222,37 @@ def value_loss(value_params, value, transitions, state_dim, discount=0.99, expec
         weight = jnp.where(adv >= 0, expectile, (1 - expectile))
         return weight * (diff ** 2)
     
-    value_loss_total = expectile_loss(adv, q - v_t, expectile).mean()
+    # Head-specific q target and online v
+    if value_head is value1_target_head:
+        q_head = relabeled_rewards + discount * relabeled_masks * next_v1_t
+    else:
+        q_head = relabeled_rewards + discount * relabeled_masks * next_v2_t
+    v_online = value_head.apply(value_head_params, state_goal_portion, value_goals[:, state_dim:], s_is_phi=False, g_is_phi=False)
+    value_loss_total = expectile_loss(adv, q_head - v_online, expectile).mean()
     
     metrics = {
         'value_loss': value_loss_total,
-        'v_mean': v_t.mean(),
-        'v_max': v_t.max(),
-        'v_min': v_t.min(),
+        'v_mean': v_online.mean(),
+        'v_max': v_online.max(),
+        'v_min': v_online.min(),
     }
     return value_loss_total, metrics
 
-def skill_actor_loss(skill_actor_params, training_state, skill_actor, skill_value, skill_critic, value, parametric_action_distribution, transitions, state_dim, goal_dim, repr_dim, key, alpha=10.0):
-    """Compute the HILP-style actor loss (skill actor with advantage reweighting)."""
+def skill_actor_loss(skill_actor_params, training_state, skill_actor, skill_value, skill_critic1, skill_critic2, value1, parametric_action_distribution, transitions, state_dim, goal_dim, repr_dim, key, alpha=10.0):
+    """Compute the HILP-style actor loss (skill actor with advantage reweighting). Uses z = normalized (phi(g) - phi(s))."""
     observations = transitions.observation[:, :state_dim]
     goals = transitions.observation[:, state_dim:]
-    _, _, skills = jax.lax.stop_gradient(value.apply(training_state.value_state.params, goals, goals, s_is_phi=False, g_is_phi=False, info=True))
+    # Compute direction latents z from current (s, g)
+    # Extract goal-related subset from state; rely on extras produced by flatten_crl_fn when present
+    # Prefer recomputing from extras created by flatten_crl_fn when present
+    if "state_goal_portion" in transitions.extras:
+        state_goal_portion = transitions.extras["state_goal_portion"]
+    else:
+        # Fallback: assume goal portion equals goals shape (last dims), take same indices from state
+        state_goal_portion = observations[:, -goals.shape[-1]:]
+    _, phi_states, phi_goals = value1.apply(training_state.value1_state.params, state_goal_portion, goals, info=True)
+    skills = phi_goals - phi_states
+    skills = skills / (jnp.linalg.norm(skills, axis=-1, keepdims=True) + 1e-8) * jnp.sqrt(repr_dim)
     actions = transitions.action
 
     # Value and critic evaluations conditioned on skills.
@@ -229,11 +260,16 @@ def skill_actor_loss(skill_actor_params, training_state, skill_actor, skill_valu
         training_state.skill_value_state.params,
         jnp.concatenate([observations, skills], axis=-1),
     )
-    q = skill_critic.apply(
-        training_state.skill_critic_state.params,
+    q1 = skill_critic1.apply(
+        training_state.skill_critic1_state.params,
         jnp.concatenate([observations, actions, skills], axis=-1),
     )
-    adv = q - v
+    q2 = skill_critic2.apply(
+        training_state.skill_critic2_state.params,
+        jnp.concatenate([observations, actions, skills], axis=-1),
+    )
+    q = jnp.minimum(q1, q2)
+    adv = q - v  # shapes broadcast; critics output scalar per sample
 
     exp_a = jnp.exp(adv * alpha)
     exp_a = jnp.minimum(exp_a, 100.0)
@@ -254,7 +290,7 @@ def skill_actor_loss(skill_actor_params, training_state, skill_actor, skill_valu
     }
     return actor_loss, metrics
 
-def skill_critic_loss(skill_critic_params, skill_value_params, value_params, skill_critic, skill_value, value, transitions, state_dim, discount=0.99):
+def skill_critic_loss(skill_critic_params, skill_value_params, value_params, skill_critic, skill_value, value1, transitions, state_dim, discount=0.99):
     """Compute the IQL critic loss (matching fb_repr.py logic, using constant discount)."""
     states = transitions.observation[:, :state_dim]
     actions = transitions.action
@@ -263,7 +299,14 @@ def skill_critic_loss(skill_critic_params, skill_value_params, value_params, ski
     rewards = transitions.reward
     masks = transitions.extras.get("mask", jnp.ones_like(rewards))
 
-    _, _, latents = jax.lax.stop_gradient(value.apply(value_params, goals, goals, s_is_phi=False, g_is_phi=False, info=True))
+    # Compute direction latents z from (s, g)
+    if "state_goal_portion" in transitions.extras:
+        state_goal_portion = transitions.extras["state_goal_portion"]
+    else:
+        state_goal_portion = states[:, -goals.shape[-1]:]
+    _, phi_states, phi_goals = value1.apply(value_params, state_goal_portion, goals, info=True)
+    latents = phi_goals - phi_states
+    latents = latents / (jnp.linalg.norm(latents, axis=-1, keepdims=True) + 1e-8) * jnp.sqrt(latents.shape[-1])
     # Compute next_v using value network
     next_v = skill_value.apply(skill_value_params, jnp.concatenate([next_states, latents], axis=-1))
 
@@ -284,7 +327,7 @@ def skill_critic_loss(skill_critic_params, skill_value_params, value_params, ski
     }
     return skill_critic_loss, metrics
 
-def skill_value_loss(skill_value_params, training_state, skill_value, skill_critic, value, transitions, state_dim, expectile=0.9):
+def skill_value_loss(skill_value_params, training_state, skill_value, skill_critic1, skill_critic2, value1, transitions, state_dim, expectile=0.9):
     """Compute the IQL value loss (matching fb_repr.py logic)."""
     # Unpack states, actions, goals
     states = transitions.observation[:, :state_dim]
@@ -294,9 +337,18 @@ def skill_value_loss(skill_value_params, training_state, skill_value, skill_crit
     print("hilp: goals shape", goals.shape)
     print("hilp: actions shape", actions.shape)
 
-    _, _, latents = jax.lax.stop_gradient(value.apply(training_state.value_state.params, goals, goals, s_is_phi=False, g_is_phi=False, info=True))
-    # Compute Q-values from target skill critic
-    q= skill_critic.apply(training_state.skill_critic_state.params, jnp.concatenate([states, actions, latents], axis=-1))
+    # Compute direction latents z from (s, g)
+    if "state_goal_portion" in transitions.extras:
+        state_goal_portion = transitions.extras["state_goal_portion"]
+    else:
+        state_goal_portion = states[:, -goals.shape[-1]:]
+    _, phi_states, phi_goals = value1.apply(training_state.value1_state.params, state_goal_portion, goals, info=True)
+    latents = phi_goals - phi_states
+    latents = latents / (jnp.linalg.norm(latents, axis=-1, keepdims=True) + 1e-8) * jnp.sqrt(latents.shape[-1])
+    # Compute Q-values from target skill critics (min)
+    q1 = skill_critic1.apply(training_state.skill_critic1_target_params, jnp.concatenate([states, actions, latents], axis=-1))
+    q2 = skill_critic2.apply(training_state.skill_critic2_target_params, jnp.concatenate([states, actions, latents], axis=-1))
+    q = jnp.minimum(q1, q2)
 
     # Compute value estimates
     v = skill_value.apply(skill_value_params, jnp.concatenate([states, latents], axis=-1))
@@ -315,7 +367,7 @@ def skill_value_loss(skill_value_params, training_state, skill_value, skill_crit
     return skill_value_loss, metrics
 
 
-def actor_step_latent(env, env_state, skill_actor, parametric_action_distribution, skill_actor_params, explore_goal, key, extra_fields=()):
+def actor_step_latent(env, env_state, skill_actor, parametric_action_distribution, skill_actor_params, latents, key, extra_fields=()):
     """
     Executes one step of an actor in the environment by selecting an action based on the
     policy, stepping the environment, and returning the updated state and transition data.
@@ -344,7 +396,7 @@ def actor_step_latent(env, env_state, skill_actor, parametric_action_distributio
         encompassing observation, action, reward, discount, and extra information.
 
     """
-    policy_obs = jnp.concatenate([env_state.obs[:, :env.state_dim], explore_goal], axis=1)
+    policy_obs = jnp.concatenate([env_state.obs[:, :env.state_dim], latents], axis=1)
     print("hilp: policy_obs shape", policy_obs.shape)
     action_mean_and_SD = skill_actor.apply(skill_actor_params, policy_obs)
     action = parametric_action_distribution.sample(action_mean_and_SD, key)
@@ -352,7 +404,7 @@ def actor_step_latent(env, env_state, skill_actor, parametric_action_distributio
     state_extras = {x: nstate.info[x] for x in extra_fields}
     print("fb: policy_obs shape", policy_obs.shape)
     return nstate, Transition(
-        observation=policy_obs,
+        observation=env_state.obs,  # keep raw observation [state, goal]
         action=action,
         reward=nstate.reward,
         discount=1 - nstate.done,
@@ -405,6 +457,7 @@ def train(
     n_hidden: int = 2,
     repr_dim: int = 64,
     tau: float = 0.005,
+    actor_freq: int = 1,
 ):
     """
     Trains a forward-backward representation learning agent.
@@ -457,7 +510,7 @@ def train(
     goal_dim = obs_size - state_dim
     goal_indices = env.goal_indices
     
-    dummy_obs = jnp.zeros((state_dim + repr_dim,))
+    dummy_obs = jnp.zeros((state_dim + goal_dim,))
     dummy_action = jnp.zeros((action_size,))
     dummy_extras = {"state_extras": {"truncation": 0.0, "traj_id": 0.0}, "policy_extras": {}}
     dummy_transition = Transition(observation=dummy_obs, action=dummy_action, reward=0.0, discount=0.0, extras=dummy_extras)
@@ -475,36 +528,58 @@ def train(
     block_size = 2
     num_blocks = max(1, n_hidden // block_size)
     skill_actor = Net(action_size * 2, h_dim, num_blocks, block_size, use_ln)
-    skill_critic = Net(1, h_dim, num_blocks, block_size, use_ln)  # Outputs a single Q-value
+    skill_critic1 = Net(1, h_dim, num_blocks, block_size, use_ln)  # Critic head 1
+    skill_critic2 = Net(1, h_dim, num_blocks, block_size, use_ln)  # Critic head 2
     skill_value = Net(1, h_dim, num_blocks, block_size, use_ln)   # Outputs a single V-value
-    value = MetricValueNet(repr_dim, h_dim, num_blocks, block_size, use_ln)  # Outputs a single value, but takes in repr_dim as output size of phi
+    # Two value heads (each computes v and phi internally)
+    value1 = MetricValueNet(repr_dim, h_dim, num_blocks, block_size, use_ln)
+    value2 = MetricValueNet(repr_dim, h_dim, num_blocks, block_size, use_ln)
     parametric_action_distribution = distribution.NormalTanhDistribution(event_size=action_size)
 
     # Initialize training state
     global_key, local_key = jax.random.split(rng)
     local_key = jax.random.fold_in(local_key, process_id)    
-    training_state = _init_training_state(global_key, skill_actor, value, skill_critic, skill_value, state_dim, len(env.goal_indices), env.action_size, repr_dim, policy_lr, repr_lr, num_local_devices_to_use)
+    training_state = _init_training_state(global_key, skill_actor, value1, value2, skill_critic1, skill_critic2, skill_value, state_dim, len(env.goal_indices), env.action_size, repr_dim, policy_lr, repr_lr, num_local_devices_to_use)
     del global_key
     
     # Update functions
     
     skill_actor_update = gradients.gradient_update_fn(skill_actor_loss, training_state.skill_actor_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    skill_critic_update = gradients.gradient_update_fn(skill_critic_loss, training_state.skill_critic_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+    skill_critic1_update = gradients.gradient_update_fn(skill_critic_loss, training_state.skill_critic1_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+    skill_critic2_update = gradients.gradient_update_fn(skill_critic_loss, training_state.skill_critic2_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     skill_value_update = gradients.gradient_update_fn(skill_value_loss, training_state.skill_value_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
-    value_update = gradients.gradient_update_fn(value_loss, training_state.value_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+    value1_update = gradients.gradient_update_fn(value_head_loss, training_state.value1_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
+    value2_update = gradients.gradient_update_fn(value_head_loss, training_state.value2_state.tx, pmap_axis_name=_PMAP_AXIS_NAME, has_aux=True)
     
+    def _soft_update(target_params, online_params, tau):
+        return jax.tree_util.tree_map(lambda tp, p: tau * p + (1.0 - tau) * tp, target_params, online_params)
+
     def update_step(carry, transitions):
         training_state, key = carry
         key, key_fb, key_actor, key_critic, key_value = jax.random.split(key, 5)
         
-        # Update value function
-        (value_loss, value_metrics), value_params, value_optimizer_state = value_update(
-            training_state.value_state.params,
-            value,
+        # Update value heads with target ensemble
+        (value1_loss_val, value1_metrics), value1_params, value1_optimizer_state = value1_update(
+            training_state.value1_state.params,
+            value1,  # online head
+            training_state.value1_target_params, value1,  # target head 1
+            training_state.value2_target_params, value2,  # target head 2
             transitions,
             env.state_dim,
+            0.99,
             0.9,
-            optimizer_state=training_state.value_state.opt_state
+            optimizer_state=training_state.value1_state.opt_state
+        )
+        (value2_loss_val, value2_metrics), value2_params, value2_optimizer_state = value2_update(
+            training_state.value2_state.params,
+            value2,  # online head
+            training_state.value1_target_params, value1,  # target head 1
+            training_state.value2_target_params, value2,  # target head 2
+            transitions,
+            env.state_dim,
+            0.99,
+            0.9,
+            optimizer_state=training_state.value2_state.opt_state
         )
         
         # Update skill value function
@@ -512,36 +587,51 @@ def train(
             training_state.skill_value_state.params,
             training_state,
             skill_value,
-            skill_critic,
-            value,
+            skill_critic1,
+            skill_critic2,
+            value1,
             transitions,
             env.state_dim,
             0.9,
             optimizer_state=training_state.skill_value_state.opt_state
         )
         
-        # Update skill critic
-        (skill_critic_loss, skill_critic_metrics), skill_critic_params, skill_critic_optimizer_state = skill_critic_update(
-            training_state.skill_critic_state.params,
-            training_state.skill_value_state.params,  # Pass current value params for target computation
-            training_state.value_state.params,
-            skill_critic,
+        # Update skill critics independently
+        (skill_critic1_loss, skill_critic1_metrics), skill_critic1_params, skill_critic1_optimizer_state = skill_critic1_update(
+            training_state.skill_critic1_state.params,
+            training_state.skill_value_state.params,
+            training_state.value1_state.params,
+            skill_critic1,
             skill_value,
-            value,
+            value1,
             transitions,
             env.state_dim,
             0.99,
-            optimizer_state=training_state.skill_critic_state.opt_state
+            optimizer_state=training_state.skill_critic1_state.opt_state
+        )
+        (skill_critic2_loss, skill_critic2_metrics), skill_critic2_params, skill_critic2_optimizer_state = skill_critic2_update(
+            training_state.skill_critic2_state.params,
+            training_state.skill_value_state.params,
+            training_state.value1_state.params,
+            skill_critic2,
+            skill_value,
+            value1,
+            transitions,
+            env.state_dim,
+            0.99,
+            optimizer_state=training_state.skill_critic2_state.opt_state
         )
         
-        # Update    actor
-        (skill_actor_loss, skill_actor_metrics), skill_actor_params, skill_actor_optimizer_state = skill_actor_update(
+        # Update actor (gate by actor_freq)
+        next_step = training_state.gradient_steps + 1
+        (computed_actor_loss, skill_actor_metrics), new_actor_params, new_actor_opt_state = skill_actor_update(
             training_state.skill_actor_state.params,
             training_state,
             skill_actor,
             skill_value,
-            skill_critic,
-            value,
+            skill_critic1,
+            skill_critic2,
+            value1,
             parametric_action_distribution,
             transitions,
             env.state_dim,
@@ -550,26 +640,49 @@ def train(
             key_actor,
             optimizer_state=training_state.skill_actor_state.opt_state
         )
+        do_actor_update = (next_step % actor_freq) == 0
+        do_actor_update = jnp.asarray(do_actor_update)
+        tree_select = lambda a, b: jax.tree_util.tree_map(lambda x, y: jax.lax.select(do_actor_update, x, y), a, b)
+        skill_actor_params = tree_select(new_actor_params, training_state.skill_actor_state.params)
+        skill_actor_optimizer_state = tree_select(new_actor_opt_state, training_state.skill_actor_state.opt_state)
+        skill_actor_loss = jax.lax.select(do_actor_update, computed_actor_loss, jnp.asarray(0.0))
+        skill_actor_metrics = {**skill_actor_metrics, "actor_update_applied": jnp.asarray(do_actor_update, dtype=jnp.float32)}
     
 
         metrics = {
             'skill_actor_loss': skill_actor_loss,
-            'skill_critic_loss': skill_critic_loss,
+            'skill_critic1_loss': skill_critic1_loss,
+            'skill_critic2_loss': skill_critic2_loss,
             'skill_value_loss': skill_value_loss,
-            'value_loss': value_loss,
+            'value1_loss': value1_loss_val,
+            'value2_loss': value2_loss_val,
         }
         metrics.update(skill_actor_metrics)
-        metrics.update(skill_critic_metrics)
-        metrics.update(value_metrics)
+        metrics.update({'critic1/'+k: v for k, v in skill_critic1_metrics.items()})
+        metrics.update({'critic2/'+k: v for k, v in skill_critic2_metrics.items()})
+        metrics.update({'value1/'+k: v for k, v in value1_metrics.items()})
+        metrics.update({'value2/'+k: v for k, v in value2_metrics.items()})
         metrics.update(skill_value_metrics)
+
+        # Soft-update targets
+        new_value1_target_params = _soft_update(training_state.value1_target_params, value1_params, tau)
+        new_value2_target_params = _soft_update(training_state.value2_target_params, value2_params, tau)
+        new_skill_critic1_target_params = _soft_update(training_state.skill_critic1_target_params, skill_critic1_params, tau)
+        new_skill_critic2_target_params = _soft_update(training_state.skill_critic2_target_params, skill_critic2_params, tau)
 
         new_training_state = TrainingState(
             env_steps=training_state.env_steps,
             gradient_steps=training_state.gradient_steps + 1,
             skill_actor_state=training_state.skill_actor_state.replace(params=skill_actor_params, opt_state=skill_actor_optimizer_state),
-            value_state=training_state.value_state.replace(params=value_params, opt_state=value_optimizer_state),
-            skill_critic_state=training_state.skill_critic_state.replace(params=skill_critic_params, opt_state=skill_critic_optimizer_state),
+            value1_state=training_state.value1_state.replace(params=value1_params, opt_state=value1_optimizer_state),
+            value2_state=training_state.value2_state.replace(params=value2_params, opt_state=value2_optimizer_state),
+            skill_critic1_state=training_state.skill_critic1_state.replace(params=skill_critic1_params, opt_state=skill_critic1_optimizer_state),
+            skill_critic2_state=training_state.skill_critic2_state.replace(params=skill_critic2_params, opt_state=skill_critic2_optimizer_state),
             skill_value_state=training_state.skill_value_state.replace(params=skill_value_params, opt_state=skill_value_optimizer_state),
+            value1_target_params=new_value1_target_params,
+            value2_target_params=new_value2_target_params,
+            skill_critic1_target_params=new_skill_critic1_target_params,
+            skill_critic2_target_params=new_skill_critic2_target_params,
         )
         
         return (new_training_state, key), metrics
@@ -579,24 +692,19 @@ def train(
         def f(carry, unused_t):
             env_state, current_key = carry
             current_key, next_key = jax.random.split(current_key)
-            env_state, transition = actor_step_latent(env, env_state, skill_actor, parametric_action_distribution, skill_actor_params, latents, current_key, extra_fields=("truncation", "traj_id"))
+            # Compute per-step latents from current observation
+            states = env_state.obs[:, :state_dim]
+            goals = env_state.obs[:, state_dim:]
+            states_goal_portion = states[:, goal_indices]
+            _, phi_states, phi_goals = value1.apply(value_params, states_goal_portion, goals, info=True)
+            step_latents = phi_goals - phi_states
+            step_latents = step_latents / (jnp.linalg.norm(step_latents, axis=-1, keepdims=True) + 1e-8) * jnp.sqrt(repr_dim)
+            step_latents = jax.lax.stop_gradient(step_latents)
+            env_state, transition = actor_step_latent(env, env_state, skill_actor, parametric_action_distribution, skill_actor_params, step_latents, current_key, extra_fields=("truncation", "traj_id"))
             return (env_state, next_key), transition
         
        # Split the key to create a batch of keys matching env_state.obs.shape[0]
         print("fb: env_state.obs.shape", env_state.obs.shape)
-        batch_size = env_state.obs.shape[0]
-        subkey, sampling_key = jax.random.split(key)
-        print("fb: goal shape", env_state.obs[:, state_dim:].shape)
-        states = env_state.obs[:, :state_dim]
-        goals = env_state.obs[:, state_dim:]
-        # Extract goal coordinates from state (goal_indices are relative to state vector)
-        states_goal_portion = states[:, goal_indices]
-        _, phi_states, phi_goals = value.apply(value_params, states_goal_portion, goals, info=True)
-        goal_latents = phi_goals - phi_states
-        goal_latents_norm = jnp.linalg.norm(goal_latents, axis=-1, keepdims=True) + 1e-8
-        latents = goal_latents / goal_latents_norm * jnp.sqrt(repr_dim)
-        latents = jax.lax.stop_gradient(latents)
-        print("hilp: latents shape", latents.shape)
         (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=episode_length)
         buffer_state = replay_buffer.insert(buffer_state, data)
         return env_state, buffer_state
@@ -604,7 +712,7 @@ def train(
     def training_step(training_state, env_state, buffer_state, key):
         # Collect experience
         experience_key, training_key = jax.random.split(key, 2)
-        env_state, buffer_state = get_experience(training_state.skill_actor_state.params, training_state.value_state.params, env_state, buffer_state, experience_key)
+        env_state, buffer_state = get_experience(training_state.skill_actor_state.params, training_state.value1_state.params, env_state, buffer_state, experience_key)
         training_state = training_state.replace(env_steps=training_state.env_steps + env_steps_per_actor_step)
         
         # Train
@@ -615,7 +723,7 @@ def train(
         def f(carry, unused):
             training_state, env_state, buffer_state, key = carry
             key, new_key = jax.random.split(key)
-            env_state, buffer_state = get_experience(training_state.skill_actor_state.params, training_state.value_state.params, env_state, buffer_state, key)
+            env_state, buffer_state = get_experience(training_state.skill_actor_state.params, training_state.value1_state.params, env_state, buffer_state, key)
             new_training_state = training_state.replace(env_steps=training_state.env_steps + env_steps_per_actor_step)
             return (new_training_state, env_state, buffer_state, new_key), ()
         return jax.lax.scan(f, (training_state, env_state, buffer_state, key), (), length=num_prefill_actor_steps)[0]
@@ -698,7 +806,7 @@ def train(
         make_policy,
         skill_actor,
         parametric_action_distribution,
-        value,
+        value1,
         goal_indices=env.goal_indices,
         state_dim=env.state_dim,
         repr_dim=repr_dim,
@@ -716,7 +824,7 @@ def train(
     metrics = {}
     if process_id == 0 and num_evals > 1:
         # We pass in the actor and backward_repr params to the evaluator
-        eval_params = _unpmap((training_state.skill_actor_state.params, training_state.value_state.params))
+        eval_params = _unpmap((training_state.skill_actor_state.params, training_state.value1_state.params))
         metrics = evaluator.run_evaluation(eval_params, training_metrics={})
         logging.info(metrics)
         progress_fn(0, metrics, make_policy, eval_params, unwrapped_env)
@@ -739,15 +847,17 @@ def train(
                 params = _unpmap((
                     training_state.skill_actor_state.params,
                     training_state.skill_value_state.params,
-                    training_state.value_state.params,
-                    training_state.skill_critic_state.params,
+                    training_state.value1_state.params,
+                    training_state.value2_state.params,
+                    training_state.skill_critic1_state.params,
+                    training_state.skill_critic2_state.params,
                 ))
                 path = f"{checkpoint_logdir}/step_{current_step}.pkl"
                 # Log all params
                 logging.info(f"Saving checkpoint at {path} with actor, fb_repr, and target params.")
                 brax.io.model.save_params(path, params)
             ## Run evals
-            eval_params = _unpmap((training_state.skill_actor_state.params, training_state.value_state.params))
+            eval_params = _unpmap((training_state.skill_actor_state.params, training_state.value1_state.params))
             metrics = evaluator.run_evaluation(eval_params, training_metrics)
             logging.info(metrics)
             progress_fn(current_step, metrics, make_policy, eval_params, unwrapped_env)
@@ -763,8 +873,10 @@ def train(
     params = _unpmap((
         training_state.skill_actor_state.params,
         training_state.skill_value_state.params,
-        training_state.value_state.params,
-        training_state.skill_critic_state.params,
+        training_state.value1_state.params,
+        training_state.value2_state.params,
+        training_state.skill_critic1_state.params,
+        training_state.skill_critic2_state.params,
     ))
     # Log all params at the end as well
     logging.info("Returning actor, fb_repr, and target params.")
