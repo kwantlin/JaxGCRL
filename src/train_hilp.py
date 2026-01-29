@@ -110,8 +110,6 @@ def make_policy(skill_actor, parametric_action_distribution, value, params, stat
         goal = obs[:, state_dim:]
         # Extract goal coordinates from state (goal_indices are relative to state vector)
         state_goal_portion = state[:, goal_indices]
-        print("hilp: state_goal_portion shape", state_goal_portion.shape)
-        print("hilp: goal shape", goal.shape)
         # Compute goal latent using phi representation: z* = (phi(g) - phi(s)) / ||phi(g) - phi(s)|| * sqrt(repr_dim)
         _, phi_states, phi_goals = value.apply(value_params, state_goal_portion, goal, info=True)
         goal_latents = phi_goals - phi_states
@@ -124,7 +122,6 @@ def make_policy(skill_actor, parametric_action_distribution, value, params, stat
             action = parametric_action_distribution.mode(logits)
         else:
             action = parametric_action_distribution.sample(logits, key_sample)
-            print("ACTION SHAPE", action.shape)
         extras = {}
         return action, extras
     return policy
@@ -201,8 +198,6 @@ def value_head_loss(value_head_params, value_head, value1_target_params, value1_
     relabeled_masks = transitions.extras["relabeled_mask"]
     
     # Compute next_v using value network
-    print("hilp: next_state_goal_portion shape", next_state_goal_portion.shape)
-    print("hilp: value_goals shape", value_goals.shape)
     # Targets for next state
     next_v1_t = value1_target_head.apply(value1_target_params, next_state_goal_portion, value_goals[:, state_dim:], s_is_phi=False, g_is_phi=False)
     next_v2_t = value2_target_head.apply(value2_target_params, next_state_goal_portion, value_goals[:, state_dim:], s_is_phi=False, g_is_phi=False)
@@ -239,20 +234,14 @@ def value_head_loss(value_head_params, value_head, value1_target_params, value1_
     return value_loss_total, metrics
 
 def skill_actor_loss(skill_actor_params, training_state, skill_actor, skill_value, skill_critic1, skill_critic2, value1, parametric_action_distribution, transitions, state_dim, goal_dim, repr_dim, key, alpha=10.0):
-    """Compute the HILP-style actor loss (skill actor with advantage reweighting). Uses z = normalized (phi(g) - phi(s))."""
+    """Compute the HILP-style actor loss (AWR-style), using sampled random skills z.
+
+    z is sampled randomly and treated as the conditioning variable.
+    """
     observations = transitions.observation[:, :state_dim]
-    goals = transitions.observation[:, state_dim:]
-    # Compute direction latents z from current (s, g)
-    # Extract goal-related subset from state; rely on extras produced by flatten_crl_fn when present
-    # Prefer recomputing from extras created by flatten_crl_fn when present
-    if "state_goal_portion" in transitions.extras:
-        state_goal_portion = transitions.extras["state_goal_portion"]
-    else:
-        # Fallback: assume goal portion equals goals shape (last dims), take same indices from state
-        state_goal_portion = observations[:, -goals.shape[-1]:]
-    _, phi_states, phi_goals = value1.apply(training_state.value1_state.params, state_goal_portion, goals, info=True)
-    skills = phi_goals - phi_states
-    skills = skills / (jnp.linalg.norm(skills, axis=-1, keepdims=True) + 1e-8) * jnp.sqrt(repr_dim)
+    if "skills" not in transitions.extras:
+        raise KeyError("Expected transitions.extras['skills'] to be populated in update_step.")
+    skills = transitions.extras["skills"]
     actions = transitions.action
 
     # Value and critic evaluations conditioned on skills.
@@ -268,8 +257,12 @@ def skill_actor_loss(skill_actor_params, training_state, skill_actor, skill_valu
         training_state.skill_critic2_state.params,
         jnp.concatenate([observations, actions, skills], axis=-1),
     )
+    # Shape safety: heads often output (B, 1); force (B,) to avoid (B,) vs (B,1) -> (B,B) broadcasting.
+    v = jnp.reshape(v, (v.shape[0],))
+    q1 = jnp.reshape(q1, (q1.shape[0],))
+    q2 = jnp.reshape(q2, (q2.shape[0],))
     q = jnp.minimum(q1, q2)
-    adv = q - v  # shapes broadcast; critics output scalar per sample
+    adv = q - v
 
     exp_a = jnp.exp(adv * alpha)
     exp_a = jnp.minimum(exp_a, 100.0)
@@ -291,27 +284,30 @@ def skill_actor_loss(skill_actor_params, training_state, skill_actor, skill_valu
     return actor_loss, metrics
 
 def skill_critic_loss(skill_critic_params, skill_value_params, value_params, skill_critic, skill_value, value1, transitions, state_dim, discount=0.99):
-    """Compute the IQL critic loss (matching fb_repr.py logic, using constant discount)."""
+    """Compute the IQL critic loss for a single skill critic head (pretraining).
+
+    TD target uses intrinsic skill_rewards = (phi(s')-phi(s))·z
+    with z sampled randomly (provided in transitions.extras['skills']).
+    """
     states = transitions.observation[:, :state_dim]
     actions = transitions.action
-    goals = transitions.observation[:, state_dim:]
     next_states = transitions.extras["next_state"][:, :state_dim]
-    rewards = transitions.reward
+    if "skills" not in transitions.extras or "skill_rewards" not in transitions.extras:
+        raise KeyError("Expected transitions.extras['skills'] and ['skill_rewards'] to be populated in update_step.")
+    skills = transitions.extras["skills"]
+    rewards = transitions.extras["skill_rewards"]
     masks = transitions.extras.get("mask", jnp.ones_like(rewards))
+    # Shape safety: force (B,) for all scalar tensors to avoid (B,) vs (B,1) -> (B,B) broadcasting.
+    rewards = jnp.reshape(rewards, (rewards.shape[0],))
+    masks = jnp.reshape(masks, (masks.shape[0],))
 
-    # Compute direction latents z from (s, g)
-    if "state_goal_portion" in transitions.extras:
-        state_goal_portion = transitions.extras["state_goal_portion"]
-    else:
-        state_goal_portion = states[:, -goals.shape[-1]:]
-    _, phi_states, phi_goals = value1.apply(value_params, state_goal_portion, goals, info=True)
-    latents = phi_goals - phi_states
-    latents = latents / (jnp.linalg.norm(latents, axis=-1, keepdims=True) + 1e-8) * jnp.sqrt(latents.shape[-1])
     # Compute next_v using value network
-    next_v = skill_value.apply(skill_value_params, jnp.concatenate([next_states, latents], axis=-1))
+    next_v = skill_value.apply(skill_value_params, jnp.concatenate([next_states, skills], axis=-1))
+    next_v = jnp.reshape(next_v, (next_v.shape[0],))
 
-    # Get q1, q2 from critic
-    q1 = skill_critic.apply(skill_critic_params, jnp.concatenate([states, actions, latents], axis=-1))
+    # Get q from critic head
+    q1 = skill_critic.apply(skill_critic_params, jnp.concatenate([states, actions, skills], axis=-1))
+    q1 = jnp.reshape(q1, (q1.shape[0],))
 
     # Compute target q using the provided discount constant
     q = rewards + discount * masks * next_v
@@ -328,30 +324,23 @@ def skill_critic_loss(skill_critic_params, skill_value_params, value_params, ski
     return skill_critic_loss, metrics
 
 def skill_value_loss(skill_value_params, training_state, skill_value, skill_critic1, skill_critic2, value1, transitions, state_dim, expectile=0.9):
-    """Compute the IQL value loss (matching fb_repr.py logic)."""
+    """Compute the IQL value loss for skill_value (pretraining) using sampled random skills z."""
     # Unpack states, actions, goals
     states = transitions.observation[:, :state_dim]
-    goals = transitions.observation[:, state_dim:]
     actions = transitions.action
-    print("hilp: states shape", states.shape)
-    print("hilp: goals shape", goals.shape)
-    print("hilp: actions shape", actions.shape)
-
-    # Compute direction latents z from (s, g)
-    if "state_goal_portion" in transitions.extras:
-        state_goal_portion = transitions.extras["state_goal_portion"]
-    else:
-        state_goal_portion = states[:, -goals.shape[-1]:]
-    _, phi_states, phi_goals = value1.apply(training_state.value1_state.params, state_goal_portion, goals, info=True)
-    latents = phi_goals - phi_states
-    latents = latents / (jnp.linalg.norm(latents, axis=-1, keepdims=True) + 1e-8) * jnp.sqrt(latents.shape[-1])
+    if "skills" not in transitions.extras:
+        raise KeyError("Expected transitions.extras['skills'] to be populated in update_step.")
+    skills = transitions.extras["skills"]
     # Compute Q-values from target skill critics (min)
-    q1 = skill_critic1.apply(training_state.skill_critic1_target_params, jnp.concatenate([states, actions, latents], axis=-1))
-    q2 = skill_critic2.apply(training_state.skill_critic2_target_params, jnp.concatenate([states, actions, latents], axis=-1))
+    q1 = skill_critic1.apply(training_state.skill_critic1_target_params, jnp.concatenate([states, actions, skills], axis=-1))
+    q2 = skill_critic2.apply(training_state.skill_critic2_target_params, jnp.concatenate([states, actions, skills], axis=-1))
+    q1 = jnp.reshape(q1, (q1.shape[0],))
+    q2 = jnp.reshape(q2, (q2.shape[0],))
     q = jnp.minimum(q1, q2)
 
     # Compute value estimates
-    v = skill_value.apply(skill_value_params, jnp.concatenate([states, latents], axis=-1))
+    v = skill_value.apply(skill_value_params, jnp.concatenate([states, skills], axis=-1))
+    v = jnp.reshape(v, (v.shape[0],))
 
     # Expectile loss (as in fb_repr.py)
     diff = q - v
@@ -397,12 +386,10 @@ def actor_step_latent(env, env_state, skill_actor, parametric_action_distributio
 
     """
     policy_obs = jnp.concatenate([env_state.obs[:, :env.state_dim], latents], axis=1)
-    print("hilp: policy_obs shape", policy_obs.shape)
     action_mean_and_SD = skill_actor.apply(skill_actor_params, policy_obs)
     action = parametric_action_distribution.sample(action_mean_and_SD, key)
     nstate = env.step(env_state, action)
     state_extras = {x: nstate.info[x] for x in extra_fields}
-    print("fb: policy_obs shape", policy_obs.shape)
     return nstate, Transition(
         observation=env_state.obs,  # keep raw observation [state, goal]
         action=action,
@@ -557,6 +544,22 @@ def train(
     def update_step(carry, transitions):
         training_state, key = carry
         key, key_fb, key_actor, key_critic, key_value = jax.random.split(key, 5)
+
+        # ---------------------------------------------------------------------
+        # HILP pretraining (skills): sample random z and intrinsic skill rewards
+        #   skill_rewards = (phi(s') - phi(s)) · z
+        # ---------------------------------------------------------------------
+        skill_batch = {"extras": transitions.extras, "actions": transitions.action}
+        skills, skill_rewards = sample_latents(
+            value_net=value1,
+            value_params=training_state.value1_state.params,
+            batch=skill_batch,
+            latent_dim=repr_dim,
+            key=key_fb,
+        )
+        transitions = transitions._replace(
+            extras={**transitions.extras, "skills": skills, "skill_rewards": skill_rewards}
+        )
         
         # Update value heads with target ensemble
         (value1_loss_val, value1_metrics), value1_params, value1_optimizer_state = value1_update(
@@ -692,7 +695,8 @@ def train(
         def f(carry, unused_t):
             env_state, current_key = carry
             current_key, next_key = jax.random.split(current_key)
-            # Compute per-step latents from current observation
+            # For experience collection we keep conditioning on goal-derived latents for now.
+            # (Pretraining skills z are sampled per-minibatch during updates.)
             states = env_state.obs[:, :state_dim]
             goals = env_state.obs[:, state_dim:]
             states_goal_portion = states[:, goal_indices]
@@ -704,7 +708,6 @@ def train(
             return (env_state, next_key), transition
         
        # Split the key to create a batch of keys matching env_state.obs.shape[0]
-        print("fb: env_state.obs.shape", env_state.obs.shape)
         (env_state, _), data = jax.lax.scan(f, (env_state, key), (), length=episode_length)
         buffer_state = replay_buffer.insert(buffer_state, data)
         return env_state, buffer_state

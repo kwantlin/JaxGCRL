@@ -19,6 +19,7 @@ dependencies:
   - cudnn
   - pip
   - pip:
+    - scienceplots==2.1.1
     - nvidia-cudnn-cu12==8.9.7.29
     - brax==0.10.5
     - mujoco==3.2.3

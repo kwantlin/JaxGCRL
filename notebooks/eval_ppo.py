@@ -575,8 +575,8 @@ def main(args):
 
     # Load GoalKDE checkpoint
     # goalkde_dir = '/scratch/gpfs/kw2960/JaxGCRL/runs/run_ant_fullobs-goalkde-meanfield-della-maxent-gaussianmlp-_s_1'
-    # goalkde_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-goalkde-meanfield-della-maxent-gaussianmlp-_s_1'
-    goalkde_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_angvel-goalkde-meanfield-1x-120000000-256-512-1e-4-1e-4-1e-4-1-della-maxent-gaussianmlp-_s_1'
+    goalkde_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-goalkde-meanfield-della-maxent-gaussianmlp-_s_1'
+    # goalkde_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_angvel-goalkde-meanfield-1x-120000000-256-512-1e-4-1e-4-1e-4-1-della-maxent-gaussianmlp-_s_1'
     goalkde_ckpt = os.path.join(goalkde_dir, 'ckpt', 'best.pkl')
     print(f"Loading GoalKDE checkpoint: {goalkde_ckpt}")
     goalkde_params = model.load_params(goalkde_ckpt)
@@ -871,8 +871,8 @@ def main(args):
 
     # ================= FB goal inference and imitation comparison =================
     try:
-        # fb_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-fb-della_2__1200000000_512_2048_1000_s_2'
-        fb_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_angvel-fb-della_1_rebuttal_120000000_256_512_50_1_s_1'
+        fb_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-fb-della_2__1200000000_512_2048_1000_s_2'
+        # fb_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_angvel-fb-della_1_rebuttal_120000000_256_512_50_1_s_1'
         fb_ckpt = os.path.join(fb_dir, 'ckpt', 'best.pkl')
         print(f"\nLoading FB checkpoint: {fb_ckpt}")
         fb_params = model.load_params(fb_ckpt)
@@ -976,8 +976,8 @@ def main(args):
 
     # ================= Additional mean-field checkpoint goal inference (like GoalKDE) =================
     try:
-        # mainmf_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-main-meanfield-test_s_1'
-        mainmf_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_angvel-main-meanfield-numenvs512-numtimesteps120000000-batchsize256-1-della-maxent-gaussianmlp-_s_1'
+        mainmf_dir = '/home/kw2960/JaxGCRL/runs/run_ant_posvel-main-meanfield-test_s_1'
+        # mainmf_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_angvel-main-meanfield-numenvs512-numtimesteps120000000-batchsize256-1-della-maxent-gaussianmlp-_s_1'
         mainmf_ckpt = os.path.join(mainmf_dir, 'ckpt', 'best.pkl')
         print(f"\nLoading MainMF checkpoint: {mainmf_ckpt}")
         mainmf_params = model.load_params(mainmf_ckpt)
@@ -1047,6 +1047,203 @@ def main(args):
     except Exception as e:
         print(f"MainMF comparison skipped due to error: {e}")
 
+    # ===================== HILP imitation (optional) =====================
+    try:
+        print("\nLoading HILP checkpoint and evaluating imitation...")
+        # HILP paths (adjust if needed)
+        hilp_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_posvel-hilp-della_3_rebuttal_120000000_256_512_500_1_s_3'
+        # hilp_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_angvel-hilp-della_2_rebuttal_120000000_256_512_50_1_s_2'
+        hilp_ckpt = os.path.join(hilp_dir, 'ckpt', 'best.pkl')
+        hilp_args_path = os.path.join(hilp_dir, 'args.pkl')
+        hilp_params = model.load_params(hilp_ckpt)
+        # Expected ordering from eval-ant.py
+        hilp_actor_params, _, hilp_value_params, _ = hilp_params
+        # Read HILP args to reconstruct networks
+        with open(hilp_args_path, 'rb') as f:
+            hilp_args = pickle.load(f)
+        hilp_h_dim = int(getattr(hilp_args, 'h_dim', 1024))
+        hilp_n_hidden = int(getattr(hilp_args, 'n_hidden', 8))
+        hilp_use_ln = bool(getattr(hilp_args, 'use_ln', True))
+        hilp_repr_dim = int(getattr(hilp_args, 'repr_dim', 64))
+        hilp_block_size = 2
+        hilp_num_blocks = max(1, hilp_n_hidden // hilp_block_size)
+
+        class MetricValueNet(nn.Module):
+            latent_dim: int
+            width: int = 1024
+            num_blocks: int = 4
+            block_size: int = 2
+            use_ln: bool = True
+            def setup(self):
+                self.phi = Net(
+                    output_size=self.latent_dim,
+                    width=self.width,
+                    num_blocks=self.num_blocks,
+                    block_size=self.block_size,
+                    use_ln=self.use_ln,
+                )
+            def __call__(self, observations, goals, info: bool = False, s_is_phi: bool = False, g_is_phi: bool = False):
+                if s_is_phi:
+                    phi_s = observations
+                else:
+                    phi_s = self.phi(observations)
+                if g_is_phi:
+                    phi_g = goals
+                else:
+                    phi_g = self.phi(goals)
+                v = -jp.linalg.norm(phi_s - phi_g, axis=-1)
+                if info:
+                    return v, phi_s, phi_g
+                return v
+
+        # Build HILP actor/value nets
+        hilp_actor = Net(act_dim * 2, hilp_h_dim, hilp_num_blocks, hilp_block_size, hilp_use_ln)
+        hilp_value = MetricValueNet(hilp_repr_dim, hilp_h_dim, hilp_num_blocks, hilp_block_size, hilp_use_ln)
+        hilp_policy = make_policy(hilp_actor, hilp_actor_params, deterministic=True)
+        jit_hilp_policy = jax.jit(hilp_policy)
+
+        # Extract goal portion of state for HILP phi deltas
+        def slice_goal_obs(obs):
+            return obs[env.goal_indices] if hasattr(env, 'goal_indices') else obs[-goal_dim:]
+        # [NUM_ENVS, NUM_STEPS, goal_dim]
+        hilp_states_goal = jax.vmap(jax.vmap(slice_goal_obs))(expert_states)
+        hilp_states_goal_t = hilp_states_goal[:, :-1, :]
+        hilp_states_goal_tp1 = hilp_states_goal[:, 1:, :]
+        # Flatten, compute phi deltas, then unflatten
+        sg_flat = jp.reshape(hilp_states_goal_t, (-1, hilp_states_goal_t.shape[-1]))
+        sg1_flat = jp.reshape(hilp_states_goal_tp1, (-1, hilp_states_goal_tp1.shape[-1]))
+        _, phi_s_flat, phi_sp_flat = hilp_value.apply(hilp_value_params, sg_flat, sg1_flat, info=True)
+        delta_phi_flat = phi_sp_flat - phi_s_flat
+        delta_phi = jp.reshape(delta_phi_flat, (hilp_states_goal_t.shape[0], hilp_states_goal_t.shape[1], -1))
+
+        # Solve per-env z* with unit rewards
+        def solve_z_unit_reward(phis_seq):
+            a = phis_seq  # [T-1, repr_dim]
+            b = jp.ones((a.shape[0],), dtype=a.dtype)
+            g = a.T @ a
+            eps = 1e-6
+            eye = jp.eye(g.shape[0], dtype=g.dtype)
+            return jp.linalg.solve(g + eps * eye, a.T @ b)
+        hilp_z_stars = jax.vmap(solve_z_unit_reward)(delta_phi)  # [NUM_ENVS, repr_dim]
+        # Normalize z* to sqrt(repr_dim) as in eval-ant
+        z_norms = jp.linalg.norm(hilp_z_stars, axis=1, keepdims=True) + 1e-8
+        hilp_latents = hilp_z_stars / z_norms * jp.sqrt(hilp_repr_dim)
+
+        # Rollout HILP policy using inferred latents
+        def rollout_hilp(rng, latent):
+            def step_fn(carry, t):
+                state, rng, counts, first_idxs = carry
+                act_rng, next_rng = jax.random.split(rng)
+                state_part = state.obs[:state_dim]
+                latent_part = jp.reshape(latent, (-1,))
+                actor_obs = jp.concatenate((state_part, latent_part), axis=0)
+                actor_obs = jp.reshape(actor_obs, (state_dim + hilp_repr_dim,))
+                act, _ = jit_hilp_policy(actor_obs, act_rng)
+                next_state = jit_env_step(state, act)
+                rew = jit_reward_fn(state.obs, next_state.obs, act)
+                bad_in = ~jp.all(jp.isfinite(actor_obs))
+                bad_act = ~jp.all(jp.isfinite(act))
+                bad_obs = ~jp.all(jp.isfinite(next_state.obs))
+                bad_rew = ~jp.isfinite(rew)
+                bads = jp.array([bad_in, bad_act, bad_obs, bad_rew], dtype=jp.int32)
+                counts = counts.at[:4].add(bads)
+                tvec = jp.array([t, t, t, t], dtype=jp.int32)
+                first_idxs = first_idxs.at[:4].set(jp.where((first_idxs[:4] < 0) & (bads > 0), tvec, first_idxs[:4]))
+                return (next_state, next_rng, counts, first_idxs), rew
+            init_state = jit_env_reset(rng=rng)
+            init_counts = jp.zeros((6,), dtype=jp.int32)
+            init_first = -jp.ones((6,), dtype=jp.int32)
+            (final_state, _, counts, first_idxs), rews = jax.lax.scan(
+                step_fn, (init_state, rng, init_counts, init_first), jp.arange(NUM_STEPS), length=NUM_STEPS
+            )
+            return rews, counts, first_idxs
+
+        hilp_rngs = jax.random.split(jax.random.PRNGKey(args.seed + 11), NUM_ENVS)
+        hilp_rewards, hilp_counts, hilp_first_idxs = jax.vmap(rollout_hilp)(hilp_rngs, hilp_latents)
+        hilp_first_bad = jp.minimum(hilp_first_idxs[:, 2], hilp_first_idxs[:, 3])
+        hilp_total_rewards, _, hilp_trunc_steps = jax.vmap(compute_truncated_total_rewards)(
+            hilp_rewards, hilp_first_bad, expert_lengths
+        )
+        hilp_regret = expert_total_trunc - hilp_total_rewards
+        hilp_regret_mean = jp.mean(hilp_regret)
+        hilp_regret_stderr = jp.std(hilp_regret, ddof=1) / jp.sqrt(hilp_regret.shape[0])
+        print("\nHILP imitation comparison:")
+        print(f"  Mean regret (aligned lengths): {float(hilp_regret_mean):.4f}")
+        print(f"  Std. error of mean regret:    {float(hilp_regret_stderr):.4f}")
+    except Exception as e:
+        print(f"HILP comparison skipped due to error: {e}")
+
+    # ===================== PSM imitation (optional) =====================
+    try:
+        print("\nLoading PSM checkpoint and evaluating imitation...")
+        psm_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_posvel-psm-della_3_rebuttal_120000000_256_512_500_1_s_3'
+        # psm_dir = '/scratch/gpfs/EYSENBACH/kw2960/JaxGCRL/runs/run_ant_angvel-psm-della_2_rebuttal_120000000_256_512_50_1_s_2'
+        psm_ckpt = os.path.join(psm_dir, 'ckpt', 'best.pkl')
+        psm_args_path = os.path.join(psm_dir, 'args.pkl')
+        psm_params = model.load_params(psm_ckpt)
+        # Expected ordering from eval-ant.py
+        psm_actor_params, psm_repr_params, psm_target_psm_params, psm_target_w_params = psm_params
+        with open(psm_args_path, 'rb') as f:
+            psm_args = pickle.load(f)
+        psm_h_dim = int(getattr(psm_args, 'h_dim', 1024))
+        psm_n_hidden = int(getattr(psm_args, 'n_hidden', 8))
+        psm_use_ln = bool(getattr(psm_args, 'use_ln', True))
+        psm_block_size = 2
+        psm_num_blocks = max(1, psm_n_hidden // psm_block_size)
+        # Build PSM actor (expects [state, goal])
+        psm_actor = Net(act_dim * 2, psm_h_dim, psm_num_blocks, psm_block_size, psm_use_ln)
+        psm_policy = make_policy(psm_actor, psm_actor_params, deterministic=True)
+        jit_psm_policy = jax.jit(psm_policy)
+
+        # Targets: last-state goals per env
+        def slice_goal_obs(obs):
+            return obs[env.goal_indices] if hasattr(env, 'goal_indices') else obs[-goal_dim:]
+        last_goal_targets = jax.vmap(slice_goal_obs)(expert_states[:, -1, :])  # [NUM_ENVS, goal_dim]
+
+        # Rollout PSM with last-state targets
+        def rollout_psm(rng, goal_target):
+            def step_fn(carry, t):
+                state, rng, counts, first_idxs = carry
+                act_rng, next_rng = jax.random.split(rng)
+                state_part = state.obs[:state_dim]
+                goal_part = jp.reshape(goal_target, (-1,))
+                actor_obs = jp.concatenate((state_part, goal_part), axis=0)
+                actor_obs = jp.reshape(actor_obs, (state_dim + goal_dim,))
+                act, _ = jit_psm_policy(actor_obs, act_rng)
+                next_state = jit_env_step(state, act)
+                rew = jit_reward_fn(state.obs, next_state.obs, act)
+                bad_in = ~jp.all(jp.isfinite(actor_obs))
+                bad_act = ~jp.all(jp.isfinite(act))
+                bad_obs = ~jp.all(jp.isfinite(next_state.obs))
+                bad_rew = ~jp.isfinite(rew)
+                bads = jp.array([bad_in, bad_act, bad_obs, bad_rew], dtype=jp.int32)
+                counts = counts.at[:4].add(bads)
+                tvec = jp.array([t, t, t, t], dtype=jp.int32)
+                first_idxs = first_idxs.at[:4].set(jp.where((first_idxs[:4] < 0) & (bads > 0), tvec, first_idxs[:4]))
+                return (next_state, next_rng, counts, first_idxs), rew
+            init_state = jit_env_reset(rng=rng)
+            init_counts = jp.zeros((6,), dtype=jp.int32)
+            init_first = -jp.ones((6,), dtype=jp.int32)
+            (final_state, _, counts, first_idxs), rews = jax.lax.scan(
+                step_fn, (init_state, rng, init_counts, init_first), jp.arange(NUM_STEPS), length=NUM_STEPS
+            )
+            return rews, counts, first_idxs
+
+        psm_rngs = jax.random.split(jax.random.PRNGKey(args.seed + 21), NUM_ENVS)
+        psm_rewards, psm_counts, psm_first_idxs = jax.vmap(rollout_psm)(psm_rngs, last_goal_targets)
+        psm_first_bad = jp.minimum(psm_first_idxs[:, 2], psm_first_idxs[:, 3])
+        psm_total_rewards, _, psm_trunc_steps = jax.vmap(compute_truncated_total_rewards)(
+            psm_rewards, psm_first_bad, expert_lengths
+        )
+        psm_regret = expert_total_trunc - psm_total_rewards
+        psm_regret_mean = jp.mean(psm_regret)
+        psm_regret_stderr = jp.std(psm_regret, ddof=1) / jp.sqrt(psm_regret.shape[0])
+        print("\nPSM imitation comparison:")
+        print(f"  Mean regret (aligned lengths): {float(psm_regret_mean):.4f}")
+        print(f"  Std. error of mean regret:    {float(psm_regret_stderr):.4f}")
+    except Exception as e:
+        print(f"PSM comparison skipped due to error: {e}")
+
     # ===================== Final plotting for AntForward =====================
     try:
         # Extract expert policy name and inference method for file naming
@@ -1075,6 +1272,18 @@ def main(args):
             means.append(float(fb_regret_mean))
             stderrs.append(float(fb_regret_stderr))
             colors.append('#2ca02c')
+            # HILP (purple) if available
+            if 'hilp_regret_mean' in locals() and 'hilp_regret_stderr' in locals():
+                labels.append('HILP')
+                means.append(float(hilp_regret_mean))
+                stderrs.append(float(hilp_regret_stderr))
+                colors.append('#8c564b')  # brown/purple
+            # PSM (red) if available
+            if 'psm_regret_mean' in locals() and 'psm_regret_stderr' in locals():
+                labels.append('PSM')
+                means.append(float(psm_regret_mean))
+                stderrs.append(float(psm_regret_stderr))
+                colors.append('#d62728')  # red
 
             # PNG plot
             fig, ax = plt.subplots(figsize=(6, 5))
@@ -1087,7 +1296,7 @@ def main(args):
 
             out_dir = os.path.join('.', f'results_{inference_method}')
             os.makedirs(out_dir, exist_ok=True)
-            out_png = os.path.join(out_dir, f'{expert_policy}_regret_goalkde_vs_fb.png')
+            out_png = os.path.join(out_dir, f'{expert_policy}_regret_goalkde_vs_fb_hilp_psm.png')
             plt.tight_layout()
             plt.savefig(out_png, dpi=300, bbox_inches='tight')
             print(f"Saved regret comparison plot to: {out_png}")
@@ -1095,7 +1304,7 @@ def main(args):
 
             # CSV
             import csv
-            out_csv = os.path.join(out_dir, f'{expert_policy}_regret_goalkde_vs_fb.csv')
+            out_csv = os.path.join(out_dir, f'{expert_policy}_regret_goalkde_vs_fb_hilp_psm.csv')
             with open(out_csv, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(['Method', 'MeanRegret', 'StdError'])
@@ -1121,6 +1330,14 @@ def main(args):
         if have_fb:
             fb_mean = float(jp.mean(fb_total_rewards))
             fb_stderr = float(jp.std(fb_total_rewards, ddof=1) / jp.sqrt(fb_total_rewards.shape[0]))
+        have_hilp = ('hilp_total_rewards' in locals())
+        if have_hilp:
+            hilp_mean = float(jp.mean(hilp_total_rewards))
+            hilp_stderr = float(jp.std(hilp_total_rewards, ddof=1) / jp.sqrt(hilp_total_rewards.shape[0]))
+        have_psm = ('psm_total_rewards' in locals())
+        if have_psm:
+            psm_mean = float(jp.mean(psm_total_rewards))
+            psm_stderr = float(jp.std(psm_total_rewards, ddof=1) / jp.sqrt(psm_total_rewards.shape[0]))
 
         if expert_policy in ['antforward', 'antjump', 'antflip']:
             # Build grouped bars: [GoalKDE Expert, GoalKDE Imit, FB Expert, FB Imit]
@@ -1133,6 +1350,16 @@ def main(args):
                 means += [exp_mean, fb_mean]
                 stderrs += [exp_stderr, fb_stderr]
                 colors += ['#1f77b4', '#2ca02c']  # blue for expert, green for FB imitation
+            if have_hilp:
+                labels += ['HILP Expert', 'HILP Imit']
+                means += [exp_mean, hilp_mean]
+                stderrs += [exp_stderr, hilp_stderr]
+                colors += ['#1f77b4', '#8c564b']  # blue for expert, purple/brown for HILP
+            if have_psm:
+                labels += ['PSM Expert', 'PSM Imit']
+                means += [exp_mean, psm_mean]
+                stderrs += [exp_stderr, psm_stderr]
+                colors += ['#1f77b4', '#d62728']  # blue for expert, red for PSM imitation
 
             fig, ax = plt.subplots(figsize=(8, 5))
             x = np.arange(len(labels))
@@ -1144,7 +1371,7 @@ def main(args):
 
             out_dir = os.path.join('.', f'results_{inference_method}')
             os.makedirs(out_dir, exist_ok=True)
-            out_png = os.path.join(out_dir, f'{expert_policy}_expert_vs_imitation_rewards.png')
+            out_png = os.path.join(out_dir, f'{expert_policy}_expert_vs_imitation_rewards_plus_hilp_psm.png')
             plt.tight_layout()
             plt.savefig(out_png, dpi=300, bbox_inches='tight')
             print(f"Saved expert vs imitation rewards plot to: {out_png}")
@@ -1152,7 +1379,7 @@ def main(args):
 
             # CSV dump
             import csv
-            out_csv = os.path.join(out_dir, f'{expert_policy}_expert_vs_imitation_rewards.csv')
+            out_csv = os.path.join(out_dir, f'{expert_policy}_expert_vs_imitation_rewards_plus_hilp_psm.csv')
             with open(out_csv, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(['Series', 'MeanTotalReward', 'StdError'])
@@ -1162,12 +1389,16 @@ def main(args):
     except Exception as pe:
         print(f"Expert vs imitation plotting skipped due to error: {pe}")
     
-    # Save trajectories if requested
+    # Save trajectories if requested (only if trajectories were actually collected)
     if args.save_trajectories:
-        output_path = model_path.replace('.pkl', '_trajectories.pkl')
-        with open(output_path, 'wb') as f:
-            pickle.dump(all_trajectories, f)
-        print(f"\nTrajectories saved to: {output_path}")
+        traj_data = locals().get('all_trajectories', None)
+        if traj_data is not None:
+            output_path = model_path.replace('.pkl', '_trajectories.pkl')
+            with open(output_path, 'wb') as f:
+                pickle.dump(traj_data, f)
+            print(f"\nTrajectories saved to: {output_path}")
+        else:
+            print("save_trajectories requested, but no trajectories were collected in this run; skipping save.")
     
     # Print some trajectory statistics (disabled when per-episode eval is commented)
     # print("\nTRAJECTORY STATISTICS:")

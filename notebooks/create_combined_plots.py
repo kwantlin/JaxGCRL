@@ -1,17 +1,8 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-try:
-    import scienceplots  # noqa: F401
-    try:
-        plt.style.use(['science', 'ieee'])
-    except Exception:
-        try:
-            plt.style.use(['science', 'ieee', 'no-latex'])
-        except Exception:
-            pass
-except Exception:
-    pass
+import scienceplots  # noqa: F401
+plt.style.use(['science', 'ieee'])
 try:
     from palettable.colorbrewer.qualitative import Set2_7  # noqa: F401
     PALETTE_COLORS = Set2_7.mpl_colors
@@ -63,6 +54,69 @@ def get_color_for_type(method_type: str) -> str:
     canonical = METHOD_TYPE_ALIASES.get(method_type, method_type)
     return METHOD_TYPE_COLOR.get(canonical, '#888888')
 
+from matplotlib.ticker import FixedLocator, AutoMinorLocator
+
+def format_imitation_score_axis(
+    ax,
+    ylabel: str = 'Imitation Score (%)',
+    major_ticks=(0, 50, 100),
+    minor_subticks: int = 5,
+    ylabel_fontsize: int = 42,
+    tick_labelsize: int = 38,
+):
+    """Consistent y-axis formatting for all imitation score plots."""
+    # With LaTeX enabled (scienceplots 'science' style), '%' starts a comment in TeX,
+    # so "Imitation Score (%)" would get truncated. Escape it.
+    if plt.rcParams.get('text.usetex', False) and ('%' in ylabel):
+        ylabel = ylabel.replace('%', r'\%')
+    ax.yaxis.set_major_locator(FixedLocator(list(major_ticks)))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(minor_subticks))
+    ax.set_ylabel(ylabel, fontsize=ylabel_fontsize)
+    ax.tick_params(axis='y', labelsize=tick_labelsize)
+    ax.grid(axis='y', which='major', linestyle='--', alpha=0.7)
+    ax.grid(axis='y', which='minor', linestyle=':', alpha=0.3)
+
+
+def set_ylim_with_headroom(
+    ax,
+    df: pd.DataFrame,
+    mean_col: str = 'Mean Difference',
+    err_col: str = 'Std Error',
+    ymin: float = 0.0,
+    min_ymax: float = 100.0,
+    pad_frac: float = 0.05,
+    round_to: float = 10.0,
+):
+    """Set y-limits to include error bars with a bit of padding, rounded nicely."""
+    if df is None or df.empty:
+        top_val = float(min_ymax)
+    else:
+        top_val = float(np.nanmax(df[mean_col] + df[err_col]))
+        if not np.isfinite(top_val):
+            top_val = float(min_ymax)
+    pad = pad_frac * max(1.0, top_val)
+    ymax = max(float(min_ymax), top_val + pad)
+    if round_to and round_to > 0:
+        ymax = float(int(np.ceil(ymax / round_to)) * round_to)
+    ax.set_ylim(float(ymin), float(ymax))
+    return float(ymin), float(ymax)
+
+
+def _is_cirl_type(t) -> bool:
+    return (t == 'CIRL') or (isinstance(t, str) and 'CIRL' in t)
+
+def _sorted_cirl_last(items, is_cirl) -> list:
+    """Stable-ish ordering: non-CIRL first, CIRL last; ties broken by string form."""
+    return sorted(list(items), key=lambda x: (1 if is_cirl(x) else 0, str(x)))
+
+
+def sort_methods_cirl_last(all_methods, method_to_type: dict) -> list:
+    return _sorted_cirl_last(all_methods, lambda m: _is_cirl_type(method_to_type.get(m, '')))
+
+
+def sort_types_cirl_last(types) -> list:
+    return _sorted_cirl_last(types, _is_cirl_type)
+
 # Create output directory
 output_dir = 'combined_results'
 os.makedirs(output_dir, exist_ok=True)
@@ -98,10 +152,8 @@ environments = ['Reacher', 'Pusher', 'Ant']
 method_to_type = combined_plot.dropna(subset=['Method']).drop_duplicates('Method').set_index('Method')['Method Type'].to_dict()
 
 # Order methods with CIRL last
-def _is_cirl_type(t):
-    return (t == 'CIRL') or (isinstance(t, str) and 'CIRL' in t)
 all_methods = combined_plot['Method'].unique().tolist()
-methods = sorted(all_methods, key=lambda m: (1 if _is_cirl_type(method_to_type.get(m, '')) else 0, str(m)))
+methods = sort_methods_cirl_last(all_methods, method_to_type)
 
 method_palette = {m: colors.get(method_to_type.get(m, ''), '#888888') for m in methods}
 
@@ -133,24 +185,8 @@ ax.set_xticks(env_positions)
 ax.set_xticklabels(environments, fontsize=38, rotation=0)
 ax.set_xlabel('')
 
-# Y-axis formatting with ~3 major ticks and ~5 minor ticks
-from matplotlib.ticker import FixedLocator, AutoMinorLocator
-ax.yaxis.set_major_locator(FixedLocator([0, 50, 100]))
-ax.yaxis.set_minor_locator(AutoMinorLocator(5))
-ax.set_ylabel('Imitation Score (\\%)', fontsize=42)
-ax.tick_params(axis='y', labelsize=38)
-ax.grid(axis='y', which='major', linestyle='--', alpha=0.7)
-ax.grid(axis='y', which='minor', linestyle=':', alpha=0.3)
-
-# Y limits with headroom for error bars
-if not combined_plot.empty:
-    top_val = float(np.nanmax(combined_plot['Mean Difference'] + combined_plot['Std Error']))
-else:
-    top_val = 100.0
-pad = 0.05 * max(1.0, top_val)
-ymax = max(100.0, top_val + pad)
-ymax = float(int(np.ceil(ymax / 10.0)) * 10)
-ax.set_ylim(0, ymax)
+format_imitation_score_axis(ax, ylabel='Imitation Score (%)', ylabel_fontsize=42, tick_labelsize=38)
+set_ylim_with_headroom(ax, combined_plot, ymin=0.0, min_ymax=100.0)
 
 # Legend by Method Type (unique types)
 from matplotlib.patches import Patch
@@ -158,7 +194,7 @@ type_to_color = {}
 for m, t in method_to_type.items():
     if t in colors and t not in type_to_color:
         type_to_color[t] = colors[t]
-ordered_types = sorted(type_to_color.keys(), key=lambda t: (1 if _is_cirl_type(t) else 0, str(t)))
+ordered_types = sort_types_cirl_last(type_to_color.keys())
 legend_handles = [Patch(facecolor=type_to_color[t], edgecolor='none', label=t) for t in ordered_types]
 if legend_handles:
     existing_legend = ax.get_legend()
@@ -253,9 +289,7 @@ traj_combined_plot = pd.concat([ant_traj_plot, reacher_traj_plot, pusher_traj_pl
 environments = ['Reacher', 'Pusher', 'Ant']
 all_methods = traj_combined_plot['Method'].unique().tolist()
 method_to_type = traj_combined_plot.dropna(subset=['Method']).drop_duplicates('Method').set_index('Method')['Method Type'].to_dict()
-def _is_cirl_type(t):
-    return (t == 'CIRL') or (isinstance(t, str) and 'CIRL' in t)
-methods = sorted(all_methods, key=lambda m: (1 if _is_cirl_type(method_to_type.get(m, '')) else 0, str(m)))
+methods = sort_methods_cirl_last(all_methods, method_to_type)
 method_palette = {m: traj_colors.get(method_to_type.get(m, ''), '#888888') for m in methods}
 
 env_positions = np.arange(len(environments))
@@ -290,30 +324,15 @@ ax.set_xticks(env_positions)
 ax.set_xticklabels(environments, fontsize=38, rotation=0)
 ax.set_xlabel('')
 
-from matplotlib.ticker import FixedLocator, AutoMinorLocator
-ax.yaxis.set_major_locator(FixedLocator([0, 50, 100]))
-ax.yaxis.set_minor_locator(AutoMinorLocator(5))
-ax.set_ylabel('Imitation Score (\\%)', fontsize=42)
-ax.tick_params(axis='y', labelsize=38)
-ax.grid(axis='y', which='major', linestyle='--', alpha=0.7)
-ax.grid(axis='y', which='minor', linestyle=':', alpha=0.3)
-
-# Y limits with headroom for error bars
-if not traj_combined_plot.empty:
-    top_val = float(np.nanmax(traj_combined_plot['Mean Difference'] + traj_combined_plot['Std Error']))
-else:
-    top_val = 100.0
-pad = 0.05 * max(1.0, top_val)
-ymax = max(100.0, top_val + pad)
-ymax = float(int(np.ceil(ymax / 10.0)) * 10)
-ax.set_ylim(0, ymax)
+format_imitation_score_axis(ax, ylabel='Imitation Score (%)', ylabel_fontsize=42, tick_labelsize=38)
+set_ylim_with_headroom(ax, traj_combined_plot, ymin=0.0, min_ymax=100.0)
 
 from matplotlib.patches import Patch
 type_to_color = {}
 for m, t in method_to_type.items():
     if t in traj_colors and t not in type_to_color:
         type_to_color[t] = traj_colors[t]
-ordered_types = sorted(type_to_color.keys(), key=lambda t: (1 if _is_cirl_type(t) else 0, str(t)))
+ordered_types = sort_types_cirl_last(type_to_color.keys())
 legend_handles = [Patch(facecolor=type_to_color[t], edgecolor='none', label=t) for t in ordered_types]
 if legend_handles:
     existing_legend = ax.get_legend()
@@ -449,23 +468,8 @@ ax.set_xticks(env_positions)
 ax.set_xticklabels(environments, fontsize=38, rotation=0)
 ax.set_xlabel('')
 
-from matplotlib.ticker import FixedLocator, AutoMinorLocator
-ax.yaxis.set_major_locator(FixedLocator([0, 50, 100]))
-ax.yaxis.set_minor_locator(AutoMinorLocator(5))
-ax.set_ylabel('Imitation Score (\\%)', fontsize=42)
-ax.tick_params(axis='y', labelsize=38)
-ax.grid(axis='y', which='major', linestyle='--', alpha=0.7)
-ax.grid(axis='y', which='minor', linestyle=':', alpha=0.3)
-
-# Y limits with headroom for error bars
-if not pre_combined_plot.empty:
-    top_val = float(np.nanmax(pre_combined_plot['Mean Difference'] + pre_combined_plot['Std Error']))
-else:
-    top_val = 100.0
-pad = 0.05 * max(1.0, top_val)
-ymax = max(100.0, top_val + pad)
-ymax = float(int(np.ceil(ymax / 10.0)) * 10)
-ax.set_ylim(0, ymax)
+format_imitation_score_axis(ax, ylabel='Imitation Score (%)', ylabel_fontsize=42, tick_labelsize=38)
+set_ylim_with_headroom(ax, pre_combined_plot, ymin=0.0, min_ymax=100.0)
 
 from matplotlib.patches import Patch
 type_to_color = {t: get_color_for_type(t) for t in set(method_to_type.values())}
@@ -544,6 +548,150 @@ print(f"Value of pretraining combined data saved as '{output_dir}/value_of_pretr
 plt.show()
 
 # ============================================================================
+# FB (variants) vs CRL + GoalKDE (Mean Field) Combined Plot
+# ============================================================================
+
+# Read the data for each environment
+reacher_fb_goalkde_data = pd.read_csv('results_reacher/fb_goalkde_vs_standard_fb_vs_crl_goalkde_reacher.csv')
+ant_fb_goalkde_data = pd.read_csv('results_ant/fb_goalkde_vs_standard_fb_vs_crl_goalkde_ant.csv')
+pusher_fb_goalkde_data = pd.read_csv('results_pusher_easy/fb_goalkde_vs_standard_fb_vs_crl_goalkde_pusher_easy.csv')
+
+# Normalize labels and convert to percentages
+for data in [reacher_fb_goalkde_data, ant_fb_goalkde_data, pusher_fb_goalkde_data]:
+    data['Method Type'] = data['Method Type'].replace('GoalKDE', 'CIRL')
+    data['Mean Difference'] = data['Mean Difference'] * 100
+    data['Std Error'] = data['Std Error'] * 100
+
+fig, ax = plt.subplots(figsize=(14, 8))
+
+# Prepare combined data with Environment column
+fb_goalkde_combined_plot = pd.concat([
+    reacher_fb_goalkde_data.assign(Environment='Reacher'),
+    pusher_fb_goalkde_data.assign(Environment='Pusher'),
+    ant_fb_goalkde_data.assign(Environment='Ant'),
+], ignore_index=True)
+
+environments = ['Reacher', 'Pusher', 'Ant']
+
+# Keep legend/method text stable
+methods_order = [
+    'FB + Standard',
+    'FB + GoalKDE MF',
+    'FB + True Goal',
+    'CRL + GoalKDE + Mean Field',
+]
+
+# Legend display labels (requested)
+legend_label = {
+    'FB + Standard': 'FB (Standard)',
+    'FB + GoalKDE MF': 'FB (CIRL Goal)',
+    'FB + True Goal': 'FB (True Goal)',
+    'CRL + GoalKDE + Mean Field': 'CIRL',
+}
+
+method_to_type = fb_goalkde_combined_plot.dropna(subset=['Method']).drop_duplicates('Method').set_index('Method')['Method Type'].to_dict()
+all_methods = [m for m in methods_order if m in fb_goalkde_combined_plot['Method'].unique().tolist()]
+methods = all_methods + [m for m in fb_goalkde_combined_plot['Method'].unique().tolist() if m not in all_methods]
+
+method_palette = {m: get_color_for_type(method_to_type.get(m, '')) for m in methods}
+
+# Hatch patterns for the three FB variants (same color, distinct patterns)
+method_hatch = {
+    'FB + Standard': None,
+    'FB + GoalKDE MF': '////',
+    'FB + True Goal': 'xx',
+}
+
+env_positions = np.arange(len(environments))
+max_methods_per_env = max((fb_goalkde_combined_plot[fb_goalkde_combined_plot['Environment'] == env]['Method'].nunique() for env in environments))
+group_width = 0.8
+bar_width = group_width / max_methods_per_env if max_methods_per_env > 0 else 0.4
+
+for i, env in enumerate(environments):
+    env_df = fb_goalkde_combined_plot[fb_goalkde_combined_plot['Environment'] == env]
+    env_methods = [m for m in methods if m in env_df['Method'].values]
+    num_env_methods = len(env_methods)
+    if num_env_methods == 0:
+        continue
+    offsets = (np.arange(num_env_methods) - (num_env_methods - 1) / 2.0) * bar_width
+    for offset, m in zip(offsets, env_methods):
+        row = env_df[env_df['Method'] == m].iloc[0]
+        height = row['Mean Difference']
+        err = row['Std Error']
+        xpos = env_positions[i] + offset
+        bar = ax.bar(
+            xpos,
+            height,
+            width=bar_width * 0.9,
+            color=method_palette[m],
+            edgecolor='none',
+            linewidth=0,
+        )
+        hatch = method_hatch.get(m)
+        if hatch:
+            bar[0].set_hatch(hatch)
+            bar[0].set_edgecolor('white')
+            bar[0].set_linewidth(2.0)
+        ax.errorbar(xpos, height, yerr=err, fmt='none', ecolor='black', capsize=5, linewidth=1.0)
+
+ax.set_xticks(env_positions)
+ax.set_xticklabels(environments, fontsize=38, rotation=0)
+ax.set_xlabel('')
+
+format_imitation_score_axis(ax, ylabel='Imitation Score (%)', ylabel_fontsize=42, tick_labelsize=38)
+set_ylim_with_headroom(ax, fb_goalkde_combined_plot, ymin=0.0, min_ymax=100.0)
+
+# Legend by Method (keep exact text)
+from matplotlib.patches import Patch
+legend_handles = []
+for m in methods_order:
+    if m not in methods:
+        continue
+    hatch = method_hatch.get(m)
+    label = legend_label.get(m, m)
+    if hatch:
+        legend_handles.append(Patch(facecolor=method_palette[m], edgecolor='white', linewidth=2.0, hatch=hatch, label=label))
+    else:
+        legend_handles.append(Patch(facecolor=method_palette[m], edgecolor='none', label=label))
+if legend_handles:
+    existing_legend = ax.get_legend()
+    if existing_legend is not None:
+        existing_legend.remove()
+    ax.legend(
+        handles=legend_handles,
+        loc='upper right',
+        bbox_to_anchor=(0.99, 0.99),
+        bbox_transform=ax.transAxes,
+        fontsize=32,
+        title=None,
+        borderaxespad=0.0,
+        frameon=True,
+    )
+
+plt.tight_layout()
+
+# Save figure
+plt.savefig(f'{output_dir}/fb_goalkde_vs_standard_fb_vs_crl_goalkde_combined.png', dpi=300, bbox_inches='tight')
+plt.savefig(f'{output_dir}/fb_goalkde_vs_standard_fb_vs_crl_goalkde_combined.pdf', bbox_inches='tight')
+print(f"FB GoalKDE vs standard FB vs CRL GoalKDE combined figure saved as '{output_dir}/fb_goalkde_vs_standard_fb_vs_crl_goalkde_combined.png'")
+
+# Save summary + combined data
+fb_goalkde_summary_rows = []
+for env_name, data in [('Reacher', reacher_fb_goalkde_data), ('Pusher', pusher_fb_goalkde_data), ('Ant', ant_fb_goalkde_data)]:
+    for _, row in data.iterrows():
+        fb_goalkde_summary_rows.append({
+            'Environment': env_name,
+            'Method': row['Method'],
+            'Method Type': row['Method Type'],
+            'Imitation Score (%)': f"{row['Mean Difference']:.1f} ± {row['Std Error']:.1f}",
+        })
+fb_goalkde_summary_df = pd.DataFrame(fb_goalkde_summary_rows)
+fb_goalkde_summary_df.to_csv(f'{output_dir}/fb_goalkde_vs_standard_fb_vs_crl_goalkde_summary_table.csv', index=False)
+fb_goalkde_combined_plot.to_csv(f'{output_dir}/fb_goalkde_vs_standard_fb_vs_crl_goalkde_combined_data.csv', index=False)
+
+plt.show()
+
+# ============================================================================
 # CRL Oracle vs CRL GoalKDE Combined Plot
 # ============================================================================
 
@@ -578,9 +726,7 @@ oracle_combined_plot_ax = pd.concat([ant_oracle_plot, reacher_oracle_plot, pushe
 environments = ['Reacher', 'Pusher', 'Ant']
 all_methods = oracle_combined_plot_ax['Method'].unique().tolist()
 method_to_type = oracle_combined_plot_ax.dropna(subset=['Method']).drop_duplicates('Method').set_index('Method')['Method Type'].to_dict()
-def _is_cirl_type(t):
-    return (t == 'CIRL') or (isinstance(t, str) and 'CIRL' in t)
-methods = sorted(all_methods, key=lambda m: (1 if _is_cirl_type(method_to_type.get(m, '')) else 0, str(m)))
+methods = sort_methods_cirl_last(all_methods, method_to_type)
 method_palette = {m: oracle_colors.get(method_to_type.get(m, ''), '#888888') for m in methods}
 
 env_positions = np.arange(len(environments))
@@ -607,30 +753,15 @@ ax.set_xticks(env_positions)
 ax.set_xticklabels(environments, fontsize=38, rotation=0)
 ax.set_xlabel('')
 
-from matplotlib.ticker import FixedLocator, AutoMinorLocator
-ax.yaxis.set_major_locator(FixedLocator([0, 50, 100]))
-ax.yaxis.set_minor_locator(AutoMinorLocator(5))
-ax.set_ylabel('Imitation Score (\\%)', fontsize=42)
-ax.tick_params(axis='y', labelsize=38)
-ax.grid(axis='y', which='major', linestyle='--', alpha=0.7)
-ax.grid(axis='y', which='minor', linestyle=':', alpha=0.3)
-
-# Y limits with headroom for error bars
-if not oracle_combined_plot_ax.empty:
-    top_val = float(np.nanmax(oracle_combined_plot_ax['Mean Difference'] + oracle_combined_plot_ax['Std Error']))
-else:
-    top_val = 100.0
-pad = 0.05 * max(1.0, top_val)
-ymax = max(100.0, top_val + pad)
-ymax = float(int(np.ceil(ymax / 10.0)) * 10)
-ax.set_ylim(0, ymax)
+format_imitation_score_axis(ax, ylabel='Imitation Score (%)', ylabel_fontsize=42, tick_labelsize=38)
+set_ylim_with_headroom(ax, oracle_combined_plot_ax, ymin=0.0, min_ymax=100.0)
 
 from matplotlib.patches import Patch
 type_to_color = {}
 for m, t in method_to_type.items():
     if t in oracle_colors and t not in type_to_color:
         type_to_color[t] = oracle_colors[t]
-ordered_types = sorted(type_to_color.keys(), key=lambda t: (1 if _is_cirl_type(t) else 0, str(t)))
+ordered_types = sort_types_cirl_last(type_to_color.keys())
 legend_handles = [Patch(facecolor=type_to_color[t], edgecolor='none', label=t) for t in ordered_types]
 if legend_handles:
     existing_legend = ax.get_legend()
@@ -765,23 +896,8 @@ ax.set_xticks(env_positions)
 ax.set_xticklabels(environments, fontsize=34, rotation=0)
 ax.set_xlabel('', fontsize=34)
 
-from matplotlib.ticker import FixedLocator, AutoMinorLocator
-ax.yaxis.set_major_locator(FixedLocator([0, 50, 100]))
-ax.yaxis.set_minor_locator(AutoMinorLocator(5))
-ax.set_ylabel('Imitation Score (\\%)', fontsize=36)
-ax.tick_params(axis='y', labelsize=34)
-ax.grid(axis='y', which='major', linestyle='--', alpha=0.7)
-ax.grid(axis='y', which='minor', linestyle=':', alpha=0.3)
-
-# Y limits with headroom for error bars
-if not err_combined_plot.empty:
-    top_val = float(np.nanmax(err_combined_plot['Mean Difference'] + err_combined_plot['Std Error']))
-else:
-    top_val = 100.0
-pad = 0.05 * max(1.0, top_val)
-ymax = max(100.0, top_val + pad)
-ymax = float(int(np.ceil(ymax / 10.0)) * 10)
-ax.set_ylim(0, ymax)
+format_imitation_score_axis(ax, ylabel='Imitation Score (%)', ylabel_fontsize=36, tick_labelsize=34)
+set_ylim_with_headroom(ax, err_combined_plot, ymin=0.0, min_ymax=100.0)
 
 from matplotlib.patches import Patch
 legend_handles = [
@@ -832,10 +948,6 @@ plt.show()
 # ============================================================================
 # CRL Oracle vs CRL GoalKDE Combined Plot on Simple Mazes
 # ============================================================================
-try:
-    plt.rcParams['text.usetex'] = False
-except Exception:
-    pass
 # Read the data for each environment
 u_maze_oracle_data = pd.read_csv('results_simple_u_maze/crl_oracle_vs_crl_goalkde_simple_u_maze.csv')
 big_maze_oracle_data = pd.read_csv('results_simple_big_maze/crl_oracle_vs_crl_goalkde_simple_big_maze.csv')
@@ -868,9 +980,7 @@ oracle_combined_plot_ax = pd.concat([u_maze_oracle_plot, big_maze_oracle_plot, h
 environments = ['U-Maze', 'Big Maze', 'Hardest Maze']
 all_methods = oracle_combined_plot_ax['Method'].unique().tolist()
 method_to_type = oracle_combined_plot_ax.dropna(subset=['Method']).drop_duplicates('Method').set_index('Method')['Method Type'].to_dict()
-def _is_cirl_type(t):
-    return (t == 'CIRL') or (isinstance(t, str) and 'CIRL' in t)
-methods = sorted(all_methods, key=lambda m: (1 if _is_cirl_type(method_to_type.get(m, '')) else 0, str(m)))
+methods = sort_methods_cirl_last(all_methods, method_to_type)
 method_palette = {m: oracle_colors.get(method_to_type.get(m, ''), '#888888') for m in methods}
 
 env_positions = np.arange(len(environments))
@@ -897,30 +1007,15 @@ ax.set_xticks(env_positions)
 ax.set_xticklabels(environments, fontsize=38, rotation=0)
 ax.set_xlabel('')
 
-from matplotlib.ticker import FixedLocator, AutoMinorLocator
-ax.yaxis.set_major_locator(FixedLocator([0, 50, 100]))
-ax.yaxis.set_minor_locator(AutoMinorLocator(5))
-ax.set_ylabel('Imitation Score (%)', fontsize=42)
-ax.tick_params(axis='y', labelsize=38)
-ax.grid(axis='y', which='major', linestyle='--', alpha=0.7)
-ax.grid(axis='y', which='minor', linestyle=':', alpha=0.3)
-
-# Y limits with headroom for error bars
-if not oracle_combined_plot_ax.empty:
-    top_val = float(np.nanmax(oracle_combined_plot_ax['Mean Difference'] + oracle_combined_plot_ax['Std Error']))
-else:
-    top_val = 100.0
-pad = 0.05 * max(1.0, top_val)
-ymax = max(100.0, top_val + pad)
-ymax = float(int(np.ceil(ymax / 10.0)) * 10)
-ax.set_ylim(0, ymax)
+format_imitation_score_axis(ax, ylabel='Imitation Score (%)', ylabel_fontsize=42, tick_labelsize=38)
+set_ylim_with_headroom(ax, oracle_combined_plot_ax, ymin=0.0, min_ymax=100.0)
 
 from matplotlib.patches import Patch
 type_to_color = {}
 for m, t in method_to_type.items():
     if t in oracle_colors and t not in type_to_color:
         type_to_color[t] = oracle_colors[t]
-ordered_types = sorted(type_to_color.keys(), key=lambda t: (1 if _is_cirl_type(t) else 0, str(t)))
+ordered_types = sort_types_cirl_last(type_to_color.keys())
 legend_handles = [Patch(facecolor=type_to_color[t], edgecolor='none', label=t) for t in ordered_types]
 if legend_handles:
     existing_legend = ax.get_legend()

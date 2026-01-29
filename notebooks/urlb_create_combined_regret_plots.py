@@ -3,17 +3,8 @@ import glob
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-try:
-    import scienceplots  # noqa: F401
-    try:
-        plt.style.use(['science', 'ieee'])
-    except Exception:
-        try:
-            plt.style.use(['science', 'ieee', 'no-latex'])
-        except Exception:
-            pass
-except Exception:
-    pass
+import scienceplots  # noqa: F401
+plt.style.use(['science', 'ieee'])
 try:
     from palettable.colorbrewer.qualitative import Set2_7  # noqa: F401
     PALETTE_COLORS = Set2_7.mpl_colors
@@ -33,7 +24,7 @@ plt.rcParams.update({
 })
 
 # Consistent color mapping by method type
-METHOD_TYPE_ORDER = ['GCBC', 'NN', 'FB', 'CRL', 'CIRL', 'CRL + Oracle']
+METHOD_TYPE_ORDER = ['GCBC', 'NN', 'FB', 'CRL', 'CIRL', 'CRL + Oracle', 'HILP']
 METHOD_TYPE_COLOR = {t: PALETTE_COLORS[i % len(PALETTE_COLORS)] for i, t in enumerate(METHOD_TYPE_ORDER)}
 # Swap colors for NN and CIRL (same as create_combined_plots)
 _nn_color = METHOD_TYPE_COLOR.get('NN')
@@ -46,6 +37,8 @@ try:
     METHOD_TYPE_COLOR['CRL + Oracle'] = PALETTE_COLORS[6]
 except Exception:
     METHOD_TYPE_COLOR['CRL + Oracle'] = '#e5c494'
+# Ensure HILP has a distinct color from CRL + Oracle
+METHOD_TYPE_COLOR['HILP'] = '#9467bd'
 
 METHOD_TYPE_ALIASES = {
     'CRL + GoalKDE (CIRL)': 'CIRL',
@@ -59,8 +52,14 @@ def get_color_for_type(method_type: str):
 
 def find_regret_csvs(base_dir: str):
     patterns = [
+        # New extended CSVs (preferred)
+        os.path.join(base_dir, 'results_*', 'antforward_regret_goalkde_vs_fb_hilp_psm.csv'),
+        os.path.join(base_dir, 'results_*', 'antjump_regret_goalkde_vs_fb_hilp_psm.csv'),
+        os.path.join(base_dir, 'results_*', 'antflip_regret_goalkde_vs_fb_hilp_psm.csv'),
+        # Legacy CSVs (fallback)
         os.path.join(base_dir, 'results_*', 'antforward_regret_goalkde_vs_fb.csv'),
         os.path.join(base_dir, 'results_*', 'antjump_regret_goalkde_vs_fb.csv'),
+        os.path.join(base_dir, 'results_*', 'antflip_regret_goalkde_vs_fb.csv'),
     ]
     files = []
     for p in patterns:
@@ -85,6 +84,8 @@ def infer_expert_from_path(path: str) -> str:
         return 'antforward'
     if fname.startswith('antjump_'):
         return 'antjump'
+    if fname.startswith('antflip_'):
+        return 'antflip'
     # fallback: parse parent data
     parts = fname.split('_')
     for p in parts:
@@ -114,26 +115,29 @@ def main():
     expert_to_title = {
         'antforward': 'Ant Forward',
         'antjump': 'Ant Jump',
+        'antflip': 'Ant Flip',
     }
 
-    # Desired order: FB, MainMF (CRL + Oracle), CRL + GoalKDE (CIRL)
-    methods_order = ['FB', 'MainMF', 'CRL + GoalKDE']
+    # Desired order: FB, then HILP, then MainMF (CRL + Oracle), CRL + GoalKDE (CIRL)
+    methods_order = ['FB', 'HILP', 'MainMF', 'CRL + GoalKDE']
     display_label = {
         'FB': 'FB',
         'MainMF': 'CRL + Oracle',
-        'CRL + GoalKDE': 'CRL + GoalKDE (CIRL)'
+        'CRL + GoalKDE': 'CRL + GoalKDE (CIRL)',
+        'HILP': 'HILP',
     }
     # Colors by method TYPE to match create_combined_plots
     type_for_method = {
         'FB': 'FB',
         'MainMF': 'CRL + Oracle',
-        'CRL + GoalKDE': 'CIRL'
+        'CRL + GoalKDE': 'CIRL',
+        'HILP': 'HILP',
     }
 
     # Build a single combined dataframe
     combined_rows = []
     environments = []
-    for expert in ['antforward', 'antjump']:
+    for expert in ['antforward', 'antjump', 'antflip']:
         if expert in by_expert:
             df = load_regret(by_expert[expert]['path'])
             df = df[df['Method'].isin(methods_order)].copy()
@@ -156,10 +160,12 @@ def main():
 
     combined_df = pd.DataFrame(combined_rows)
     # Order environments consistently
-    environments = [expert_to_title[e] for e in ['antforward', 'antjump'] if expert_to_title[e] in environments]
+    environments = [expert_to_title[e] for e in ['antforward', 'antjump', 'antflip'] if expert_to_title[e] in environments]
 
-    # Prepare single-axis combined plot
-    fig, ax = plt.subplots(figsize=(14, 8))
+    # Prepare 3 subplots (one per environment)
+    num_subplots = 3
+    fig, axes = plt.subplots(1, num_subplots, figsize=(24, 8), squeeze=False)
+    axes = axes[0]
 
     # Methods present and sort by methods_order
     all_methods = combined_df['Method'].unique().tolist()
@@ -170,50 +176,107 @@ def main():
     # Color palette by method type
     method_palette = {m: get_color_for_type(type_for_method[m]) for m in methods}
 
-    # Compute positions
-    env_positions = np.arange(len(environments))
-    max_methods_per_env = max((combined_df[combined_df['Environment'] == env]['Method'].nunique() for env in environments))
+    # Per-subplot grouped bars and per-env y limits
     group_width = 0.8
-    bar_width = group_width / max_methods_per_env if max_methods_per_env > 0 else 0.4
+    per_env_limits = []
+    visible_env_names = []
+    visible_axes = []
+    added_ylabel = False
+    for i in range(num_subplots):
+        ax_i = axes[i]
+        if i < len(environments):
+            env = environments[i]
+            env_df = combined_df[combined_df['Environment'] == env]
+            env_methods = [m for m in methods if m in env_df['Method'].values]
+            if env_methods:
+                num_methods = len(env_methods)
+                bar_width = group_width / max(1, num_methods)
+                base_x = 0.0
+                offsets = (np.arange(num_methods) - (num_methods - 1) / 2.0) * bar_width
+                for offset, m in zip(offsets, env_methods):
+                    row = env_df[env_df['Method'] == m].iloc[0]
+                    height = row['MeanRegret']
+                    err = row['StdError']
+                    xpos = base_x + offset
+                    ax_i.bar(xpos, height, width=bar_width * 0.9, color=method_palette[m], edgecolor='none', linewidth=0)
+                    ax_i.errorbar(xpos, height, yerr=err, fmt='none', ecolor='black', capsize=5, linewidth=1.0)
+                # X-axis: single tick with environment name
+                ax_i.set_xticks([base_x])
+                ax_i.set_xticklabels([env], fontsize=38, rotation=0)
+            else:
+                ax_i.set_xticks([0.0])
+                ax_i.set_xticklabels([env], fontsize=38, rotation=0)
 
-    # Plot grouped bars
-    for i, env in enumerate(environments):
-        env_df = combined_df[combined_df['Environment'] == env]
-        env_methods = [m for m in methods if m in env_df['Method'].values]
-        if not env_methods:
-            continue
-        offsets = (np.arange(len(env_methods)) - (len(env_methods) - 1) / 2.0) * bar_width
-        for offset, m in zip(offsets, env_methods):
-            row = env_df[env_df['Method'] == m].iloc[0]
-            height = row['MeanRegret']
-            err = row['StdError']
-            xpos = env_positions[i] + offset
-            ax.bar(xpos, height, width=bar_width * 0.9, color=method_palette[m], edgecolor='none', linewidth=0)
-            ax.errorbar(xpos, height, yerr=err, fmt='none', ecolor='black', capsize=5, linewidth=1.0)
+            # Y-axis formatting and grid per subplot
+            from matplotlib.ticker import AutoMinorLocator
+            ax_i.yaxis.set_minor_locator(AutoMinorLocator(5))
+            if not added_ylabel:
+                ax_i.set_ylabel('Regret', fontsize=42)
+                added_ylabel = True
+            ax_i.tick_params(axis='y', labelsize=38)
+            ax_i.grid(axis='y', which='major', linestyle='--', alpha=0.7)
+            ax_i.grid(axis='y', which='minor', linestyle=':', alpha=0.3)
 
-    # X-axis formatting with environment labels
-    ax.set_xticks(env_positions)
-    ax.set_xticklabels(environments, fontsize=38, rotation=0)
-    ax.set_xlabel('')
+            # Per-env Y limits based on that env's data, include zero and small padding
+            if not env_df.empty:
+                min_val_i = float(np.nanmin(env_df['MeanRegret'] - env_df['StdError']))
+                max_val_i = float(np.nanmax(env_df['MeanRegret'] + env_df['StdError']))
+                pad_i = 0.05 * max(1.0, max(abs(min_val_i), max_val_i))
+                ymin_i = min(0.0, min_val_i - pad_i)
+                ymax_i = max_val_i + pad_i
+                ax_i.set_ylim(ymin_i, ymax_i)
+                per_env_limits.append((ymin_i, ymax_i))
+                visible_axes.append(ax_i)
+                visible_env_names.append(env)
+        else:
+            ax_i.set_visible(False)
 
-    # Y-axis formatting with minor ticks
-    from matplotlib.ticker import AutoMinorLocator
-    ax.yaxis.set_minor_locator(AutoMinorLocator(5))
-    ax.set_ylabel('Regret', fontsize=42)
-    ax.tick_params(axis='y', labelsize=38)
-    ax.grid(axis='y', which='major', linestyle='--', alpha=0.7)
-    ax.grid(axis='y', which='minor', linestyle=':', alpha=0.3)
+    # Align y=0 across visible subplots while keeping each subplot's span
+    if per_env_limits and visible_axes:
+        spans = [ymax - ymin for (ymin, ymax) in per_env_limits]
+        # Compute current zero positions as fraction of span; choose common target (median) to minimize shifts
+        zero_fracs = [(0.0 - ymin) / span if span != 0 else 0.5 for (ymin, ymax), span in zip(per_env_limits, spans)]
+        from statistics import median
+        target_frac = float(median(zero_fracs))
+        # Clamp target within [0.05, 0.95] to keep some headroom
+        target_frac = max(0.05, min(0.95, target_frac))
+        # Apply adjusted limits preserving each span
+        for ax_i, span, env_name in zip(visible_axes, spans, visible_env_names):
+            # Start with aligned limits
+            new_span = span
+            # Custom tick sets per environment (fixed for Ant Forward/Ant Jump)
+            if env_name == 'Ant Forward':
+                custom_ticks = [0, 300, 600, 900]
+            elif env_name == 'Ant Jump':
+                custom_ticks = [0, 40, 80, 120]
+            elif env_name == 'Ant Flip':
+                custom_ticks = [0, 200, 400, 600]
+            else:
+                custom_ticks = []  # fallback to automatic if unknown
 
-    # Y limits with headroom and room for possible negatives due to error bars
-    min_val = float(np.nanmin(combined_df['MeanRegret'] - combined_df['StdError']))
-    max_val = float(np.nanmax(combined_df['MeanRegret'] + combined_df['StdError']))
-    pad = 0.05 * max(1.0, max(abs(min_val), max_val))
-    ymin = min(0.0, min_val - pad)
-    ymax = max_val + pad
-    # Round to neat tens
-    ymin = float(int(np.floor(ymin / 10.0)) * 10)
-    ymax = float(int(np.ceil(ymax / 10.0)) * 10)
-    ax.set_ylim(ymin, ymax)
+            # Ensure the aligned limits include all requested ticks while keeping zero at the same relative position
+            if custom_ticks:
+                min_tick = float(min(custom_ticks))
+                max_tick = float(max(custom_ticks))
+                # Lower bounds on span needed to include ticks with zero at target_frac
+                if target_frac > 0:
+                    lb_min = max(0.0, -min_tick / target_frac)
+                else:
+                    lb_min = 0.0
+                if (1.0 - target_frac) > 0:
+                    lb_max = max_tick / (1.0 - target_frac)
+                else:
+                    lb_max = new_span
+                new_span = max(new_span, lb_min, lb_max)
+            new_ymin = 0.0 - target_frac * new_span
+            new_ymax = new_ymin + new_span
+            ax_i.set_ylim(new_ymin, new_ymax)
+
+            # Apply fixed custom ticks if provided
+            from matplotlib.ticker import FixedLocator, FormatStrFormatter
+            if custom_ticks:
+                ax_i.yaxis.set_major_locator(FixedLocator(custom_ticks))
+                ax_i.yaxis.set_major_formatter(FormatStrFormatter('%d'))
 
     # Legend by Method Type
     from matplotlib.patches import Patch
@@ -222,25 +285,29 @@ def main():
         t = type_for_method.get(m, m)
         if t not in type_to_color:
             type_to_color[t] = get_color_for_type(t)
-    type_order = ['FB', 'CRL + Oracle', 'CIRL']
+    type_order = ['FB', 'HILP', 'CRL + Oracle', 'CIRL']
     ordered_types = [t for t in type_order if t in type_to_color]
-    legend_handles = [Patch(facecolor=type_to_color[t], edgecolor='none', label=t if t != 'CIRL' else 'CRL + GoalKDE (CIRL)') for t in ordered_types]
+    legend_handles = []
+    for t in ordered_types:
+        label = t
+        if t == 'CIRL':
+            label = 'CRL + GoalKDE (CIRL)'
+        legend_handles.append(Patch(facecolor=type_to_color[t], edgecolor='none', label=label))
     if legend_handles:
-        existing_legend = ax.get_legend()
-        if existing_legend is not None:
-            existing_legend.remove()
-        ax.legend(
+        # Common legend at the bottom
+        fig.legend(
             handles=legend_handles,
-            loc='upper right',
-            bbox_to_anchor=(0.99, 0.99),
-            bbox_transform=ax.transAxes,
+            loc='lower center',
+            bbox_to_anchor=(0.5, -0.02),
+            ncol=len(legend_handles),
             fontsize=38,
             title=None,
-            borderaxespad=0.0,
             frameon=False
         )
 
     plt.tight_layout()
+    # Add extra bottom margin to accommodate bottom legend
+    fig.subplots_adjust(bottom=0.2)
     out_png = os.path.join(out_dir, 'urlb_regret_combined.png')
     plt.savefig(out_png, dpi=300, bbox_inches='tight')
     print(f'Saved combined regret plot to: {out_png}')

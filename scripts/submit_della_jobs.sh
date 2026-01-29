@@ -25,7 +25,7 @@ submit_job() {
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH -t 6:00:00
+#SBATCH -t 16:00:00
 #SBATCH --partition=pli 
 #SBATCH --account=buildstuff
 #SBATCH --constraint=h100
@@ -53,31 +53,56 @@ EOF
 }
 
 # Submit jobs for each environment
-env=ant
+# env=ant
 # submit_job $env 1 standard 30000000 512 1024 50
+# submit_job $env 2 standard 30000000 512 1024 50
+# submit_job $env 3 standard 30000000 512 1024 50
+# submit_job $env 4 standard 30000000 512 1024 50
+# submit_job $env 5 standard 30000000 512 1024 50
+
 # submit_job $env 1 meanfield 30000000 512 1024 50
-# submit_job $env 1 meanfield_encoded 30000000 512 1024 50
+# submit_job $env 2 meanfield 30000000 512 1024 50
+# submit_job $env 3 meanfield 30000000 512 1024 50
+# submit_job $env 4 meanfield 30000000 512 1024 50
+# submit_job $env 5 meanfield 30000000 512 1024 50
 
 env=simple_u_maze
-# submit_job $env 1 standard 20000000 1024 256 50
-# submit_job $env 1 meanfield 20000000 1024 256 50
+# submit_job $env 1 standard 20000000 1024 256 50 1 1e-4 1e-4 1e-4
+# submit_job $env 2 standard 20000000 1024 256 50 1 1e-4 1e-4 1e-4
+# submit_job $env 3 standard 20000000 1024 256 50 1 1e-4 1e-4 1e-4
+# submit_job $env 4 standard 20000000 1024 256 50 1 1e-4 1e-4 1e-4
+# submit_job $env 5 standard 20000000 1024 256 50 1 1e-4 1e-4 1e-4
 
-env=simple_custom_maze
-submit_job $env 2 standard 20000000 1024 256 50 1 1e-4 1e-4 1e-4
-submit_job $env 2 meanfield 20000000 1024 256 50 1 1e-4 1e-4 1e-4
+submit_job $env 1 meanfield 40000000 1024 256 50 1 1e-4 1e-4 1e-4
+submit_job $env 2 meanfield 40000000 1024 256 50 1 1e-4 1e-4 1e-4
+submit_job $env 3 meanfield 40000000 1024 256 50 1 1e-4 1e-4 1e-4
+submit_job $env 4 meanfield 40000000 1024 256 50 1 1e-4 1e-4 1e-4
+submit_job $env 5 meanfield 40000000 1024 256 50 1 1e-4 1e-4 1e-4
+
+# env=simple_custom_maze
+# submit_job $env 2 standard 40000000 1024 256 50 1 1e-4 1e-4 1e-4
+# submit_job $env 2 meanfield 40000000 1024 256 50 1 1e-4 1e-4 1e-4
 
 env=simple_big_maze
-submit_job $env 2 standard 40000000 1024 256 50 1 1e-4 1e-4 1e-4
-submit_job $env 2 meanfield 40000000 1024 256 50 1 1e-4 1e-4 1e-4
+submit_job $env 2 standard 100000000 1024 256 50 1 1e-4 1e-4 1e-4
+submit_job $env 2 meanfield 100000000 1024 256 50 1 1e-4 1e-4 1e-4
 
 env=simple_hardest_maze
-submit_job $env 2 standard 60000000 1024 256 50 1 1e-4 1e-4 1e-4
-submit_job $env 2 meanfield 60000000 1024 256 50 1 1e-4 1e-4 1e-4
+submit_job $env 2 standard 200000000 1024 256 50 1 1e-4 1e-4 1e-4
+submit_job $env 2 meanfield 200000000 1024 256 50 1 1e-4 1e-4 1e-4
 
-env=reacher
+# env=reacher
 # submit_job $env 1 standard 20000000 1024 256 50
+# submit_job $env 2 standard 20000000 1024 256 50
+# submit_job $env 3 standard 20000000 1024 256 50
+# submit_job $env 4 standard 20000000 1024 256 50
+# submit_job $env 5 standard 20000000 1024 256 50
+
 # submit_job $env 1 meanfield 20000000 1024 256 50
-# submit_job $env 1 meanfield_encoded 20000000 1024 256 50
+# submit_job $env 2 meanfield 20000000 1024 256 50
+# submit_job $env 3 meanfield 20000000 1024 256 50
+# submit_job $env 4 meanfield 20000000 1024 256 50
+# submit_job $env 5 meanfield 20000000 1024 256 50
 
 # env=pusher_easy
 # submit_job $env 1 standard 60000000 256 512 
@@ -91,31 +116,6 @@ env=reacher
 # submit_job $env 3 meanfield 60000000 256 512 
 # submit_job $env 4 meanfield 60000000 256 512 
 # submit_job $env 5 meanfield 60000000 256 512 
-
-# submit_job $env 1 standard 60000000 1024 2048 100
-# submit_job $env 2 standard 60000000 1024 2048 100
-# submit_job $env 3 standard 60000000 1024 2048 100
-# submit_job $env 4 standard 60000000 1024 2048 100
-# submit_job $env 5 standard 60000000 1024 2048 100
-
-
-# submit_job $env 1 meanfield 60000000 1024 1024 100
-# submit_job $env 1 meanfield 60000000 1024 1024 100
-# submit_job $env 2 meanfield 60000000 1024 1024 100
-# submit_job $env 3 meanfield 60000000 1024 1024 100
-# submit_job $env 4 meanfield 60000000 1024 1024 100
-
-# submit_job $env 1 meanfield 60000000 1024 2048 100
-# submit_job $env 2 meanfield 60000000 1024 2048 100
-# submit_job $env 3 meanfield 60000000 1024 2048 100
-# submit_job $env 4 meanfield 60000000 1024 2048 100
-# submit_job $env 5 meanfield 60000000 1024 2048 100
-
-# submit_job $env 1 meanfield_encoded 60000000 1024 1024 100
-# submit_job $env 2 meanfield_encoded 60000000 1024 1024 100
-# submit_job $env 3 meanfield_encoded 60000000 1024 1024 100
-# submit_job $env 4 meanfield_encoded 60000000 1024 1024 100
-# submit_job $env 5 meanfield_encoded 60000000 1024 1024 100
 
 # env=arm_reach
 # submit_job $env 1 standard 12000000000 1024 2048 1000 8
@@ -136,14 +136,27 @@ env=ant_u_maze
 
 # env=ant_posvel
 # submit_job $env 1 standard 12000000000 256 512 50
-
+# submit_job $env 2 standard 12000000000 256 512 50
+# submit_job $env 3 standard 12000000000 256 512 50
+# submit_job $env 4 standard 12000000000 256 512 50
+# submit_job $env 5 standard 12000000000 256 512 50
 # submit_job $env 1 meanfield 12000000000 256 512 50
+# submit_job $env 2 meanfield 12000000000 256 512 50
+# submit_job $env 3 meanfield 12000000000 256 512 50
+# submit_job $env 4 meanfield 12000000000 256 512 50
+# submit_job $env 5 meanfield 12000000000 256 512 50
 
 # env=ant_angvel
 # submit_job $env 1 standard 120000000 256 512 50
 # submit_job $env 1 meanfield 120000000 256 512 50
 # submit_job $env 2 standard 120000000 256 512 50
 # submit_job $env 2 meanfield 120000000 256 512 50
+# submit_job $env 3 standard 120000000 256 512 50
+# submit_job $env 3 meanfield 120000000 256 512 50
+# submit_job $env 4 standard 120000000 256 512 50
+# submit_job $env 4 meanfield 120000000 256 512 50
+# submit_job $env 5 standard 120000000 256 512 50
+# submit_job $env 5 meanfield 120000000 256 512 50
 
 
 # Wait for all background processes to complete
