@@ -316,3 +316,9 @@ wandb/
 params/
 runs/
 experiments/
+
+# Core dumps (can be enormous, never commit)
+core
+core.*
+*.core
+**/core.*

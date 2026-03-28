@@ -1,0 +1,7 @@
+Method,Mean Difference,Std Error,Method Type,Environment
+CRL + Oracle + Mean Field,71.06847763061523,0.8751497603952799,CRL + Oracle,U-Maze
+CRL + GoalKDE + Mean Field,102.3950457572937,0.10313902748748001,CRL + GoalKDE (CIRL),U-Maze
+CRL + Oracle + Mean Field,73.64234924316406,0.92408489435911,CRL + Oracle,Big Maze
+CRL + GoalKDE + Mean Field,69.6714699268341,1.01748462766408,CRL + GoalKDE (CIRL),Big Maze
+CRL + Oracle + Mean Field,43.810349702835076,1.32619692012667,CRL + Oracle,Hardest Maze
+CRL + GoalKDE + Mean Field,77.25260257720947,0.94783790409564,CRL + GoalKDE (CIRL),Hardest Maze

@@ -1,0 +1,5 @@
+Series,MeanTotalReward,StdError
+GoalKDE Expert,16.500441,1.319631
+GoalKDE Imit,-123.311989,9.135249
+FB Expert,16.500441,1.319631
+FB Imit,-460.464142,34.620785

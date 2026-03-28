@@ -1,0 +1,13 @@
+Environment,Method,Method Type,Imitation Score (%)
+Reacher,FB + Standard,FB,35.0 ± 1.0
+Reacher,FB + GoalKDE MF,FB,38.1 ± 1.1
+Reacher,FB + True Goal,FB,36.0 ± 1.0
+Reacher,CRL + GoalKDE + Mean Field,CIRL,100.4 ± 0.2
+Pusher,FB + Standard,FB,4.9 ± 1.4
+Pusher,FB + GoalKDE MF,FB,6.0 ± 1.4
+Pusher,FB + True Goal,FB,5.2 ± 1.4
+Pusher,CRL + GoalKDE + Mean Field,CIRL,22.0 ± 1.6
+Ant,FB + Standard,FB,7.7 ± 1.2
+Ant,FB + GoalKDE MF,FB,11.5 ± 1.2
+Ant,FB + True Goal,FB,12.3 ± 1.3
+Ant,CRL + GoalKDE + Mean Field,CIRL,46.0 ± 1.1
